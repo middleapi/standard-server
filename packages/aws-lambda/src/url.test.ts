@@ -99,16 +99,14 @@ describe('toStandardUrl path escaping', () => {
     ['/capture/space value', '/capture/space%20value'],
     ['/capture/hash#value', '/capture/hash%23value'],
     ['/capture/literal?value', '/capture/literal%3Fvalue'],
-    ['/capture/literal%value', '/capture/literal%25value'],
     ['/capture/unicode-λ-世界', '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C'],
     ['/capture/quote"brace{}angle<>tick`caret^', '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E'],
     ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
-    ['/capture/back\\slash', '/capture/back%5Cslash'],
-    ['/capture/bracket[]pipe|', '/capture/bracket%5B%5Dpipe%7C'],
   ]
 
-  // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded
-  const encoded = [
+  // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded,
+  // and characters `URL` leaves alone in a pathname stay as-is too
+  const untouched = [
     '/capture/space%20value',
     '/capture/question%3Fvalue',
     '/capture/hash%23value',
@@ -118,6 +116,8 @@ describe('toStandardUrl path escaping', () => {
     '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C',
     '/capture/lower%2fcase',
     '/AZaz09-._~!$&\'()*+,;=:@',
+    '/a[b]|c\\d',
+    '/capture/literal%value',
   ]
 
   describe('v2', () => {
@@ -125,7 +125,7 @@ describe('toStandardUrl path escaping', () => {
       expect(toStandardUrl({ rawPath, requestContext: { http: { method: 'GET' } } })).toBe(pathname)
     })
 
-    it.each(encoded)('keeps encoded %s as-is', (rawPath) => {
+    it.each(untouched)('keeps %s as-is', (rawPath) => {
       expect(toStandardUrl({ rawPath, requestContext: { http: { method: 'GET' } } })).toBe(rawPath)
     })
 
@@ -149,7 +149,7 @@ describe('toStandardUrl path escaping', () => {
       expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(pathname)
     })
 
-    it.each(encoded)('keeps encoded %s as-is', (path) => {
+    it.each(untouched)('keeps %s as-is', (path) => {
       expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(path)
     })
 
@@ -166,6 +166,15 @@ describe('toStandardUrl path escaping', () => {
         queryStringParameters: { tenant: 'acme' },
       })).toBe('/users/me%3Fadmin=true?tenant=acme')
     })
+  })
+
+  it('escapes the same characters as the URL pathname setter', () => {
+    for (const path of ['/space value', '/hash#value', '/literal?value', '/unicode-λ-世界', '/quote"brace{}angle<>tick`caret^', '/a[b]|c', '/literal%value', '/%20%2F']) {
+      const url = new URL('http://localhost')
+      url.pathname = path
+
+      expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(url.pathname)
+    }
   })
 
   it('adds a leading slash after escaping', () => {
