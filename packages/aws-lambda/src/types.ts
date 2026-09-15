@@ -11,6 +11,8 @@ export interface APIGatewayProxyEvent {
    */
   httpMethod: string
   /**
+   * Url-decoded when delivered by an HTTP API, still encoded from a REST API.
+   *
    * @example '/example'
    */
   path: string
@@ -44,6 +46,8 @@ export interface APIGatewayProxyEvent {
  */
 export interface APIGatewayProxyEventV2 {
   /**
+   * Url-decoded when delivered by an HTTP API, still encoded from a Lambda Function URL.
+   *
    * @example '/example'
    */
   rawPath: string

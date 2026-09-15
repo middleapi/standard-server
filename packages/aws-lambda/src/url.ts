@@ -1,6 +1,8 @@
 import type { StandardUrl } from '@standard-server/core'
 import type { AnyAPIGatewayProxyEvent } from './types'
 
+const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
+
 /**
  * Build a standard url from an API Gateway proxy event.
  *
@@ -9,12 +11,12 @@ import type { AnyAPIGatewayProxyEvent } from './types'
  */
 export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   if (!('httpMethod' in event)) {
-    const pathname = `${event.rawPath.startsWith('/') ? '' : '/'}${event.rawPath}` as `/${string}`
+    const pathname = toPathname(event.rawPath)
 
     return event.rawQueryString ? `${pathname}?${event.rawQueryString}` : pathname
   }
 
-  const pathname = `${event.path.startsWith('/') ? '' : '/'}${event.path}` as `/${string}`
+  const pathname = toPathname(event.path)
 
   const query = new URLSearchParams()
 
@@ -39,4 +41,10 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   const search = query.toString()
 
   return search === '' ? pathname : `${pathname}?${search}`
+}
+
+function toPathname(path: string): `/${string}` {
+  const encoded = path.replace(UNENCODED_PATH_CHAR_RE, encodeURIComponent)
+
+  return encoded.startsWith('/') ? encoded as `/${string}` : `/${encoded}`
 }
