@@ -135,6 +135,27 @@ describe('toStandardBody', () => {
       expect(standardBody).toBeInstanceOf(ReadableStream)
       await expect(new Response(standardBody).text()).resolves.toBe('raw-data')
     })
+
+    it('streams a base64 body copied out of the shared Buffer pool', async () => {
+      const standardBody = await toStandardBody(event({
+        body: Buffer.from('raw-data').toString('base64'),
+        isBase64Encoded: true,
+        multiValueHeaders: {
+          'Content-Type': ['application/octet-stream'],
+          'standard-server': ['octet-stream'],
+        },
+      })) as ReadableStream<Uint8Array<ArrayBuffer>>
+
+      const chunk = (await standardBody.getReader().read()).value!
+
+      expect(new TextDecoder().decode(chunk)).toBe('raw-data')
+
+      // `Buffer.from(…, 'base64')` returns a view into node's shared 8kb pool. Handing
+      // that view out exposes unrelated pooled memory — another invocation's body
+      // included — through `chunk.buffer`, and lets a transfer detach the pool.
+      expect(chunk.byteOffset).toBe(0)
+      expect(chunk.buffer.byteLength).toBe(chunk.byteLength)
+    })
   })
 
   describe('file', () => {

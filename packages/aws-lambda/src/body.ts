@@ -34,7 +34,11 @@ export async function toStandardBody(
   const bytes: Uint8Array<ArrayBuffer> = typeof event.body !== 'string'
     ? new Uint8Array()
     : event.isBase64Encoded
-      ? Buffer.from(event.body, 'base64') as Uint8Array<ArrayBuffer>
+      // Copy out of node's shared `Buffer` pool: `Buffer.from` hands back a view into it,
+      // so passing that view to a consumer would expose unrelated pooled memory — another
+      // invocation's body included, the process is reused — through `chunk.buffer`, and
+      // would let a transfer detach the pool for everything else holding it.
+      ? new Uint8Array(Buffer.from(event.body, 'base64'))
       : new TextEncoder().encode(event.body)
 
   if (hint === 'json') {
