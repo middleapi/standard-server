@@ -39,8 +39,7 @@ export async function sendStandardResponse(
       reply.status(standardResponse.status)
 
       // DON'T pass headers with `undefined` value to fastify, it turns them into empty strings
-      for (const key in resHeaders) {
-        const value = resHeaders[key]
+      for (const [key, value] of Object.entries(resHeaders)) {
         if (value !== undefined) {
           reply.header(key, value)
         }
