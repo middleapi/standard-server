@@ -2,7 +2,7 @@ import type { StandardUrl } from '@standard-server/core'
 import type { NodeHttpRequest } from './types'
 import { toStandardUrl as toStandardUrlFetch } from '@standard-server/fetch'
 
-export function toStandardUrl(req: NodeHttpRequest): StandardUrl {
+export function toStandardUrl(req: Pick<NodeHttpRequest, 'originalUrl' | 'url'>): StandardUrl {
   // prefer originalUrl over url, especially useful in express.js middleware
   const url = req.originalUrl ?? req.url ?? '/'
 

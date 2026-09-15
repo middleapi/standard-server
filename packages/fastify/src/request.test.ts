@@ -49,7 +49,33 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.method).toBe('POST')
 
     expect(toStandardUrlSpy).toBeCalledTimes(1)
-    expect(toStandardUrlSpy).toBeCalledWith(fastifyReq.raw)
+    expect(toStandardUrlSpy).toBeCalledWith({ url: fastifyReq.raw.url })
+    expect(standardRequest.url).toBe(toStandardUrlSpy.mock.results[0]!.value)
+    expect(standardRequest.url).toBe('/hello?foo=bar')
+  })
+
+  it('uses the url fastify routed on, not the pre-rewrite `originalUrl`', async ({ onTestFinished }) => {
+    let fastifyReq: any
+    let standardRequest!: StandardLazyRequest
+
+    const fastify = Fastify({
+      rewriteUrl: req => req.url?.replace(/^\/api/, '') || '/',
+    })
+    onTestFinished(() => fastify.close())
+
+    fastify.all('/hello', async (req, reply) => {
+      fastifyReq = req
+      standardRequest = toStandardLazyRequest(req, reply)
+    })
+
+    await fastify.ready()
+    await request(fastify.server).get('/api/hello?foo=bar')
+
+    expect(fastifyReq.raw.originalUrl).toBe('/api/hello?foo=bar')
+    expect(fastifyReq.raw.url).toBe('/hello?foo=bar')
+
+    expect(toStandardUrlSpy).toBeCalledTimes(1)
+    expect(toStandardUrlSpy).toBeCalledWith({ url: '/hello?foo=bar' })
     expect(standardRequest.url).toBe(toStandardUrlSpy.mock.results[0]!.value)
     expect(standardRequest.url).toBe('/hello?foo=bar')
   })
