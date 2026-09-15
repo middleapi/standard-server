@@ -92,3 +92,82 @@ describe('toStandardUrl (v1)', () => {
     })).toBe('/example')
   })
 })
+
+describe('toStandardUrl path escaping', () => {
+  // HTTP APIs deliver the path url-decoded, values observed on a live API Gateway HTTP API
+  const decoded: [rawPath: string, pathname: string][] = [
+    ['/capture/space value', '/capture/space%20value'],
+    ['/capture/hash#value', '/capture/hash%23value'],
+    ['/capture/literal?value', '/capture/literal%3Fvalue'],
+    ['/capture/literal%value', '/capture/literal%25value'],
+    ['/capture/unicode-λ-世界', '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C'],
+    ['/capture/quote"brace{}angle<>tick`caret^', '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E'],
+    ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
+  ]
+
+  // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded
+  const encoded = [
+    '/capture/space%20value',
+    '/capture/question%3Fvalue',
+    '/capture/hash%23value',
+    '/capture/slash%2Fvalue',
+    '/capture/percent%25done',
+    '/capture/literal%2525value',
+    '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C',
+    '/capture/lower%2fcase',
+    '/a[b]/c;d=e,f@g:h!i\'j(k)*l+m$n&o~p-q_r.s',
+  ]
+
+  describe('v2', () => {
+    it.each(decoded)('escapes decoded %s', (rawPath, pathname) => {
+      expect(toStandardUrl({ rawPath, requestContext: { http: { method: 'GET' } } })).toBe(pathname)
+    })
+
+    it.each(encoded)('keeps encoded %s as-is', (rawPath) => {
+      expect(toStandardUrl({ rawPath, requestContext: { http: { method: 'GET' } } })).toBe(rawPath)
+    })
+
+    it('keeps the query string separate from a decoded ? or # in the path', () => {
+      expect(toStandardUrl({
+        rawPath: '/orders#',
+        rawQueryString: 'tenant=acme',
+        requestContext: { http: { method: 'GET' } },
+      })).toBe('/orders%23?tenant=acme')
+
+      expect(toStandardUrl({
+        rawPath: '/users/me?admin=true',
+        rawQueryString: 'tenant=acme',
+        requestContext: { http: { method: 'GET' } },
+      })).toBe('/users/me%3Fadmin=true?tenant=acme')
+    })
+  })
+
+  describe('v1', () => {
+    it.each(decoded)('escapes decoded %s', (path, pathname) => {
+      expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(pathname)
+    })
+
+    it.each(encoded)('keeps encoded %s as-is', (path) => {
+      expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(path)
+    })
+
+    it('keeps the query string separate from a decoded ? or # in the path', () => {
+      expect(toStandardUrl({
+        httpMethod: 'GET',
+        path: '/orders#',
+        queryStringParameters: { tenant: 'acme' },
+      })).toBe('/orders%23?tenant=acme')
+
+      expect(toStandardUrl({
+        httpMethod: 'GET',
+        path: '/users/me?admin=true',
+        queryStringParameters: { tenant: 'acme' },
+      })).toBe('/users/me%3Fadmin=true?tenant=acme')
+    })
+  })
+
+  it('adds a leading slash after escaping', () => {
+    expect(toStandardUrl({ httpMethod: 'GET', path: 'a b' })).toBe('/a%20b')
+    expect(toStandardUrl({ rawPath: 'a b', requestContext: { http: { method: 'GET' } } })).toBe('/a%20b')
+  })
+})
