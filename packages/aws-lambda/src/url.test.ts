@@ -102,6 +102,8 @@ describe('toStandardUrl path escaping', () => {
     ['/capture/unicode-λ-世界', '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C'],
     ['/capture/quote"brace{}angle<>tick`caret^', '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E'],
     ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
+    // encodeURIComponent throws URIError on a lone surrogate, it becomes U+FFFD instead
+    ['/capture/lone\uD800surrogate', '/capture/lone%EF%BF%BDsurrogate'],
   ]
 
   // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded,
@@ -170,7 +172,7 @@ describe('toStandardUrl path escaping', () => {
 
   it('escapes the same characters as the URL pathname setter', () => {
     // `^` is left out: it joined the path percent-encode set in 2023 and Node 20/22 still leave it as-is
-    for (const path of ['/space value', '/hash#value', '/literal?value', '/unicode-λ-世界', '/quote"brace{}angle<>tick`', '/a[b]|c', '/literal%value', '/%20%2F']) {
+    for (const path of ['/space value', '/hash#value', '/literal?value', '/unicode-λ-世界', '/quote"brace{}angle<>tick`', '/a[b]|c', '/literal%value', '/%20%2F', '/lone\uD800surrogate']) {
       const url = new URL('http://localhost')
       url.pathname = path
 
