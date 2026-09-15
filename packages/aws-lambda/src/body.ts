@@ -34,7 +34,7 @@ export async function toStandardBody(
   const bytes: Uint8Array<ArrayBuffer> = typeof event.body !== 'string'
     ? new Uint8Array()
     : event.isBase64Encoded
-      ? Buffer.from(event.body, 'base64') as Uint8Array<ArrayBuffer>
+      ? new Uint8Array(Buffer.from(event.body, 'base64'))
       : new TextEncoder().encode(event.body)
 
   if (hint === 'json') {

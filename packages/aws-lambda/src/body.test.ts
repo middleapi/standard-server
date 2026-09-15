@@ -135,6 +135,25 @@ describe('toStandardBody', () => {
       expect(standardBody).toBeInstanceOf(ReadableStream)
       await expect(new Response(standardBody).text()).resolves.toBe('raw-data')
     })
+
+    it('streams base64 bodies as chunks that own their memory', async () => {
+      const standardBody = await toStandardBody(event({
+        body: Buffer.from('raw-data').toString('base64'),
+        isBase64Encoded: true,
+        multiValueHeaders: {
+          'Content-Type': ['application/octet-stream'],
+          'standard-server': ['octet-stream'],
+        },
+      })) as ReadableStream<Uint8Array>
+
+      const { value } = await standardBody.getReader().read()
+
+      // `Buffer.from(string)` slices Node's shared pool, so an un-copied chunk would
+      // expose other invocations' bytes through `.buffer`
+      expect(value!.byteOffset).toBe(0)
+      expect(value!.buffer.byteLength).toBe(value!.byteLength)
+      expect(new TextDecoder().decode(value)).toBe('raw-data')
+    })
   })
 
   describe('file', () => {
