@@ -4,8 +4,8 @@
  * where such entries disappear on serialization.
  */
 export function hasAnyDefinedValue(object: Record<string, unknown>): boolean {
-  for (const key in object) {
-    if (object[key] !== undefined) {
+  for (const value of Object.values(object)) {
+    if (value !== undefined) {
       return true
     }
   }
