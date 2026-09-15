@@ -103,7 +103,8 @@ The event carries the request body as a fully buffered, optionally base64-encode
 - **Response streaming must be enabled.** `sendStandardResponse()` relies on the `awslambda` global, which only exists on the AWS Lambda Node.js runtime, and on the metadata prelude of `awslambda.HttpResponseStream`, which the platform only interprets for streaming-enabled invocations.
 - **`set-cookie` is sent via metadata cookies.** Multiple cookies survive because they are sent through the dedicated `cookies` metadata field; every other multi-value header is joined with `, `.
 - **Request bodies are buffered.** API Gateway delivers the whole request body at once, so request-side streaming degrades to a single buffered chunk. Response-side streaming is real streaming.
-- **Payload format 1.0 query strings are re-encoded.** API Gateway delivers them url-decoded, so the adapter re-encodes them when reconstructing the standard url. Payload format 2.0 provides the already encoded `rawQueryString`, which is used as-is.
+- **Payload format 1.0 paths and query strings are re-encoded.** API Gateway delivers both url-decoded, so the adapter re-encodes them when reconstructing the standard url — without that, a `%3F` or `%23` in the request path would come back out as a query string or a fragment. Legal path characters are left alone so routes keep matching. Payload format 2.0 provides the already encoded `rawPath` and `rawQueryString`, which are used as-is.
+- **A percent-encoded `/` in the path cannot be restored.** API Gateway decodes `%2F` into a real separator before the event is built, so by the time the adapter sees the path the segment boundary is already gone. Payload format 2.0 is unaffected.
 - **Payload format 2.0 cookies are restored.** API Gateway strips the `cookie` header into the separate `cookies` field, and the adapter joins them back into a `cookie` header on the standard request.
 
 ## Learn more
