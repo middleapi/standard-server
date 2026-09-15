@@ -169,7 +169,8 @@ describe('toStandardUrl path escaping', () => {
   })
 
   it('escapes the same characters as the URL pathname setter', () => {
-    for (const path of ['/space value', '/hash#value', '/literal?value', '/unicode-λ-世界', '/quote"brace{}angle<>tick`caret^', '/a[b]|c', '/literal%value', '/%20%2F']) {
+    // `^` is left out: it joined the path percent-encode set in 2023 and Node 20/22 still leave it as-is
+    for (const path of ['/space value', '/hash#value', '/literal?value', '/unicode-λ-世界', '/quote"brace{}angle<>tick`', '/a[b]|c', '/literal%value', '/%20%2F']) {
       const url = new URL('http://localhost')
       url.pathname = path
 
