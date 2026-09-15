@@ -103,6 +103,7 @@ describe('toStandardUrl path escaping', () => {
     ['/capture/unicode-λ-世界', '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C'],
     ['/capture/quote"brace{}angle<>tick`caret^', '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E'],
     ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
+    ['/capture/back\\slash', '/capture/back%5Cslash'],
   ]
 
   // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded
