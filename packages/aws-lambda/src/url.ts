@@ -1,7 +1,7 @@
 import type { StandardUrl } from '@standard-server/core'
 import type { AnyAPIGatewayProxyEvent } from './types'
 
-const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?\\^`{}\x7F-\u{10FFFF}]|%(?![0-9a-fA-F]{2})/gu
+const UNENCODED_PATH_CHAR_RE = /[^\w\-.~!$&'()*+,;=:@/%]|%(?![0-9a-fA-F]{2})/gu
 
 /**
  * Build a standard url from an API Gateway proxy event.

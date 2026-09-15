@@ -104,6 +104,7 @@ describe('toStandardUrl path escaping', () => {
     ['/capture/quote"brace{}angle<>tick`caret^', '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E'],
     ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
     ['/capture/back\\slash', '/capture/back%5Cslash'],
+    ['/capture/bracket[]pipe|', '/capture/bracket%5B%5Dpipe%7C'],
   ]
 
   // REST APIs and Lambda Function URLs deliver the path still encoded, it must not be double-encoded
@@ -116,7 +117,7 @@ describe('toStandardUrl path escaping', () => {
     '/capture/literal%2525value',
     '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C',
     '/capture/lower%2fcase',
-    '/a[b]/c;d=e,f@g:h!i\'j(k)*l+m$n&o~p-q_r.s',
+    '/AZaz09-._~!$&\'()*+,;=:@',
   ]
 
   describe('v2', () => {
