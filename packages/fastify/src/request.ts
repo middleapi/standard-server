@@ -11,7 +11,7 @@ export function toStandardLazyRequest(
   const signal = toAbortSignal(reply.raw)
 
   return {
-    url: toStandardUrl(req.raw),
+    url: toStandardUrl({ url: req.url }),
     method: toStandardMethod(req.raw.method),
     headers: req.headers,
     resolveBody: async (hint) => {
