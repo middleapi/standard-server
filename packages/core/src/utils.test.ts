@@ -28,6 +28,11 @@ describe('generateContentDisposition', () => {
     expect(generateContentDisposition('テンプレ\'"ート.txt')).toEqual('inline; filename="____\'\\"__.txt"; filename*=utf-8\'\'%E3%83%86%E3%83%B3%E3%83%97%E3%83%AC%27%22%E3%83%BC%E3%83%88.txt')
   })
 
+  it('does not throw on lone surrogates', () => {
+    // encodeURIComponent throws URIError here, the lone surrogate becomes U+FFFD
+    expect(generateContentDisposition('a\uD800.txt')).toEqual('inline; filename="a_.txt"; filename*=utf-8\'\'a%EF%BF%BD.txt')
+  })
+
   it('support inline and attachment types', () => {
     expect(generateContentDisposition('test.txt', 'inline')).toEqual('inline; filename="test.txt"; filename*=utf-8\'\'test.txt')
     expect(generateContentDisposition('test.txt', 'attachment')).toEqual('attachment; filename="test.txt"; filename*=utf-8\'\'test.txt')

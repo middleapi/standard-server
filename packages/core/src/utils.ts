@@ -1,11 +1,11 @@
 import type { StandardBodyHint, StandardHeaders, StandardUrl } from './types'
-import { toArray, tryDecodeURIComponent } from '@standard-server/shared'
+import { safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
 export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
   const encodedFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/[\\"]/g, '\\$&')
 
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
-  const encodedFilenameStar = encodeURIComponent(filename)
+  const encodedFilenameStar = safeEncodeURIComponent(filename)
     .replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
     .replace(/%(7C|60|5E)/g, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
 
@@ -22,13 +22,13 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
     const [, charset = '', encodedFilename = ''] = extValueMatch
 
     if (/^(?:utf-8|us-ascii)$/i.test(charset)) {
-      return tryDecodeURIComponent(encodedFilename)
+      return safeDecodeURIComponent(encodedFilename)
     }
     // unsupported charset: fall through to the plain filename param
   }
   else if (extValue) {
     // lenient: some senders omit the charset prefix entirely
-    return tryDecodeURIComponent(extValue)
+    return safeDecodeURIComponent(extValue)
   }
 
   const filenameMatch = contentDisposition.match(/(?:^|;)\s*filename=(?:"((?:\\.|[^"\\])*)"|([^";]*))/i)
