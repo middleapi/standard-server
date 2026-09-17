@@ -1,5 +1,6 @@
 import type { StandardUrl } from '@standard-server/core'
 import type { AnyAPIGatewayProxyEvent } from './types'
+import { toStandardUrl as toStandardUrlFetch } from '@standard-server/fetch'
 import { safeEncodeURIComponent } from '@standard-server/shared'
 
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
@@ -47,5 +48,14 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
 function toPathname(path: string): `/${string}` {
   const encoded = path.replace(UNENCODED_PATH_CHAR_RE, safeEncodeURIComponent)
 
-  return encoded.startsWith('/') ? encoded as `/${string}` : `/${encoded}`
+  if (encoded.startsWith('/') && !encoded.startsWith('//') && !encoded.startsWith('/\\')) {
+    return encoded as `/${string}`
+  }
+
+  try {
+    return toPathname(toStandardUrlFetch(new URL(encoded, 'http://localhost')))
+  }
+  catch {
+    return '/'
+  }
 }

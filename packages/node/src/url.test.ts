@@ -43,9 +43,7 @@ describe('toStandardUrl', () => {
   })
 
   it('malicious or malformed input', () => {
-    // origin-form is passed through untouched: never resolved as a host, never normalized
-    expect(toStandardUrl({ url: '//evil.com/ping' } as any)).toBe('//evil.com/ping')
-    expect(toStandardUrl({ url: '////' } as any)).toBe('////')
+    // origin-form is never resolved as a host and never normalized beyond the leading slashes
     expect(toStandardUrl({ url: '/../../etc/passwd' } as any)).toBe('/../../etc/passwd')
     expect(toStandardUrl({ url: '/%2e%2e/x' } as any)).toBe('/%2e%2e/x')
     expect(toStandardUrl({ url: ':::' } as any)).toBe('/:::')
@@ -57,13 +55,28 @@ describe('toStandardUrl', () => {
     expect(toStandardUrl({ url: 'http://example.com/a\tb\n' } as any)).toBe('/ab')
     expect(toStandardUrl({ url: 'javascript:alert(1)' } as any)).toBe('/alert(1)')
 
+    // protocol-relative references are resolved like absolute-form, the pseudo-authority never leaks into the path
+    expect(toStandardUrl({ url: '//evil.com/ping' } as any)).toBe('/ping')
+    expect(toStandardUrl({ url: '//evil.com/admin?x=1' } as any)).toBe('/admin?x=1')
+    expect(toStandardUrl({ url: '/\\evil.com/admin?x=1' } as any)).toBe('/admin?x=1')
+    expect(toStandardUrl({ url: '///evil.com/x' } as any)).toBe('/x')
+    expect(toStandardUrl({ url: '//evil.com//x' } as any)).toBe('/')
+    expect(toStandardUrl({ url: '/', originalUrl: '//evil.com/x' } as any)).toBe('/x')
+    expect(toStandardUrl({ url: 'http://example.com//evil.com/x' } as any)).toBe('/x')
+
+    // an unresolvable pseudo-authority is dropped along with everything after it
+    expect(toStandardUrl({ url: '////' } as any)).toBe('/')
+    expect(toStandardUrl({ url: '//' } as any)).toBe('/')
+    expect(toStandardUrl({ url: '//?x=1' } as any)).toBe('/')
+    expect(toStandardUrl({ url: '//evil.com:99999/x' } as any)).toBe('/')
+
     // unparseable absolute-form keeps the legacy `/${url}` behavior instead of throwing
     expect(toStandardUrl({ url: 'http://' } as any)).toBe('/http://')
     expect(toStandardUrl({ url: 'http://[::1' } as any)).toBe('/http://[::1')
     expect(toStandardUrl({ url: 'http://example.com:99999/x' } as any)).toBe('/http://example.com:99999/x')
   })
 
-  it('absolute-form from a real node:http server (what `curl -x <server> <url>` sends)', async ({ onTestFinished }) => {
+  async function requestTarget(target: string, onTestFinished: (fn: () => Promise<any>) => void): Promise<string | undefined> {
     let url: string | undefined
 
     const server = http.createServer((req, res) => {
@@ -77,13 +90,21 @@ describe('toStandardUrl', () => {
 
     await new Promise<void>((resolve, reject) => {
       const socket = net.connect(port, '127.0.0.1', () => {
-        socket.end(`GET http://127.0.0.1:${port}/ping?x=1 HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
+        socket.end(`GET ${target.replaceAll('{port}', String(port))} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
       })
       socket.resume()
       socket.on('close', resolve)
       socket.on('error', reject)
     })
 
-    expect(url).toBe('/ping?x=1')
+    return url
+  }
+
+  it('absolute-form from a real node:http server (what `curl -x <server> <url>` sends)', async ({ onTestFinished }) => {
+    expect(await requestTarget('http://127.0.0.1:{port}/ping?x=1', onTestFinished)).toBe('/ping?x=1')
+  })
+
+  it('protocol-relative origin-form from a real node:http server (llhttp accepts it as a path)', async ({ onTestFinished }) => {
+    expect(await requestTarget('//evil.com/admin?x=1', onTestFinished)).toBe('/admin?x=1')
   })
 })

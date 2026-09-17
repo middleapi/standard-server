@@ -6,15 +6,14 @@ export function toStandardUrl(req: Pick<NodeHttpRequest, 'originalUrl' | 'url'>)
   // prefer originalUrl over url, especially useful in express.js middleware
   const url = req.originalUrl ?? req.url ?? '/'
 
-  if (url.startsWith('/')) {
+  if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) {
     return url as `/${string}`
   }
 
   try {
-    const parsed = new URL(url, 'http://localhost')
-    return toStandardUrlFetch(parsed)
+    return toStandardUrl({ url: toStandardUrlFetch(new URL(url, 'http://localhost')) })
   }
   catch {
-    return `/${url}`
+    return url.startsWith('/') ? '/' : `/${url}`
   }
 }

@@ -21,6 +21,24 @@ describe('toStandardUrl (v2)', () => {
     })).toBe('/example')
   })
 
+  it('resolves a protocol-relative rawPath', () => {
+    expect(toStandardUrl({
+      rawPath: '//evil.com/admin',
+      rawQueryString: 'x=1',
+      requestContext: { http: { method: 'GET' } },
+    })).toBe('/admin?x=1')
+
+    expect(toStandardUrl({
+      rawPath: '/\\evil.com/admin',
+      requestContext: { http: { method: 'GET' } },
+    })).toBe('/admin')
+
+    expect(toStandardUrl({
+      rawPath: '////',
+      requestContext: { http: { method: 'GET' } },
+    })).toBe('/')
+  })
+
   it('uses rawQueryString as-is', () => {
     expect(toStandardUrl({
       rawPath: '/example',
@@ -47,6 +65,13 @@ describe('toStandardUrl (v1)', () => {
 
   it('adds a leading slash when missing', () => {
     expect(toStandardUrl({ httpMethod: 'GET', path: 'example' })).toBe('/example')
+  })
+
+  it('resolves a protocol-relative path', () => {
+    expect(toStandardUrl({ httpMethod: 'GET', path: '//evil.com/admin', queryStringParameters: { x: '1' } })).toBe('/admin?x=1')
+    expect(toStandardUrl({ httpMethod: 'GET', path: '/\\evil.com/admin' })).toBe('/admin')
+    expect(toStandardUrl({ httpMethod: 'GET', path: '////' })).toBe('/')
+    expect(toStandardUrl({ httpMethod: 'GET', path: '///evil.com//x' })).toBe('/')
   })
 
   it('merges both sources, preferring multiValueQueryStringParameters per key', () => {
