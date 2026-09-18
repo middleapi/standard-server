@@ -22,7 +22,8 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   const query = new URLSearchParams()
 
   if (event.multiValueQueryStringParameters) {
-    for (const [key, values] of Object.entries(event.multiValueQueryStringParameters)) {
+    for (const key of Object.keys(event.multiValueQueryStringParameters)) {
+      const values = event.multiValueQueryStringParameters[key]
       for (const value of values ?? []) {
         query.append(key, value)
       }
@@ -30,7 +31,8 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   }
 
   if (event.queryStringParameters) {
-    for (const [key, value] of Object.entries(event.queryStringParameters)) {
+    for (const key of Object.keys(event.queryStringParameters)) {
+      const value = event.queryStringParameters[key]
       // `multiValueQueryStringParameters` is a superset of `queryStringParameters`
       // in real events, only fill in keys it does not already carry
       if (value !== undefined && !query.has(key)) {

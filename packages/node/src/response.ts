@@ -40,7 +40,8 @@ export async function sendStandardResponse(
       // DON'T use `res.writeHead` because it send response immediately in chunked mode
       // while we only need chunked if the response body is stream
       res.statusCode = standardResponse.status
-      for (const [key, value] of Object.entries(resHeaders)) {
+      for (const key of Object.keys(resHeaders)) {
+        const value = resHeaders[key]
         if (value !== undefined) {
           res.setHeader(key, value)
         }

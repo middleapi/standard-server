@@ -22,7 +22,8 @@ export function toStandardHeaders(event: AnyAPIGatewayProxyEvent): StandardHeade
 
   if (!('httpMethod' in event)) {
     if (event.headers) {
-      for (const [key, value] of Object.entries(event.headers)) {
+      for (const key of Object.keys(event.headers)) {
+        const value = event.headers[key]
         if (value !== undefined) {
           append(key, [value])
         }
@@ -37,7 +38,8 @@ export function toStandardHeaders(event: AnyAPIGatewayProxyEvent): StandardHeade
   }
 
   if (event.multiValueHeaders) {
-    for (const [key, values] of Object.entries(event.multiValueHeaders)) {
+    for (const key of Object.keys(event.multiValueHeaders)) {
+      const values = event.multiValueHeaders[key]
       if (values !== undefined && values.length !== 0) {
         append(key, values)
       }
@@ -45,7 +47,8 @@ export function toStandardHeaders(event: AnyAPIGatewayProxyEvent): StandardHeade
   }
 
   if (event.headers) {
-    for (const [key, value] of Object.entries(event.headers)) {
+    for (const key of Object.keys(event.headers)) {
+      const value = event.headers[key]
       // `multiValueHeaders` is a superset of `headers` in real events,
       // only fill in keys it does not already carry
       if (value !== undefined && standardHeaders[key.toLowerCase()] === undefined) {
@@ -64,7 +67,8 @@ export function getEventHeader(event: AnyAPIGatewayProxyEvent, key: string): str
   key = key.toLowerCase()
 
   if ('httpMethod' in event && event.multiValueHeaders) {
-    for (const [k, headerValues] of Object.entries(event.multiValueHeaders)) {
+    for (const k of Object.keys(event.multiValueHeaders)) {
+      const headerValues = event.multiValueHeaders[k]
       if (headerValues !== undefined && headerValues.length !== 0 && k.toLowerCase() === key) {
         return headerValues
       }
@@ -72,7 +76,8 @@ export function getEventHeader(event: AnyAPIGatewayProxyEvent, key: string): str
   }
 
   if (event.headers) {
-    for (const [k, headerValue] of Object.entries(event.headers)) {
+    for (const k of Object.keys(event.headers)) {
+      const headerValue = event.headers[k]
       if (headerValue !== undefined && k.toLowerCase() === key) {
         return headerValue
       }
@@ -97,7 +102,8 @@ export function toLambdaHeaders(standardHeaders: StandardHeaders): [
   const headers: Record<string, string> = Object.create(null)
   const setCookies: string[] = []
 
-  for (const [key, value] of Object.entries(standardHeaders)) {
+  for (const key of Object.keys(standardHeaders)) {
+    const value = standardHeaders[key]
     if (value === undefined) {
       continue
     }
