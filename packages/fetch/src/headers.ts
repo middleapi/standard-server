@@ -29,7 +29,8 @@ export function toStandardHeaders(headers: Headers): StandardHeaders {
 export function toFetchHeaders(standardHeaders: StandardHeaders): Headers {
   const headers = new Headers()
 
-  for (const [key, value] of Object.entries(standardHeaders)) {
+  for (const key of Object.keys(standardHeaders)) {
+    const value = standardHeaders[key]
     if (Array.isArray(value)) {
       for (const v of value) {
         headers.append(key, v)

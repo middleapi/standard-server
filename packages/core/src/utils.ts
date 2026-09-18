@@ -114,12 +114,13 @@ export function resolveStandardBodyHint(headers: {
 export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): StandardHeaders {
   const merged = { ...a, ...b }
 
-  for (const [key, bValue] of Object.entries(b)) {
+  for (const key of Object.keys(b)) {
     if (!Object.hasOwn(a, key)) {
       continue
     }
 
     const aValue = a[key]
+    const bValue = b[key]
 
     merged[key] = aValue === undefined || bValue === undefined
       ? aValue ?? bValue
