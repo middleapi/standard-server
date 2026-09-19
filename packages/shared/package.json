@@ -1,7 +1,7 @@
 {
   "name": "@standard-server/shared",
   "type": "module",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Internal types and utilities shared across the Standard Server ecosystem",
   "license": "MIT",
   "funding": [

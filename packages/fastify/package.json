@@ -1,7 +1,7 @@
 {
   "name": "@standard-server/fastify",
   "type": "module",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Fastify adapter for Standard Server: transport-agnostic requests, responses, and streaming on top of Fastify's request and reply objects",
   "license": "MIT",
   "funding": [
