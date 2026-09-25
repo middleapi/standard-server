@@ -78,6 +78,52 @@ it('getFilenameFromContentDisposition', () => {
   expect(getFilenameFromContentDisposition('attachment; filename*=us-ascii\'en\'test.txt')).toEqual('test.txt')
   expect(getFilenameFromContentDisposition('attachment; filename*=iso-8859-1\'\'%E9.txt; filename="fallback.txt"')).toEqual('fallback.txt')
   expect(getFilenameFromContentDisposition('attachment; filename*=iso-8859-1\'\'%E9.txt')).toEqual(undefined)
+
+  // a quoted value is opaque, a `;` or param name inside it never starts a param
+  expect(getFilenameFromContentDisposition('attachment; filename="a;filename*=utf-8\'\'evil.exe"')).toEqual('a;filename*=utf-8\'\'evil.exe')
+  expect(getFilenameFromContentDisposition('attachment; filename="a;filename*=utf-8\'\'evil.exe"; filename*=utf-8\'\'good.pdf')).toEqual('good.pdf')
+  expect(getFilenameFromContentDisposition('attachment; foo="; filename=evil.exe"; filename="good.pdf"')).toEqual('good.pdf')
+  expect(getFilenameFromContentDisposition('attachment; foo="\\"; filename=evil.exe"; filename="good.pdf"')).toEqual('good.pdf')
+
+  // the first occurrence of a param wins
+  expect(getFilenameFromContentDisposition('attachment; filename="first.txt"; filename="second.txt"')).toEqual('first.txt')
+  expect(getFilenameFromContentDisposition('attachment; filename*=utf-8\'\'first.txt; filename*=utf-8\'\'second.txt')).toEqual('first.txt')
+
+  // param names are case-insensitive and may be surrounded by whitespace
+  expect(getFilenameFromContentDisposition('attachment; FILENAME="a.txt"')).toEqual('a.txt')
+  expect(getFilenameFromContentDisposition('attachment; FileName*=UTF-8\'\'a.txt')).toEqual('a.txt')
+  expect(getFilenameFromContentDisposition('attachment ;  filename = "a.txt" ; size=1')).toEqual('a.txt')
+
+  // a param without `=` is not a filename
+  expect(getFilenameFromContentDisposition('attachment; filename; filename="a.txt"')).toEqual('a.txt')
+})
+
+it('getFilenameFromContentDisposition round-trips generateContentDisposition', () => {
+  const filenames = [
+    '',
+    'test.txt',
+    'invoice.pdf;filename*=UTF-8\'\'payload.exe;x',
+    'invoice.pdf"; filename*=UTF-8\'\'payload.exe; x="',
+    'invoice.pdf\\"; filename*=UTF-8\'\'payload.exe; x=\\"',
+    'a;filename*=b',
+    'a; filename=b',
+    'a;filename=b"',
+    '"quoted"',
+    '\\',
+    'a\\',
+    ';',
+    '=',
+    '\'\'',
+    'utf-8\'\'a.txt',
+    '!@#$%^%^&*()\'".txt',
+    'テンプレ\'";ート.txt',
+    '  spaced  ',
+  ]
+
+  for (const filename of filenames) {
+    expect(getFilenameFromContentDisposition(generateContentDisposition(filename))).toEqual(filename)
+    expect(getFilenameFromContentDisposition(generateContentDisposition(filename, 'attachment'))).toEqual(filename)
+  }
 })
 
 describe('resolveStandardBodyHint', () => {

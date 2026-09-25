@@ -12,8 +12,39 @@ export function generateContentDisposition(filename: string, type: 'inline' | 'a
   return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
 }
 
+/**
+ * One match per `;` separated param: a name, then a quoted or a token value when a `=` follows,
+ * each skipping any malformed rest up to the next `;`. A quoted value is consumed whole, so a `;`
+ * or a param name inside it (like one in a file name) never starts a param of its own.
+ */
+const CONTENT_DISPOSITION_PARAM_REGEX = /;?\s*([^\s;=]*)\s*(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|([^";]*)(?:"[^;]*)?)|[^;=][^;]*)?/gy
+
+/**
+ * Params of a content-disposition header by lowercased name, the first occurrence wins.
+ * An empty token is no value (`undefined`), an empty quoted string is an empty value.
+ */
+function parseContentDispositionParams(contentDisposition: string): Map<string, string | undefined> {
+  const params = new Map<string, string | undefined>()
+
+  for (const [, name = '', quoted, token] of contentDisposition.matchAll(CONTENT_DISPOSITION_PARAM_REGEX)) {
+    // neither value group took part: no `=`, so this is the disposition type or a bare word
+    if (quoted === undefined && token === undefined) {
+      continue
+    }
+
+    const key = name.toLowerCase()
+
+    if (!params.has(key)) {
+      params.set(key, quoted !== undefined ? quoted.replace(/\\(.)/g, '$1') : token?.trim() || undefined)
+    }
+  }
+
+  return params
+}
+
 export function getFilenameFromContentDisposition(contentDisposition: string): string | undefined {
-  const extValue = contentDisposition.match(/(?:^|;)\s*filename\*=([^;]*)/i)?.[1]?.trim()
+  const params = parseContentDispositionParams(contentDisposition)
+  const extValue = params.get('filename*')
 
   // RFC 8187 ext-value: charset "'" [ language ] "'" value-chars
   const extValueMatch = extValue?.match(/^([^']*)'[^']*'(.*)$/)
@@ -31,13 +62,7 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
     return safeDecodeURIComponent(extValue)
   }
 
-  const filenameMatch = contentDisposition.match(/(?:^|;)\s*filename=(?:"((?:\\.|[^"\\])*)"|([^";]*))/i)
-
-  if (filenameMatch?.[1] !== undefined) {
-    return filenameMatch[1].replace(/\\(.)/g, '$1')
-  }
-
-  return filenameMatch?.[2]?.trim() || undefined
+  return params.get('filename')
 }
 
 export function flattenStandardHeader(header: string | readonly string[] | undefined): string | undefined {
