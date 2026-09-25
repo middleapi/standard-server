@@ -46,7 +46,7 @@ export async function sendStandardResponse(
 
     const [headers, setCookies] = toLambdaHeaders(resHeaders)
 
-    // sends the metadata prelude (status, headers, cookies) and
+    // arms the metadata prelude (status, headers, cookies) and
     // returns the stream the body should be written to
     const res = awslambda.HttpResponseStream.from(responseStream, {
       statusCode: standardResponse.status,
@@ -56,6 +56,10 @@ export async function sendStandardResponse(
 
     res.once('error', reject)
     res.once('close', resolve)
+
+    // The runtime only sends the armed prelude ahead of the first `write` call:
+    // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
+    res.write('')
 
     if (resBody === undefined) {
       // NOTE: Lambda functions don't allow passing undefined to `res.end`
