@@ -8,7 +8,39 @@ import {
   encodeEventStreamMessage,
   encodeEventStreamMessageComments,
   encodeEventStreamMessageData,
+  isEventStreamMessageComment,
+  isEventStreamMessageId,
+  isEventStreamMessageRetry,
 } from './encoder'
+
+describe('predicates', () => {
+  it('accept valid values', () => {
+    expect(isEventStreamMessageId('')).toBe(true)
+    expect(isEventStreamMessageId('123')).toBe(true)
+    expect(isEventStreamMessageComment('hi')).toBe(true)
+    expect(isEventStreamMessageRetry(0)).toBe(true)
+    expect(isEventStreamMessageRetry(10000)).toBe(true)
+  })
+
+  it('reject strings containing line breaks', () => {
+    for (const lineBreak of ['\n', '\r', '\r\n']) {
+      expect(isEventStreamMessageId(`hi${lineBreak}`)).toBe(false)
+      expect(isEventStreamMessageComment(`hi${lineBreak}`)).toBe(false)
+    }
+  })
+
+  it('reject non-integer or negative retry values', () => {
+    for (const retry of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      expect(isEventStreamMessageRetry(retry)).toBe(false)
+    }
+  })
+
+  it('reject wrong types', () => {
+    expect(isEventStreamMessageId(123)).toBe(false)
+    expect(isEventStreamMessageComment(undefined)).toBe(false)
+    expect(isEventStreamMessageRetry('3000')).toBe(false)
+  })
+})
 
 describe('assertions', () => {
   it('accept values without line breaks', () => {

@@ -1,5 +1,5 @@
 import type { ClientPeerSendMessage, PeerCancelMessage, PeerEventStreamMessage, PeerMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
-import { isStandardHeaders, isStandardMethod, isStandardStatus, isStandardUrl } from '@standard-server/core'
+import { isEventStreamMessageComment, isEventStreamMessageId, isEventStreamMessageRetry, isStandardHeaders, isStandardMethod, isStandardStatus, isStandardUrl } from '@standard-server/core'
 import { isTypescriptObject } from '@standard-server/shared'
 
 export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
@@ -75,7 +75,7 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
     return false
   }
 
-  if (maybe.json.id !== undefined && typeof maybe.json.id !== 'string') {
+  if (maybe.json.id !== undefined && !isEventStreamMessageId(maybe.json.id)) {
     return false
   }
 
@@ -83,13 +83,13 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
     return false
   }
 
-  if (maybe.json.retry !== undefined && !Number.isFinite(maybe.json.retry)) {
+  if (maybe.json.retry !== undefined && !isEventStreamMessageRetry(maybe.json.retry)) {
     return false
   }
 
   if (
     maybe.json.comments !== undefined
-    && !(Array.isArray(maybe.json.comments) && maybe.json.comments.every(v => typeof v === 'string'))
+    && !(Array.isArray(maybe.json.comments) && maybe.json.comments.every(isEventStreamMessageComment))
   ) {
     return false
   }
