@@ -11,10 +11,15 @@ const DELIMITER = new Uint8Array(8)
 
 const fromSpy = vi.fn((responseStream: HttpResponseStream, metadata: Record<string, unknown>) => {
   // mimics what the lambda runtime does: send the metadata prelude
-  // ahead of the body on the very same stream
+  // ahead of the first `write` call only, `end(chunk)` bypasses it
   responseStream.setContentType('application/vnd.awslambda.http-integration-response')
-  responseStream.write(JSON.stringify(metadata))
-  responseStream.write(DELIMITER)
+  const write = responseStream.write.bind(responseStream)
+  responseStream.write = (chunk: unknown) => {
+    responseStream.write = write
+    write(JSON.stringify(metadata))
+    write(DELIMITER)
+    return write(chunk)
+  }
   return responseStream
 })
 
@@ -156,6 +161,23 @@ describe('sendStandardResponse', () => {
     })
 
     expect(bodyOf(responseStream)).toBe('chunk1chunk2')
+    expect(responseStream.writableEnded).toBe(true)
+  })
+
+  it('chunked (empty)', async () => {
+    const responseStream = createResponseStream()
+
+    await sendStandardResponse(responseStream, {
+      status: 200,
+      headers: {},
+      body: new Blob([]),
+    })
+
+    expect(metadataOf(responseStream)).toMatchObject({
+      statusCode: 200,
+    })
+
+    expect(bodyOf(responseStream)).toBe('')
     expect(responseStream.writableEnded).toBe(true)
   })
 

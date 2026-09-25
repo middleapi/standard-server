@@ -105,7 +105,8 @@ export interface AwsLambdaGlobal {
 
   HttpResponseStream: {
     /**
-     * Sends the metadata prelude and returns the stream to write the body to.
+     * Arms the metadata prelude and returns the stream to write the body to.
+     * The prelude is only sent ahead of the first `write` call, never by `end(chunk)`.
      */
     from(
       responseStream: HttpResponseStream,
