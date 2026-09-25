@@ -1,10 +1,9 @@
 import { AbortError } from './error'
 
+const COMPACT_THRESHOLD = 1024
+
 export class Queue<T> {
-  /**
-   * Buffered items live at `items[head..]`. Advancing `head` instead of calling `Array#shift()`
-   * keeps pulls O(1); `shift()` becomes O(n) on large arrays, making a backlog drain quadratic.
-   */
+  /** Items before `head` have already been pulled. */
   private readonly items: (T | undefined)[] = []
   private head = 0
   private readonly pendingPulls: (readonly [resolve: (item: T) => void, reject: (err: unknown) => void])[] = []
@@ -39,13 +38,15 @@ export class Queue<T> {
       const item = this.items[this.head] as T
       this.items[this.head++] = undefined // release the reference so pulled items can be GC'd
 
-      if (this.head === this.items.length) {
-        this.items.length = 0
-        this.head = 0
-      }
-      else if (this.head >= 1024 && this.head * 2 >= this.items.length) {
-        // Compact once at least half the array is consumed, so the O(n) splice is amortized O(1) per pull.
-        this.items.splice(0, this.head)
+      // Compact once at least half the array is consumed, so the O(n) splice is amortized O(1) per pull.
+      if (this.head >= COMPACT_THRESHOLD && this.head * 2 >= this.items.length) {
+        if (this.head === this.items.length) {
+          this.items.length = 0
+        }
+        else {
+          this.items.splice(0, this.head)
+        }
+
         this.head = 0
       }
 

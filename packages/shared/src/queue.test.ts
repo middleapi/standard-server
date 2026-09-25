@@ -25,13 +25,17 @@ describe('queue', () => {
   it('keeps order across internal compaction', async () => {
     const queue = new Queue<number>()
 
-    for (let i = 0; i < 3000; i++) {
+    // Splices the pulled half at 1024, then fully drains the remaining 1024.
+    for (let i = 0; i < 2048; i++) {
       queue.push(i)
     }
 
-    for (let i = 0; i < 3000; i++) {
+    for (let i = 0; i < 2048; i++) {
       expect(await queue.pull()).toBe(i)
     }
+
+    queue.push(2048)
+    expect(await queue.pull()).toBe(2048)
   })
 
   it('resolves a pending pull on push', async () => {
