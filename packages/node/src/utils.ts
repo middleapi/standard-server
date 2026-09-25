@@ -14,6 +14,9 @@ import { IncomingMessage } from 'node:http'
  * after cancel. The per-chunk copy detaches chunks from Node's pooled `Buffer`
  * memory.
  *
+ * Fixed upstream in Node 26.10 (nodejs/node#62773); switch back to
+ * `Readable.toWeb` once every supported Node release has the fix.
+ *
  * Cancel destroys the source, except http1 server requests: they share their
  * socket with the response, so destroying them would kill an in-flight
  * response. They are abandoned instead — stalled by backpressure and reclaimed
