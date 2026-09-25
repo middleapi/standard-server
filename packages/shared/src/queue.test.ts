@@ -22,16 +22,17 @@ describe('queue', () => {
     expect(await queue.pull()).toBe('a')
   })
 
-  it('keeps order across internal compaction', async () => {
-    const queue = new Queue<number>()
+  it('keeps order across internal compaction, including undefined items', async () => {
+    const queue = new Queue<number | undefined>()
+    const value = (i: number) => i % 3 === 0 ? undefined : i
 
     // Splices the pulled half at 1024, then fully drains the remaining 1024.
     for (let i = 0; i < 2048; i++) {
-      queue.push(i)
+      queue.push(value(i))
     }
 
     for (let i = 0; i < 2048; i++) {
-      expect(await queue.pull()).toBe(i)
+      expect(await queue.pull()).toBe(value(i))
     }
 
     queue.push(2048)
