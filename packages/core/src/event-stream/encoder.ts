@@ -8,8 +8,20 @@ function containsEventStreamLineBreak(value: string): boolean {
   return EVENT_STREAM_LINE_ENDING_REGEX.test(value)
 }
 
+export function isEventStreamMessageId(maybe: unknown): maybe is string {
+  return typeof maybe === 'string' && !containsEventStreamLineBreak(maybe)
+}
+
+export function isEventStreamMessageRetry(maybe: unknown): maybe is number {
+  return Number.isInteger(maybe) && (maybe as number) >= 0
+}
+
+export function isEventStreamMessageComment(maybe: unknown): maybe is string {
+  return typeof maybe === 'string' && !containsEventStreamLineBreak(maybe)
+}
+
 export function assertEventStreamMessageId(id: string): void {
-  if (containsEventStreamLineBreak(id)) {
+  if (!isEventStreamMessageId(id)) {
     throw new EventStreamEncoderError('Event\'s id must not contain a carriage return or newline character')
   }
 }
@@ -21,13 +33,13 @@ export function assertEventStreamMessageName(event: string): void {
 }
 
 export function assertEventStreamMessageRetry(retry: number): void {
-  if (!Number.isInteger(retry) || retry < 0) {
+  if (!isEventStreamMessageRetry(retry)) {
     throw new EventStreamEncoderError('Event\'s retry must be a integer and >= 0')
   }
 }
 
 export function assertEventStreamMessageComment(comment: string): void {
-  if (containsEventStreamLineBreak(comment)) {
+  if (!isEventStreamMessageComment(comment)) {
     throw new EventStreamEncoderError('Event\'s comment must not contain a carriage return or newline character')
   }
 }

@@ -132,7 +132,11 @@ describe('isPeerEventStreamMessage', () => {
     ['non-string id', { id: 42 }],
     ['non-string event', { event: true }],
     ['non-finite retry', { retry: Infinity }],
+    ['negative retry', { retry: -1 }],
+    ['fractional retry', { retry: 1.5 }],
+    ['id with line break', { id: 'a\nb' }],
     ['non-string-array comments', { comments: [1, 2] }],
+    ['comment with line break', { comments: ['ok', 'a\rb'] }],
   ])('rejects %s', (_, json) => expect(isPeerEventStreamMessage(msg(json))).toBe(false))
 })
 
