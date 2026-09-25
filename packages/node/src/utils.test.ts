@@ -323,7 +323,7 @@ describe('toWebReadableStream', () => {
   /**
    * Below the 256 KiB flood chunk, so the consumer cancels on its first read
    * while the request is still streaming — the condition that crashes a bare
-   * `Readable.toWeb`.
+   * `Readable.toWeb` before Node 26.10.
    */
   const LIMIT = 64 * 1024
 
@@ -437,21 +437,19 @@ describe('toWebReadableStream', () => {
   }
 
   /**
-   * Boots a server that spools each request body via `wrap`, fires `iterations`
-   * aborted uploads at it, and reports how many completed plus any crashes.
-   * `stopOnCrash` ends the flood at the first crash.
+   * Boots a server that spools each request body via `toWebReadableStream`,
+   * fires `iterations` aborted uploads at it, and reports how many completed
+   * plus any crashes.
    */
   async function runUploadServer(
     kind: 'http1' | 'http2',
-    wrap: (req: Readable) => ReadableStream<Uint8Array>,
     iterations: number,
-    stopOnCrash = false,
   ): Promise<{ handled: number, crashes: Error[] }> {
     const tmpDir = await mkdtemp(path.join(tmpdir(), `toweb-${kind}-`))
     let handled = 0
 
     const listener = async (req: any, res: any): Promise<void> => {
-      await spoolUntilRejected(wrap(req), tmpDir)
+      await spoolUntilRejected(toWebReadableStream(req), tmpDir)
       handled++
       try {
         if (!res.headersSent) {
@@ -467,13 +465,10 @@ describe('toWebReadableStream', () => {
     const server = kind === 'http1' ? createServer(listener) : createHttp2Server(listener)
     const flood = kind === 'http1' ? floodAndAbortHttp1 : floodAndAbortHttp2
 
-    const crashes = await recordUncaught(async (crashes) => {
+    const crashes = await recordUncaught(async () => {
       await new Promise<void>(resolve => server.listen(0, resolve))
       const { port } = server.address() as AddressInfo
       for (let i = 0; i < iterations; i++) {
-        if (stopOnCrash && crashes.length) {
-          break
-        }
         await flood(port)
         await new Promise(resolve => setTimeout(resolve, 5))
       }
@@ -483,9 +478,6 @@ describe('toWebReadableStream', () => {
     await rm(tmpDir, { recursive: true, force: true })
     return { handled, crashes }
   }
-
-  const bare = (req: Readable): ReadableStream<Uint8Array> => Readable.toWeb(req) as ReadableStream<Uint8Array>
-  const wrapped = (req: Readable): ReadableStream<Uint8Array> => toWebReadableStream(req)
 
   it('converts a raw buffer stream and preserves its bytes as copies', async () => {
     const chunks = [Buffer.from('hello '), Buffer.from('world'), Buffer.alloc(1024, 7)]
@@ -524,29 +516,15 @@ describe('toWebReadableStream', () => {
     expect(source.destroyed).toBe(true) // cancellation still tears the source down
   })
 
-  it('lets a bare Readable.toWeb crash an aborted HTTP/1 upload (documents the bug)', async () => {
-    const { crashes } = await runUploadServer('http1', bare, 25, true)
-
-    expect(crashes.length).toBeGreaterThan(0)
-    expect(crashes[0]).toMatchObject({ code: 'ERR_INVALID_STATE' })
-  }, 30_000)
-
   it('keeps an aborted HTTP/1 upload from crashing the process', async () => {
-    const { handled, crashes } = await runUploadServer('http1', wrapped, 25)
+    const { handled, crashes } = await runUploadServer('http1', 25)
 
     expect(crashes).toEqual([])
     expect(handled).toBe(25)
   }, 30_000)
 
-  it('lets a bare Readable.toWeb crash an aborted HTTP/2 upload (documents the bug)', async () => {
-    const { crashes } = await runUploadServer('http2', bare, 25, true)
-
-    expect(crashes.length).toBeGreaterThan(0)
-    expect(crashes[0]).toMatchObject({ code: 'ERR_INVALID_STATE' })
-  }, 30_000)
-
   it('keeps an aborted HTTP/2 upload from crashing the process', async () => {
-    const { handled, crashes } = await runUploadServer('http2', wrapped, 25)
+    const { handled, crashes } = await runUploadServer('http2', 25)
 
     expect(crashes).toEqual([])
     expect(handled).toBe(25)
