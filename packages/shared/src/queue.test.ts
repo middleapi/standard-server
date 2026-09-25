@@ -22,6 +22,49 @@ describe('queue', () => {
     expect(await queue.pull()).toBe('a')
   })
 
+  it('keeps order across internal compaction of a large backlog', async () => {
+    const queue = new Queue<number | undefined>()
+    const pulled: (number | undefined)[] = []
+    let next = 0
+
+    // Keep the buffer non-empty while pulling so it never fully drains between batches.
+    for (let round = 0; round < 5; round++) {
+      for (let i = 0; i < 3000; i++) {
+        queue.push(next % 7 === 0 ? undefined : next)
+        next++
+      }
+
+      for (let i = 0; i < 2500; i++) {
+        pulled.push(await queue.pull())
+      }
+    }
+
+    queue.close()
+
+    while (pulled.length < next) {
+      pulled.push(await queue.pull())
+    }
+
+    await expect(queue.pull()).rejects.toThrow(AbortError)
+    expect(pulled).toEqual(Array.from({ length: next }, (_, i) => i % 7 === 0 ? undefined : i))
+  })
+
+  it('abort after a partial drain discards the remaining items', async () => {
+    const queue = new Queue<number>()
+
+    for (let i = 0; i < 5000; i++) {
+      queue.push(i)
+    }
+
+    for (let i = 0; i < 3000; i++) {
+      expect(await queue.pull()).toBe(i)
+    }
+
+    queue.abort()
+
+    await expect(queue.pull()).rejects.toThrow('Queue was aborted.')
+  })
+
   it('resolves a pending pull on push', async () => {
     const queue = new Queue<string>()
 

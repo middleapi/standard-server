@@ -1,7 +1,12 @@
 import { AbortError } from './error'
 
 export class Queue<T> {
-  private readonly items: T[] = []
+  /**
+   * Buffered items live at `items[head..]`. Advancing `head` instead of calling `Array#shift()`
+   * keeps pulls O(1); `shift()` becomes O(n) on large arrays, making a backlog drain quadratic.
+   */
+  private readonly items: (T | undefined)[] = []
+  private head = 0
   private readonly pendingPulls: (readonly [resolve: (item: T) => void, reject: (err: unknown) => void])[] = []
   private closed: undefined | { reason: unknown }
 
@@ -30,8 +35,21 @@ export class Queue<T> {
    * @throws when the queue is closed or aborted. Note that buffered items can still be pulled after close until the buffer is drained.
    */
   async pull(): Promise<T> {
-    if (this.items.length > 0) {
-      return this.items.shift() as T
+    if (this.head < this.items.length) {
+      const item = this.items[this.head] as T
+      this.items[this.head++] = undefined // release the reference so pulled items can be GC'd
+
+      if (this.head === this.items.length) {
+        this.items.length = 0
+        this.head = 0
+      }
+      else if (this.head >= 1024 && this.head * 2 >= this.items.length) {
+        // Compact once at least half the array is consumed, so the O(n) splice is amortized O(1) per pull.
+        this.items.splice(0, this.head)
+        this.head = 0
+      }
+
+      return item
     }
 
     if (this.closed) {
@@ -66,6 +84,7 @@ export class Queue<T> {
   abort(reason?: unknown): void {
     reason ??= new AbortError('Queue was aborted.')
     this.items.length = 0
+    this.head = 0
     this.close(reason)
   }
 }
