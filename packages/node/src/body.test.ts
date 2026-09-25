@@ -547,6 +547,21 @@ describe('toNodeHttpBody', () => {
     expect(generateContentDispositionSpy).toHaveBeenCalledWith('foo.pdf')
   })
 
+  it('file with undefined name (Bun compatibility)', async () => {
+    // Bun returns `undefined` for an empty File name
+    const file = new File(['foo'], '', { type: 'application/pdf' })
+    Object.defineProperty(file, 'name', { value: undefined })
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toNodeHttpBody(file, baseHeaders, {})
+
+    expect(body).toBeInstanceOf(Readable)
+    expect(headers['content-disposition']).toBe('inline; filename="__mocked__"')
+    expect(generateContentDispositionSpy).toHaveBeenCalledTimes(1)
+    expect(generateContentDispositionSpy).toHaveBeenCalledWith('')
+  })
+
   it('event stream', async () => {
     async function* gen() {
       yield 123
