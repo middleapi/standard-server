@@ -23,7 +23,7 @@ export async function toStandardBody(
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
   // body's already parsed by upstream framework like express, ...
-  if (req.body !== undefined) {
+  if (req.body !== undefined && !req.readable) {
     return req.body
   }
 
