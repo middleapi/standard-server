@@ -4,6 +4,7 @@ import type { NodeHttpRequest } from './types'
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
 import { Readable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
@@ -151,7 +152,9 @@ describe('toStandardBody', () => {
       let standardBody: StandardBody = {} as any
 
       await request(async (req: IncomingMessage, res: ServerResponse) => {
-      // @ts-expect-error fake body is parsed
+        // fake an upstream parser: consume the stream, then assign the parsed body
+        await text(req)
+        // @ts-expect-error fake body is parsed
         req.body = { value: 123 }
         standardBody = await toStandardBody(req)
         res.end()
@@ -161,6 +164,34 @@ describe('toStandardBody', () => {
         .send(Buffer.from('foo'))
 
       expect(standardBody).toEqual({ value: 123 })
+    })
+
+    // body-parser 1.x (express 4) assigns `{}` to every request, even the ones it leaves unread
+    it('ignore body assigned without consuming the stream', async () => {
+      let standardBody: any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        // @ts-expect-error fake body is assigned
+        req.body = {}
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.from('foo'))
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(await standardBody.text()).toBe('foo')
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        // @ts-expect-error fake body is assigned
+        req.body = {}
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .get('/')
+
+      expect(standardBody).toBe(undefined)
     })
   })
 

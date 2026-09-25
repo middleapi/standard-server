@@ -26,6 +26,8 @@ const PARALLEL_THRESHOLD = 150
 describe.each([
   ['expressjs', () => createExpressjsClientServerTest()],
   ['expressjs-body-parser', () => createExpressjsClientServerTest({ bodyParser: true })],
+  ['expressjs4', () => createExpressjsClientServerTest({ version: 4 })],
+  ['expressjs4-body-parser', () => createExpressjsClientServerTest({ version: 4, bodyParser: true })],
   ['inprogress', createInprogressClientServerTest],
   ['inprogress-fetch', createInprogressFetchClientServerTest],
   // ['h3-node-handler', createH3NodeHandlerClientServerTest],

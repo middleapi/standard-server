@@ -9,6 +9,7 @@ export type NodeHttpRequest = (IncomingMessage | Http2ServerRequest) & {
 
   /**
    * Body might already parsed by upstream framework like express.js, ...
+   * Only used once the request stream has been consumed.
    */
   body?: unknown
 }
