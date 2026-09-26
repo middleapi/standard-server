@@ -37,6 +37,11 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> implement
       try {
         const result = await next()
 
+        // the consumer stopped reading (e.g. `return()`) while this call was waiting
+        if (this.isDone) {
+          return { done: true, value: undefined as any }
+        }
+
         if (result.done) {
           this.isDone = true
         }
@@ -44,6 +49,11 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> implement
         return result
       }
       catch (error) {
+        // the consumer stopped reading (e.g. `return()`) while this call was waiting
+        if (this.isDone) {
+          return { done: true, value: undefined as any }
+        }
+
         errorRef = { value: error }
         this.isDone = true
 

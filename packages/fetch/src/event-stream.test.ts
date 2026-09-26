@@ -1,5 +1,5 @@
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { AbortError, isAsyncIteratorObject, sleep } from '@standard-server/shared'
+import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 beforeEach(() => {
@@ -160,8 +160,8 @@ describe('toAsyncIteratorObject', () => {
       return true
     })
 
-    // should throw if .return is called while waiting for .next()
-    const nextPromise = expect(generator.next()).rejects.toBeInstanceOf(AbortError)
+    // should end if .return is called while waiting for .next()
+    const nextPromise = expect(generator.next()).resolves.toEqual({ done: true, value: undefined })
     await vi.advanceTimersByTimeAsync(0)
 
     await generator.return(undefined)

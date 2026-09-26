@@ -246,7 +246,7 @@ describe('serverPeer', () => {
         expect(success).toBeTruthy()
       })
 
-      it('rejects a pending next() when the handler stops reading event-stream', async () => {
+      it('ends a pending next() when the handler stops reading event-stream', async () => {
         const { handler, box } = deferredHandler()
 
         const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
@@ -260,7 +260,7 @@ describe('serverPeer', () => {
         await sleep(0) // let next() start waiting for a message
         await iter.return?.()
 
-        await expect(pending).rejects.toBeInstanceOf(AbortError)
+        await expect(pending).resolves.toEqual({ value: undefined, done: true })
         await expect(iter.next()).resolves.toEqual({ value: undefined, done: true })
         expect(send).toHaveBeenCalledWith({ id: '1', kind: 'stream/cancel' })
 
