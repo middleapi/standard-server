@@ -32,6 +32,31 @@ it('withEventMeta only proxy when make sense', () => {
   expect(withEventMeta(data, { id: undefined })).toBe(data)
 })
 
+it('withEventMeta keeps the container visible shape', () => {
+  const data = { value: 123 }
+  const applied = withEventMeta(data, { id: '123' })
+  expect(applied.constructor).toBe(Object)
+  expect(applied).toStrictEqual({ value: 123 })
+
+  class Foo {
+    static bar = 'bar'
+    #value = 123
+    getValue() {
+      return this.#value
+    }
+  }
+  const foo = withEventMeta(new Foo(), { id: '123' })
+  expect(foo.constructor).toBe(Foo)
+  expect((foo.constructor as typeof Foo).bar).toBe('bar')
+  expect(foo).toBeInstanceOf(Foo)
+  expect(foo.getValue()).toBe(123)
+
+  const map = withEventMeta(new Map([['key', 'value']]), { id: '123' })
+  expect(map.constructor).toBe(Map)
+  expect(map.get('key')).toBe('value')
+  expect(map.size).toBe(1)
+})
+
 it('getEventMeta remove unknown meta', () => {
   const data = { value: 123, meta: undefined }
   const meta = { id: '123', unknown: 'value1' }

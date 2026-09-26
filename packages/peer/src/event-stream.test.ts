@@ -33,6 +33,7 @@ describe('toAsyncIteratorObject', () => {
     queue.push({ id: '1', kind: 'event-stream', json: { event: 'close', data: undefined } })
 
     const r1 = await iter.next()
+    expect(r1.value).toStrictEqual({ val: 42 })
     const [data, meta] = unwrapEvent(r1.value)
     expect(data).toEqual({ val: 42 })
     expect(meta).toEqual({ id: 'ev-1' })
