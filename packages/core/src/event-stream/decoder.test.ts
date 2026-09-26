@@ -158,6 +158,20 @@ describe('eventStreamDecoder', () => {
       }
     })
 
+    it('emits nothing for a stream of only blank lines', () => {
+      expect(feedAll(['\n\n\n'])).toEqual([])
+      expect(feedAll(['\r', '\n', '\r\r\n', '', '\n'])).toEqual([])
+    })
+
+    // Unlike the spec, comment-only messages are emitted (e.g. keep-alives), so
+    // skipping blank lines must not skip them.
+    it('emits comment-only messages surrounded by extra blank lines', () => {
+      expect(feedAll(['\n\n: ping\n\n\n', ': ', 'pong\r\n\r\n\r\n'])).toEqual([
+        { comments: ['ping'] },
+        { comments: ['pong'] },
+      ])
+    })
+
     it('decodes a large message fed in many small chunks', () => {
       const value = 'x'.repeat(64 * 1024)
       const stream = `event: big\ndata: ${value}\ndata: ${value}\n\n`
@@ -220,7 +234,7 @@ describe('eventStreamDecoder', () => {
       ])
     })
 
-    it('drops the LF of a CRLF delimiter split across an empty chunk', () => {
+    it('ignores blank lines after a delimiter across an empty chunk', () => {
       const events = feedAll([
         'data: first\n\r',
         '',
@@ -268,6 +282,20 @@ describe('eventStreamDecoder', () => {
 
       expect(events).toEqual([
         { event: 'message', data: 'hello1\nworld' },
+      ])
+    })
+
+    it('throws when extra blank lines are followed by an incomplete message', () => {
+      const events: EventStreamMessage[] = []
+      const decoder = new EventStreamDecoder(event => events.push(event))
+
+      decoder.feed('data: hello\n\n\n\r')
+      decoder.feed('\n\rdata: incomplete\n')
+
+      expect(() => decoder.end()).toThrowError('Event Stream ended before complete')
+
+      expect(events).toEqual([
+        { data: 'hello' },
       ])
     })
   })

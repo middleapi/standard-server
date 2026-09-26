@@ -95,7 +95,9 @@ describe('toAsyncIteratorObject', () => {
   it('with extra blank lines', async () => {
     const stream = new ReadableStream<string>({
       async pull(controller) {
-        controller.enqueue('\nevent: message\ndata: {"order": 1}\n\n\n')
+        controller.enqueue('\n: ping\n\n\n')
+        controller.enqueue('event: message\ndata: {"order": 1}\n\n\n')
+        controller.enqueue('\r\n: ping\r\n\r\n\r\n')
         controller.enqueue('event: message\ndata: {"order": 2}\n\n\n')
         controller.close()
       },
