@@ -1,5 +1,5 @@
 import { encodeEventStreamMessage, ErrorEvent, EventStreamDecoderStream, getEventMeta, unwrapEvent, withEventMeta } from '@standard-server/core'
-import { AbortError, AsyncIteratorClass, isTypescriptObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
+import { AsyncIteratorClass, isTypescriptObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 
 export function toAsyncIteratorObject(
   stream: ReadableStream<Uint8Array<ArrayBuffer>> | null,
@@ -9,7 +9,6 @@ export function toAsyncIteratorObject(
     .pipeThrough(new EventStreamDecoderStream())
 
   const reader = eventStream?.getReader()
-  let isCancelled = false
 
   return new AsyncIteratorClass(async () => {
     while (true) {
@@ -20,22 +19,11 @@ export function toAsyncIteratorObject(
       const { done, value } = await reader.read()
 
       /**
-       * Handle stream completion scenarios:
-       *
-       * 1. If the reader is cancelled while waiting for the next value,
-       *    reader.read() will resolve as { done: true, value: undefined }.
-       *    However, this behavior is unreliable and we should only resolve
-       *    a value when the sender explicitly indicates completion.
-       *
-       * 2. The only implicit behavior we allow is when the sender successfully
-       *    closes the stream without sending a 'close' event - in this case,
-       *    we resolve with { done: true, value: undefined }.
+       * The sender closed the stream without sending a 'close' event.
+       * A read cancelled by `return()` also ends here, and AsyncIteratorClass
+       * resolves it as done either way.
        */
       if (done) {
-        if (isCancelled) {
-          throw new AbortError('Stream was cancelled')
-        }
-
         return { done: true, value: undefined }
       }
 
@@ -69,11 +57,7 @@ export function toAsyncIteratorObject(
         }
       }
     }
-  }, async (state) => {
-    if (state.kind === 'cancelled') {
-      isCancelled = true
-    }
-
+  }, async () => {
     await reader?.cancel()
   })
 }

@@ -1,4 +1,5 @@
 import { AsyncIteratorClass, isAsyncIteratorObject } from './iterator'
+import { promiseWithResolvers } from './promise'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -24,6 +25,12 @@ describe('asyncIteratorClass', () => {
   const next = vi.fn()
   const cleanup = vi.fn()
   let iterator: AsyncGenerator
+
+  // how the underlying call settles after the consumer has stopped reading
+  const lateSettles: [string, (deferred: ReturnType<typeof promiseWithResolvers<unknown>>) => void][] = [
+    ['resolves', deferred => deferred.resolve({ done: false, value: 42 })],
+    ['rejects', deferred => deferred.reject(new Error('Late'))],
+  ]
 
   beforeEach(() => {
     next.mockReset()
@@ -126,6 +133,20 @@ describe('asyncIteratorClass', () => {
       expect(next).toHaveBeenCalledTimes(0)
     })
 
+    it.each(lateSettles)('should end a waiting next() when its call %s after return()', async (_, settle) => {
+      const deferred = promiseWithResolvers<unknown>()
+      next.mockReturnValueOnce(deferred.promise)
+
+      const pending = iterator.next()
+      await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
+
+      await iterator.return(undefined)
+      settle(deferred)
+
+      await expect(pending).resolves.toEqual({ done: true, value: undefined })
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+
     it('should call cleanup({ kind: cancelled })', async () => {
       await Promise.all([
         iterator.return('done'),
@@ -143,6 +164,22 @@ describe('asyncIteratorClass', () => {
       const error = new Error('Forced error')
       await expect(iterator.throw(error)).rejects.toThrow(error)
       expect(next).toHaveBeenCalledTimes(0)
+    })
+
+    it.each(lateSettles)('should end a waiting next() when its call %s after throw()', async (_, settle) => {
+      const deferred = promiseWithResolvers<unknown>()
+      next.mockReturnValueOnce(deferred.promise)
+
+      const pending = iterator.next()
+      await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
+
+      const error = new Error('Forced error')
+      await expect(iterator.throw(error)).rejects.toBe(error)
+      settle(deferred)
+
+      // like a native async generator, only the caller of throw() sees the error
+      await expect(pending).resolves.toEqual({ done: true, value: undefined })
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled', error })
     })
 
     it('should call cleanup({ kind: cancelled, reason })', async () => {

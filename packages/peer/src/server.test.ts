@@ -246,6 +246,28 @@ describe('serverPeer', () => {
         expect(success).toBeTruthy()
       })
 
+      it('ends a pending next() when the handler stops reading event-stream', async () => {
+        const { handler, box } = deferredHandler()
+
+        const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
+        const promise = peer.message(msg, handler)
+
+        await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+        const request = handler.mock.calls[0]![0]
+        const iter = await request.resolveBody() as AsyncIterator<unknown>
+
+        const pending = iter.next()
+        await sleep(0) // let next() start waiting for a message
+        await iter.return?.()
+
+        await expect(pending).resolves.toEqual({ value: undefined, done: true })
+        await expect(iter.next()).resolves.toEqual({ value: undefined, done: true })
+        expect(send).toHaveBeenCalledWith({ id: '1', kind: 'stream/cancel' })
+
+        box.resolve(jsonResponse())
+        await promise
+      })
+
       it('asyncIterator error if receive cancel message', async () => {
         const { handler, box } = deferredHandler()
 
@@ -439,6 +461,27 @@ describe('serverPeer', () => {
           .filter((message): message is PeerStreamCancelMessage => message?.kind === 'stream/cancel')
         expect(cancelMsgs.length).toBe(1)
         expect(cancelMsgs[0]!.id).toBe('1')
+      })
+
+      it('settles a pending read when the handler stops reading octet-stream', async () => {
+        const { handler, box } = deferredHandler()
+
+        const msg = makeRequestMessage({ headers: { 'standard-server': 'octet-stream', 'content-type': 'application/octet-stream' } })
+        const promise = peer.message(msg, handler)
+
+        await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+        const request = handler.mock.calls[0]![0]
+        const body = await request.resolveBody() as ReadableStream<Uint8Array>
+        const reader = body.getReader()
+
+        const pending = reader.read()
+        await reader.cancel()
+
+        await expect(pending).resolves.toEqual({ value: undefined, done: true })
+        expect(send).toHaveBeenCalledWith({ id: '1', kind: 'stream/cancel' })
+
+        box.resolve(jsonResponse())
+        await promise
       })
 
       it('readableStream error if receive cancel message', async () => {
