@@ -29,7 +29,7 @@ describe('toAsyncIteratorObject', () => {
 
     expect(await generator.next()).toSatisfy(({ done, value }) => {
       expect(done).toEqual(false)
-      expect(value).toEqual({ order: 1 })
+      expect(value).toStrictEqual({ order: 1 })
       expect(getEventMeta(value)).toEqual({ id: 'id-1', retry: 10000 })
 
       return true
@@ -37,7 +37,7 @@ describe('toAsyncIteratorObject', () => {
 
     expect(await generator.next()).toSatisfy(({ done, value }) => {
       expect(done).toEqual(false)
-      expect(value).toEqual({ order: 2 })
+      expect(value).toStrictEqual({ order: 2 })
       expect(getEventMeta(value)).toEqual({ id: 'id-2' })
 
       return true
@@ -45,7 +45,7 @@ describe('toAsyncIteratorObject', () => {
 
     expect(await generator.next()).toSatisfy(({ done, value }) => {
       expect(done).toEqual(true)
-      expect(value).toEqual({ order: 3 })
+      expect(value).toStrictEqual({ order: 3 })
       expect(getEventMeta(value)).toEqual({ id: 'id-3', retry: 30000 })
 
       return true

@@ -45,7 +45,7 @@ export function withEventMeta<T extends object>(container: T, meta: EventMeta): 
         return assertedMeta
       }
 
-      return getOrBind(target, prop)
+      return getOrBind(target, prop, { bind: prop !== 'constructor' })
     },
   })
 }
