@@ -315,6 +315,22 @@ describe('clientPeer', () => {
       expect(cancel).toHaveBeenCalledWith(error)
     })
 
+    it('cancels the request body with the abort reason when signal aborted during send', async () => {
+      const controller = new AbortController()
+      const error = new Error('aborted during send')
+      send.mockImplementation(async (message) => {
+        if (message.kind === 'request') {
+          controller.abort(error)
+        }
+      })
+      const cancel = vi.fn()
+
+      await expect(peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal }))).rejects.toBe(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    })
+
     it('rejects pending request on server abort', async () => {
       const { id, promise } = await requestAndGetId()
       await peer.message(makeCancelMessage(id))
@@ -524,6 +540,30 @@ describe('clientPeer', () => {
         expect(send).toHaveBeenCalledTimes(1)
         expect(send).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'request' }))
         expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'cancel' }))
+      })
+
+      it('does not send cancel message when transport fails after server already canceled the upload', async () => {
+        const transportError = new Error('transport failed')
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'event-stream') {
+            // server stops consuming the upload right as the transport breaks
+            await peer.message(makeStreamCancelMessage(message.id))
+            throw transportError
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: makeAsyncIter(['event1']) }),
+        )
+
+        await vi.waitFor(() => expect(send.mock.calls.some(([m]) => m.kind === 'event-stream')).toBe(true))
+        await sleep(1)
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        const response = await promise
+        expect(await response.resolveBody()).toBe('ok')
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
       })
     })
 
