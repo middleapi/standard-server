@@ -92,6 +92,22 @@ describe('toAsyncIteratorObject', () => {
     await expect(stream.getReader().closed).resolves.toBe(undefined)
   })
 
+  it('with extra blank lines', async () => {
+    const stream = new ReadableStream<string>({
+      async pull(controller) {
+        controller.enqueue('\nevent: message\ndata: {"order": 1}\n\n\n')
+        controller.enqueue('event: message\ndata: {"order": 2}\n\n\n')
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 1 } })
+    expect(await generator.next()).toEqual({ done: false, value: { order: 2 } })
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
+  })
+
   it('with empty stream', async () => {
     const generator = toAsyncIteratorObject(null)
     expect(generator).toSatisfy(isAsyncIteratorObject)
