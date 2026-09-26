@@ -2,7 +2,7 @@ export interface EventMeta {
   /**
    * Event identifier, sent back by the client as `lastEventId` for reconnection attempts.
    *
-   * @warning id cannot contain newline characters (`\n`)
+   * @warning id cannot contain carriage return (`\r`), newline (`\n`) or NULL (`\0`) characters
    */
   id?: string | undefined
 

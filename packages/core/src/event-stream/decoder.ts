@@ -1,4 +1,5 @@
 import type { EventStreamMessage } from './types'
+import { isEventStreamMessageId, isEventStreamMessageRetry } from './encoder'
 import { EventStreamDecoderError } from './error'
 
 // A line ending is CR, LF or CRLF.
@@ -7,6 +8,9 @@ const LINE_ENDING_REGEX = /\r\n|\r(?!\n)|\n/
 // the same delimiter, since the spec treats them as no-ops.
 const MESSAGE_DELIMITER_REGEX = /(?:\r\n|\r(?!\n)|\n){2,}/g
 const LEADING_LINE_ENDINGS_REGEX = /^[\r\n]+/
+
+// JS `\d` matches ASCII digits only, as the spec requires for retry.
+const ASCII_DIGITS_REGEX = /^\d+$/
 
 // Pending text never contains a blank line, so it ends in at most one line
 // ending ('\r\n'). A delimiter crossing a chunk boundary therefore starts
@@ -50,15 +54,18 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
         break
 
       case 'id':
-        message.id = value
+        // Per spec, an id containing U+0000 NULL is ignored and the previous id is kept.
+        if (isEventStreamMessageId(value)) {
+          message.id = value
+        }
         break
 
       case 'retry': {
-        const maybeInteger = Number.parseInt(value, 10)
+        const retry = Number.parseInt(value, 10)
 
-        // The round-trip check already rejects NaN, signs, padding and floats.
-        if (maybeInteger >= 0 && maybeInteger.toString() === value) {
-          message.retry = maybeInteger
+        // parseInt returns Infinity for 309+ digits, which withEventMeta would reject.
+        if (ASCII_DIGITS_REGEX.test(value) && isEventStreamMessageRetry(retry)) {
+          message.retry = retry
         }
         break
       }

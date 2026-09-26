@@ -29,6 +29,12 @@ describe('predicates', () => {
     }
   })
 
+  it('reject ids containing NULL', () => {
+    expect(isEventStreamMessageId('\0')).toBe(false)
+    expect(isEventStreamMessageId('a\0b')).toBe(false)
+    expect(isEventStreamMessageComment('a\0b')).toBe(true) // only ids are ignored by clients
+  })
+
   it('reject non-integer or negative retry values', () => {
     for (const retry of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
       expect(isEventStreamMessageRetry(retry)).toBe(false)
@@ -51,10 +57,10 @@ describe('assertions', () => {
     expect(() => assertEventStreamMessageRetry(10000)).not.toThrow()
   })
 
-  it('reject ids containing line breaks', () => {
-    for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => assertEventStreamMessageId(`hi${lineBreak}`))
-        .toThrow('Event\'s id must not contain a carriage return or newline character')
+  it('reject ids containing line breaks or NULL', () => {
+    for (const char of ['\n', '\r', '\r\n', '\0']) {
+      expect(() => assertEventStreamMessageId(`hi${char}`))
+        .toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
     }
   })
 
@@ -157,9 +163,9 @@ describe('encodeEventStreamMessage', () => {
   })
 
   it('rejects an invalid id', () => {
-    for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => encodeEventStreamMessage({ event: 'message', id: `hi${lineBreak}` }))
-        .toThrow('Event\'s id must not contain a carriage return or newline character')
+    for (const char of ['\n', '\r', '\r\n', '\0']) {
+      expect(() => encodeEventStreamMessage({ event: 'message', id: `hi${char}` }))
+        .toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
     }
   })
 
