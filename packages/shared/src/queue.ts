@@ -1,7 +1,11 @@
 import { AbortError } from './error'
 
+const COMPACT_THRESHOLD = 1024
+
 export class Queue<T> {
-  private readonly items: T[] = []
+  /** Items before `head` have already been pulled. */
+  private readonly items: (T | undefined)[] = []
+  private head = 0
   private readonly pendingPulls: (readonly [resolve: (item: T) => void, reject: (err: unknown) => void])[] = []
   private closed: undefined | { reason: unknown }
 
@@ -30,8 +34,23 @@ export class Queue<T> {
    * @throws when the queue is closed or aborted. Note that buffered items can still be pulled after close until the buffer is drained.
    */
   async pull(): Promise<T> {
-    if (this.items.length > 0) {
-      return this.items.shift() as T
+    if (this.head < this.items.length) {
+      const item = this.items[this.head] as T
+      this.items[this.head++] = undefined // release the reference so pulled items can be GC'd
+
+      // Compact once at least half the array is consumed, so the O(n) splice is amortized O(1) per pull.
+      if (this.head >= COMPACT_THRESHOLD && this.head * 2 >= this.items.length) {
+        if (this.head === this.items.length) {
+          this.items.length = 0
+        }
+        else {
+          this.items.splice(0, this.head)
+        }
+
+        this.head = 0
+      }
+
+      return item
     }
 
     if (this.closed) {
@@ -66,6 +85,7 @@ export class Queue<T> {
   abort(reason?: unknown): void {
     reason ??= new AbortError('Queue was aborted.')
     this.items.length = 0
+    this.head = 0
     this.close(reason)
   }
 }
