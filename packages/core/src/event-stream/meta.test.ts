@@ -9,8 +9,9 @@ it('get/withEventMeta', () => {
   expect(getEventMeta(data)).toEqual(undefined)
   expect(getEventMeta(1)).toEqual(undefined)
 
-  expect(() => withEventMeta(data, { id: '123\n' })).toThrow('Event\'s id must not contain a carriage return or newline character')
-  expect(() => withEventMeta(data, { id: '123\r' })).toThrow('Event\'s id must not contain a carriage return or newline character')
+  expect(() => withEventMeta(data, { id: '123\n' })).toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
+  expect(() => withEventMeta(data, { id: '123\r' })).toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
+  expect(() => withEventMeta(data, { id: '123\0' })).toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
   expect(() => withEventMeta(data, { retry: Number.NaN })).toThrow('Event\'s retry must be a integer and >= 0')
   expect(() => withEventMeta(data, { retry: 1.1 })).toThrow('Event\'s retry must be a integer and >= 0')
   expect(() => withEventMeta(data, { retry: -1 })).toThrow('Event\'s retry must be a integer and >= 0')

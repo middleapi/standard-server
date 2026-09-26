@@ -4,12 +4,15 @@ import { EventStreamEncoderError } from './error'
 const EVENT_STREAM_LINE_ENDING_REGEX = /\r\n|[\n\r]/
 const EVENT_STREAM_LINE_ENDING_GLOBAL_REGEX = /\r\n|[\n\r]/g
 
+// Per spec, clients ignore an id containing U+0000 NULL, so it would never reach them.
+const EVENT_STREAM_INVALID_ID_CHAR_REGEX = /[\r\n\0]/
+
 function containsEventStreamLineBreak(value: string): boolean {
   return EVENT_STREAM_LINE_ENDING_REGEX.test(value)
 }
 
 export function isEventStreamMessageId(maybe: unknown): maybe is string {
-  return typeof maybe === 'string' && !containsEventStreamLineBreak(maybe)
+  return typeof maybe === 'string' && !EVENT_STREAM_INVALID_ID_CHAR_REGEX.test(maybe)
 }
 
 export function isEventStreamMessageRetry(maybe: unknown): maybe is number {
@@ -22,7 +25,7 @@ export function isEventStreamMessageComment(maybe: unknown): maybe is string {
 
 export function assertEventStreamMessageId(id: string): void {
   if (!isEventStreamMessageId(id)) {
-    throw new EventStreamEncoderError('Event\'s id must not contain a carriage return or newline character')
+    throw new EventStreamEncoderError('Event\'s id must not contain a carriage return, newline or NULL character')
   }
 }
 

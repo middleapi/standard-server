@@ -93,17 +93,40 @@ describe('decodeEventStreamMessage', () => {
     })
   })
 
-  it('accepts only canonical non-negative integer retry values', () => {
-    expect(decodeEventStreamMessage('retry: 0\n\n')).toEqual({ retry: 0 })
+  it('ignores ids containing U+0000 NULL', () => {
+    expect(decodeEventStreamMessage('id: \0\n\n')).toEqual({})
+    expect(decodeEventStreamMessage('id: a\0b\n\n')).toEqual({})
+    expect(decodeEventStreamMessage('id: abc\0\n\n')).toEqual({})
 
-    expect(decodeEventStreamMessage('retry: hello\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: 1.5\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: -1\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: 1abc\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: Infinity\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: 010\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry: +10\n\n')).toEqual({})
-    expect(decodeEventStreamMessage('retry:  10\n\n')).toEqual({}) // extra space survives the single-space strip
+    // the previous id is kept, and a later valid id still applies
+    expect(decodeEventStreamMessage('id: 123\nid: a\0b\n\n')).toEqual({ id: '123' })
+    expect(decodeEventStreamMessage('id: a\0b\nid: 456\n\n')).toEqual({ id: '456' })
+
+    // NULL is only disallowed in ids
+    expect(decodeEventStreamMessage(': a\0b\nevent: a\0b\ndata: a\0b\n\n')).toEqual({
+      event: 'a\0b',
+      data: 'a\0b',
+      comments: ['a\0b'],
+    })
+  })
+
+  it('accepts retry values made only of ASCII digits', () => {
+    expect(decodeEventStreamMessage('retry: 0\n\n')).toEqual({ retry: 0 })
+    expect(decodeEventStreamMessage('retry: 000\n\n')).toEqual({ retry: 0 })
+    expect(decodeEventStreamMessage('retry: 010\n\n')).toEqual({ retry: 10 }) // base 10, not octal
+    expect(decodeEventStreamMessage(`retry: ${'0'.repeat(400)}7\n\n`)).toEqual({ retry: 7 })
+
+    // ' 10' has an extra space that survives the single-space strip; '\u0661\u0660' is Arabic-Indic digits
+    for (const value of ['', 'hello', '1.5', '-1', '+10', '1abc', '1e3', '0x10', 'Infinity', '\u0661\u0660', '10 ', ' 10']) {
+      expect(decodeEventStreamMessage(`retry: ${value}\n\n`), JSON.stringify(value)).toEqual({})
+    }
+
+    // an invalid retry keeps the previous one
+    expect(decodeEventStreamMessage('retry: 10\nretry: 1.5\n\n')).toEqual({ retry: 10 })
+  })
+
+  it('ignores retry values too large to parse to a finite number', () => {
+    expect(decodeEventStreamMessage(`retry: ${'9'.repeat(400)}\n\n`)).toEqual({})
   })
 })
 
