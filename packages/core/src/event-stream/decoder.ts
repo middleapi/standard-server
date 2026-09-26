@@ -3,15 +3,16 @@ import { EventStreamDecoderError } from './error'
 
 // A line ending is CR, LF or CRLF.
 const LINE_ENDING_REGEX = /\r\n|\r(?!\n)|\n/
-const MESSAGE_DELIMITER_REGEX = /(?:\r\n|\r(?!\n)|\n){2}/
-const MESSAGE_DELIMITER_GLOBAL_REGEX = /(?:\r\n|\r(?!\n)|\n){2}/g
+// A message ends at a blank line; any extra blank lines after it are part of
+// the same delimiter, since the spec treats them as no-ops.
+const MESSAGE_DELIMITER_REGEX = /(?:\r\n|\r(?!\n)|\n){2,}/g
+const LEADING_LINE_ENDINGS_REGEX = /^[\r\n]+/
 
-// A delimiter is at most 4 characters ('\r\n\r\n'), so one crossing a chunk
-// boundary must start within the last 3 characters of what came before.
-const MAX_DELIMITER_OVERLAP = 3
+// Pending text never contains a blank line, so it ends in at most one line
+// ending ('\r\n'). A delimiter crossing a chunk boundary therefore starts
+// within its last 2 characters.
+const MAX_DELIMITER_OVERLAP = 2
 
-const CR = 0x0D
-const LF = 0x0A
 const SPACE = 0x20
 
 export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
@@ -68,13 +69,12 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
 }
 
 export class EventStreamDecoder {
+  // The incomplete message: empty, or text that neither starts with a line
+  // ending nor contains a blank line.
   private pending: string[] = []
-  // Last up-to-3 characters of the pending buffer, prefixed to the next chunk
-  // so a delimiter straddling the boundary is still found.
+  // Last MAX_DELIMITER_OVERLAP characters of the pending text, prefixed to the
+  // next chunk so a delimiter straddling the boundary is still found.
   private tail: string = ''
-  // Set when a chunk-ending '\r' was already consumed as a line ending, so a
-  // leading '\n' in the next chunk is the second half of that CRLF pair.
-  private discardLeadingLF: boolean = false
 
   constructor(
     private readonly onEvent: (event: EventStreamMessage) => void,
@@ -82,54 +82,42 @@ export class EventStreamDecoder {
   }
 
   feed(chunk: string): void {
+    // Line endings between messages are extra blank lines (or the '\n' of a
+    // CRLF split after a delimiter), so they carry no content.
+    if (this.pending.length === 0) {
+      chunk = chunk.replace(LEADING_LINE_ENDINGS_REGEX, '')
+    }
+
     // empty chunk has no meaningful content to process
     if (chunk === '') {
       return
     }
 
-    if (this.discardLeadingLF) {
-      this.discardLeadingLF = false
-
-      if (chunk.charCodeAt(0) === LF) {
-        chunk = chunk.slice(1)
-
-        // empty chunk has no meaningful content to process
-        if (chunk === '') {
-          return
-        }
-      }
-    }
-
     const scan = this.tail + chunk
+    this.pending.push(chunk)
 
-    if (!MESSAGE_DELIMITER_REGEX.test(scan)) {
-      this.pending.push(chunk)
+    MESSAGE_DELIMITER_REGEX.lastIndex = 0
+    let match = MESSAGE_DELIMITER_REGEX.exec(scan)
+
+    if (match === null) {
       this.tail = scan.slice(-MAX_DELIMITER_OVERLAP)
       return
     }
 
-    this.pending.push(chunk)
-    const buffered = this.pending.length === 1 ? chunk : this.pending.join('')
+    const buffered = this.pending.join('')
     const offset = buffered.length - scan.length
-
     const parts: string[] = []
     let start = 0
 
-    for (const match of scan.matchAll(MESSAGE_DELIMITER_GLOBAL_REGEX)) {
+    while (match !== null) {
       parts.push(buffered.slice(start, offset + match.index))
       start = offset + match.index + match[0].length
+      match = MESSAGE_DELIMITER_REGEX.exec(scan)
     }
 
     const incomplete = buffered.slice(start)
-    this.pending.length = 0
+    this.pending = incomplete === '' ? [] : [incomplete]
     this.tail = incomplete.slice(-MAX_DELIMITER_OVERLAP)
-
-    if (incomplete === '') {
-      this.discardLeadingLF = chunk.charCodeAt(chunk.length - 1) === CR
-    }
-    else {
-      this.pending.push(incomplete)
-    }
 
     for (const encoded of parts) {
       this.onEvent(decodeEventStreamMessage(encoded))

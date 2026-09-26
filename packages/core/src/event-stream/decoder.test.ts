@@ -143,7 +143,7 @@ describe('eventStreamDecoder', () => {
     })
 
     it('emits the same events regardless of chunk size', () => {
-      const stream = 'event: a\r\ndata: 1\r\n\r\n: comment\ndata: 2\ndata: 3\n\nid: 9\rretry: 50\rdata: 4\r\revent: done\ndata: bye\n\n'
+      const stream = '\n\nevent: a\r\ndata: 1\r\n\r\n\r\n: comment\ndata: 2\ndata: 3\n\n\n\nid: 9\rretry: 50\rdata: 4\r\r\revent: done\ndata: bye\n\n\r\n'
 
       const expected = feedAll([stream])
       expect(expected).toHaveLength(4)
@@ -156,6 +156,20 @@ describe('eventStreamDecoder', () => {
 
         expect(feedAll(chunks), `chunk size ${size}`).toEqual(expected)
       }
+    })
+
+    it('emits nothing for a stream of only blank lines', () => {
+      expect(feedAll(['\n\n\n'])).toEqual([])
+      expect(feedAll(['\r', '\n', '\r\r\n', '', '\n'])).toEqual([])
+    })
+
+    // Unlike the spec, comment-only messages are emitted (e.g. keep-alives), so
+    // skipping blank lines must not skip them.
+    it('emits comment-only messages surrounded by extra blank lines', () => {
+      expect(feedAll(['\n\n: ping\n\n\n', ': ', 'pong\r\n\r\n\r\n'])).toEqual([
+        { comments: ['ping'] },
+        { comments: ['pong'] },
+      ])
     })
 
     it('decodes a large message fed in many small chunks', () => {
@@ -174,9 +188,11 @@ describe('eventStreamDecoder', () => {
   })
 
   describe('delimiters across chunk boundaries', () => {
+    // Per spec, a blank line with nothing buffered dispatches nothing, so
+    // leading and extra blank lines are ignored.
     it('handles every delimiter split at every position', () => {
-      for (const delimiter of ['\n\n', '\r\r', '\n\r', '\n\r\n', '\r\n\n', '\r\n\r\n']) {
-        const stream = `data: first${delimiter}data: second${delimiter}`
+      for (const delimiter of ['\n\n', '\r\r', '\n\r', '\n\r\n', '\r\n\n', '\r\n\r\n', '\n\n\n', '\r\r\r', '\r\n\r\n\r\n', '\n\r\n\r\n']) {
+        const stream = `${delimiter}data: first${delimiter}data: second${delimiter}`
 
         for (let split = 1; split < stream.length; split++) {
           const events = feedAll([stream.slice(0, split), stream.slice(split)])
@@ -218,7 +234,7 @@ describe('eventStreamDecoder', () => {
       ])
     })
 
-    it('keeps the CRLF discard window open across empty chunks', () => {
+    it('ignores blank lines after a delimiter across an empty chunk', () => {
       const events = feedAll([
         'data: first\n\r',
         '',
@@ -266,6 +282,20 @@ describe('eventStreamDecoder', () => {
 
       expect(events).toEqual([
         { event: 'message', data: 'hello1\nworld' },
+      ])
+    })
+
+    it('throws when extra blank lines are followed by an incomplete message', () => {
+      const events: EventStreamMessage[] = []
+      const decoder = new EventStreamDecoder(event => events.push(event))
+
+      decoder.feed('data: hello\n\n\n\r')
+      decoder.feed('\n\rdata: incomplete\n')
+
+      expect(() => decoder.end()).toThrowError('Event Stream ended before complete')
+
+      expect(events).toEqual([
+        { data: 'hello' },
       ])
     })
   })
