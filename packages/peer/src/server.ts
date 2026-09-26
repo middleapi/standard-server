@@ -1,6 +1,7 @@
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
+import type { StandardBody, StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
 import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerResponseMessage, ServerPeerSendMessage } from './types'
+import { cancelStandardBody } from '@standard-server/core'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
@@ -56,6 +57,8 @@ export class ServerPeer {
     this.requests.set(id, state)
     const signal = controller.signal
 
+    let untransmittedBody: StandardBody | undefined
+
     try {
       const decoded = toStandardBody(message, async ({ kind, error }) => {
         /**
@@ -88,6 +91,7 @@ export class ServerPeer {
         resolveBody: decoded.resolveBody,
         signal,
       })
+      untransmittedBody = response.body
 
       // only send message if still open and not aborted
       if (signal.aborted) {
@@ -119,6 +123,8 @@ export class ServerPeer {
       if (signal.aborted) {
         return
       }
+
+      untransmittedBody = undefined
 
       if (isAsyncIteratorObject(response.body)) {
         if (response.body instanceof HibernationAsyncIteratorClass) {
@@ -162,6 +168,11 @@ export class ServerPeer {
     catch (reason) {
       await this.cancelById(id, reason)
       throw reason
+    }
+    finally {
+      if (untransmittedBody !== undefined) {
+        await cancelStandardBody(untransmittedBody, signal.reason)
+      }
     }
   }
 

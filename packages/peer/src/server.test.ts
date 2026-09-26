@@ -195,13 +195,68 @@ describe('serverPeer', () => {
         await peer.message(makeCancelMessage('1'), vi.fn())
       })
 
+      const cancel = vi.fn()
       const handler = vi.fn<HandlerFn>().mockImplementation(async () => {
-        return octetStreamResponse(new ReadableStream({ }))
+        return octetStreamResponse(new ReadableStream({ cancel }))
       })
 
       await peer.message(makeRequestMessage(), handler)
       expect(send).toHaveBeenCalledTimes(1)
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'response' }))
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('cancels an octet-stream response body returned after abort', async () => {
+      const cancel = vi.fn()
+      const handler = vi.fn<HandlerFn>().mockImplementation(async () => {
+        await peer.message(makeCancelMessage('1'), vi.fn())
+        return octetStreamResponse(new ReadableStream({ cancel }))
+      })
+
+      await peer.message(makeRequestMessage(), handler)
+      expect(send).toHaveBeenCalledTimes(0)
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledWith(expect.any(AbortError))
+    })
+
+    it('returns an event-stream response body returned after abort', async () => {
+      const cleanup = vi.fn()
+      const handler = vi.fn<HandlerFn>().mockImplementation(async () => {
+        await peer.close()
+        return eventStreamResponse(new AsyncIteratorClass(async () => ({ done: true, value: undefined }), cleanup))
+      })
+
+      await peer.message(makeRequestMessage(), handler)
+      expect(send).toHaveBeenCalledTimes(0)
+      expect(cleanup).toHaveBeenCalledOnce()
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+
+    it('rejects when a response body returned after abort fails to clean up', async () => {
+      const error = new Error('cleanup failed')
+      const handler = vi.fn<HandlerFn>().mockImplementation(async () => {
+        await peer.message(makeCancelMessage('1'), vi.fn())
+        return eventStreamResponse(new AsyncIteratorClass(async () => ({ done: true, value: undefined }), async () => {
+          throw error
+        }))
+      })
+
+      await expect(peer.message(makeRequestMessage(), handler)).rejects.toBe(error)
+      expect(send).toHaveBeenCalledTimes(0)
+    })
+
+    it('cancels the response body when sending the response message fails', async () => {
+      const error = new Error('send failed')
+      send.mockRejectedValueOnce(error)
+
+      const cancel = vi.fn()
+      await expect(
+        peer.message(makeRequestMessage(), async () => octetStreamResponse(new ReadableStream({ cancel }))),
+      ).rejects.toThrow(error)
+
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response', 'cancel'])
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledWith(error)
     })
   })
 

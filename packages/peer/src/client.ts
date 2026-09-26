@@ -1,6 +1,7 @@
-import type { StandardLazyResponse, StandardRequest } from '@standard-server/core'
+import type { StandardBody, StandardLazyResponse, StandardRequest } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
 import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, ServerPeerSendMessage } from './types'
+import { cancelStandardBody } from '@standard-server/core'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
@@ -61,6 +62,9 @@ export class ClientPeer {
     state: ClientPeerRequestStateInternal,
     request: StandardRequest,
   ): Promise<void> {
+    let untransmittedBody: StandardBody | undefined = request.body
+    let failure: unknown
+
     try {
       const encodedAtomicBody = await encodeAtomicStandardBody(request.body, request.headers)
 
@@ -85,41 +89,40 @@ export class ClientPeer {
         binary: encodedAtomicBody.binary,
       })
 
+      // The request can already be settled/cancelled while was in flight
+      if (this.requests.get(id) !== state) {
+        return
+      }
+
+      untransmittedBody = undefined
+
       if (isAsyncIteratorObject(request.body)) {
         const transmitter = new EventStreamTransmitter(request.body, id, this.send)
-
-        // The request can already be settled/cancelled while was in flight
-        if (this.requests.get(id) !== state) {
-          await transmitter.cancel()
-        }
-        else {
-          state.eventStreamTransmitter = transmitter
-          await transmitter.transmit().catch((error) => {
-            if (state.eventStreamTransmitter) {
-              return this.abortById(id, error)
-            }
-          })
-        }
+        state.eventStreamTransmitter = transmitter
+        await transmitter.transmit().catch((error) => {
+          if (state.eventStreamTransmitter) {
+            return this.abortById(id, error)
+          }
+        })
       }
       else if (request.body instanceof ReadableStream) {
         const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
-
-        // The request can already be settled/cancelled while was in flight
-        if (this.requests.get(id) !== state) {
-          await transmitter.cancel()
-        }
-        else {
-          state.octetStreamTransmitter = transmitter
-          await transmitter.transmit().catch((error) => {
-            if (state.octetStreamTransmitter) {
-              return this.abortById(id, error)
-            }
-          })
-        }
+        state.octetStreamTransmitter = transmitter
+        await transmitter.transmit().catch((error) => {
+          if (state.octetStreamTransmitter) {
+            return this.abortById(id, error)
+          }
+        })
       }
     }
     catch (reason) {
+      failure = reason
       await this.closeById(id, reason)
+    }
+    finally {
+      if (untransmittedBody !== undefined) {
+        await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(() => {})
+      }
     }
   }
 

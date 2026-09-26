@@ -264,6 +264,73 @@ describe('clientPeer', () => {
       await expect(peer.request(makeRequest())).rejects.toThrow(error)
     })
 
+    it('cancels an octet-stream request body when signal aborted during encode', async () => {
+      const controller = new AbortController()
+      const cancel = vi.fn()
+
+      const promise = peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal }))
+      const error = new Error('aborted during encode')
+      controller.abort(error)
+
+      await expect(promise).rejects.toThrow(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['cancel'])
+    })
+
+    it('returns an event-stream request body when the peer is closed while encoding', async () => {
+      const cleanup = vi.fn()
+
+      const promise = peer.request(makeRequest({ body: new AsyncIteratorClass<unknown>(() => new Promise(() => {}), cleanup) }))
+      await peer.close()
+
+      await expect(promise).rejects.toThrow(AbortError)
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('ignores a request body that fails to clean up after the request settled', async () => {
+      const controller = new AbortController()
+      const cancel = vi.fn(() => {
+        throw new Error('cleanup failed')
+      })
+
+      const promise = peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal }))
+      const error = new Error('aborted during encode')
+      controller.abort(error)
+
+      // the request keeps its own outcome, and the failed release is not an unhandled rejection
+      await expect(promise).rejects.toBe(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+    })
+
+    it('cancels the request body when send throws', async () => {
+      const error = new Error('send failed')
+      send.mockRejectedValueOnce(error)
+      const cancel = vi.fn()
+
+      await expect(peer.request(makeRequest({ body: new ReadableStream({ cancel }) }))).rejects.toThrow(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+    })
+
+    it('cancels the request body with the abort reason when signal aborted during send', async () => {
+      const controller = new AbortController()
+      const error = new Error('aborted during send')
+      send.mockImplementation(async (message) => {
+        if (message.kind === 'request') {
+          controller.abort(error)
+        }
+      })
+      const cancel = vi.fn()
+
+      await expect(peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal }))).rejects.toBe(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    })
+
     it('rejects pending request on server abort', async () => {
       const { id, promise } = await requestAndGetId()
       await peer.message(makeCancelMessage(id))
@@ -473,6 +540,30 @@ describe('clientPeer', () => {
         expect(send).toHaveBeenCalledTimes(1)
         expect(send).toHaveBeenNthCalledWith(1, expect.objectContaining({ kind: 'request' }))
         expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'cancel' }))
+      })
+
+      it('does not send cancel message when transport fails after server already canceled the upload', async () => {
+        const transportError = new Error('transport failed')
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'event-stream') {
+            // server stops consuming the upload right as the transport breaks
+            await peer.message(makeStreamCancelMessage(message.id))
+            throw transportError
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: makeAsyncIter(['event1']) }),
+        )
+
+        await vi.waitFor(() => expect(send.mock.calls.some(([m]) => m.kind === 'event-stream')).toBe(true))
+        await sleep(1)
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        const response = await promise
+        expect(await response.resolveBody()).toBe('ok')
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
       })
     })
 

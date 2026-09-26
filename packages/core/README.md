@@ -275,7 +275,7 @@ Use it when building a custom adapter, or when you need to know how a body will 
 
 ## Utilities
 
-The package also exports a small set of helpers for common header and URL operations.
+The package also exports a small set of helpers for common header, URL, and body operations.
 
 ### Content-Disposition helpers
 
@@ -331,6 +331,20 @@ const [pathname, search, hash] = parseStandardUrl('/users/123?tab=settings#profi
 // pathname => '/users/123'
 // search => '?tab=settings'
 // hash => '#profile'
+```
+
+### Cancelling a body
+
+`cancelStandardBody()` cancels a body that will not be consumed, whether it is never sent or never read. It cancels a `ReadableStream` with the given reason and calls `return()` on an async iterator, so their sources can clean up. Other bodies are left as is. It rejects if that cleanup fails, so you decide whether that is worth reporting.
+
+```ts
+import { cancelStandardBody } from '@standard-server/core'
+
+const body = await request.resolveBody()
+
+if (!authorized) {
+  await cancelStandardBody(body, new Error('Unauthorized'))
+}
 ```
 
 ## Validators

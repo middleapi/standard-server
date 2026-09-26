@@ -1,4 +1,5 @@
-import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
+import { AsyncIteratorClass } from '@standard-server/shared'
+import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -171,6 +172,55 @@ describe('resolveStandardBodyHint', () => {
     expect(resolveStandardBodyHint({ 'content-type': 'application/pdf' })).toBe('octet-stream')
     expect(resolveStandardBodyHint({ 'content-type': 'text/plain', 'content-length': [] })).toBe('octet-stream')
     expect(resolveStandardBodyHint({ 'content-type': '' })).toBe('octet-stream')
+  })
+})
+
+describe('cancelStandardBody', () => {
+  it('cancels a ReadableStream with the reason', async () => {
+    const cancel = vi.fn()
+    const reason = new Error('reason')
+
+    await cancelStandardBody(new ReadableStream({ cancel }), reason)
+
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(cancel).toHaveBeenCalledWith(reason)
+  })
+
+  it('returns an AsyncIterator', async () => {
+    const cleanup = vi.fn()
+
+    await cancelStandardBody(new AsyncIteratorClass(async () => ({ done: true, value: undefined }), cleanup))
+
+    expect(cleanup).toHaveBeenCalledOnce()
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+  })
+
+  it('ignores an AsyncIterator without return()', async () => {
+    const iterator = {
+      next: async () => ({ done: true, value: undefined }),
+      [Symbol.asyncIterator]() {
+        return this
+      },
+    }
+
+    await expect(cancelStandardBody(iterator)).resolves.toBeUndefined()
+  })
+
+  it('ignores non-stream bodies', async () => {
+    await expect(cancelStandardBody({ key: 'val' })).resolves.toBeUndefined()
+    await expect(cancelStandardBody(new Blob(['x']))).resolves.toBeUndefined()
+  })
+
+  it('rejects when releasing fails', async () => {
+    const locked = new ReadableStream()
+    locked.getReader()
+
+    await expect(cancelStandardBody(locked)).rejects.toThrow(TypeError)
+
+    const error = new Error('cleanup failed')
+    await expect(cancelStandardBody(new AsyncIteratorClass(async () => ({ done: true, value: undefined }), async () => {
+      throw error
+    }))).rejects.toBe(error)
   })
 })
 

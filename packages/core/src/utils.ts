@@ -1,5 +1,5 @@
-import type { StandardBodyHint, StandardHeaders, StandardUrl } from './types'
-import { safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
+import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
+import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
 export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
   const encodedFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/[\\"]/g, '\\$&')
@@ -109,6 +109,19 @@ export function resolveStandardBodyHint(headers: {
   }
 
   return 'octet-stream'
+}
+
+/**
+ * Cancel a body that will not be consumed, so its stream or iterator source can clean up.
+ * Other bodies are left as is. Rejects if that cleanup fails.
+ */
+export async function cancelStandardBody(body: StandardBody, reason?: unknown): Promise<void> {
+  if (body instanceof ReadableStream) {
+    await body.cancel(reason)
+  }
+  else if (isAsyncIteratorObject(body)) {
+    await body.return?.()
+  }
 }
 
 export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): StandardHeaders {
