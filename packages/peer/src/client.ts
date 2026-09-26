@@ -121,7 +121,6 @@ export class ClientPeer {
     }
     finally {
       if (untransmittedBody !== undefined) {
-        // the request has already settled, so a failed release must not surface as an unhandled rejection
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(() => {})
       }
     }
