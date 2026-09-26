@@ -293,6 +293,55 @@ describe('toEventStream', () => {
     expect((await reader.read()).done).toEqual(true)
   })
 
+  it.each([
+    ['a BigInt', () => ({ big: 1n }), 'BigInt'],
+    ['a circular reference', () => {
+      const value: Record<string, unknown> = {}
+      value.self = value
+      return value
+    }, 'circular'],
+    ['a throwing toJSON', () => ({ toJSON() { throw new Error('toJSON failed') } }), 'toJSON failed'],
+  ])('releases the iterator when an event has %s', async (_, value, message) => {
+    let hasFinally = false
+
+    async function* gen() {
+      try {
+        yield value()
+        yield 2
+      }
+      finally {
+        hasFinally = true
+      }
+    }
+
+    const reader = toEventStream(gen())
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
+
+    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
+    await expect(reader.read()).rejects.toThrow(message)
+    expect(hasFinally).toBe(true)
+  })
+
+  it('reports the serialization error when releasing the iterator throws', async () => {
+    async function* gen() {
+      try {
+        yield { big: 1n }
+      }
+      finally {
+        // eslint-disable-next-line no-unsafe-finally
+        throw new Error('cleanup')
+      }
+    }
+
+    const reader = toEventStream(gen())
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
+
+    await reader.read()
+    await expect(reader.read()).rejects.toThrow('BigInt')
+  })
+
   it('when canceled from client - return', async () => {
     let hasFinally = false
 

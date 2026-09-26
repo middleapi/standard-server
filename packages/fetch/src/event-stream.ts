@@ -146,6 +146,8 @@ export function toEventStream(
       }
     },
     async pull(controller) {
+      let result: IteratorResult<unknown>
+
       try {
         if (keepAliveEnabled) {
           timeout = setInterval(() => {
@@ -155,28 +157,7 @@ export function toEventStream(
           }, keepAliveInterval)
         }
 
-        const result = await iterator.next()
-
-        clearInterval(timeout)
-
-        if (cancelled) {
-          return
-        }
-
-        const [data, meta] = unwrapEvent(result.value)
-
-        if (!result.done || data !== undefined || meta !== undefined || emptyCloseEventEnabled) {
-          const event = result.done ? 'close' : 'message'
-          controller.enqueue(encodeEventStreamMessage({
-            ...meta,
-            event,
-            data: stringifyJSON(data),
-          }))
-        }
-
-        if (result.done) {
-          controller.close()
-        }
+        result = await iterator.next()
       }
       catch (err) {
         clearInterval(timeout)
@@ -199,6 +180,47 @@ export function toEventStream(
            */
           controller.error(err)
         }
+
+        return
+      }
+
+      clearInterval(timeout)
+
+      if (cancelled) {
+        return
+      }
+
+      try {
+        const [data, meta] = unwrapEvent(result.value)
+
+        if (!result.done || data !== undefined || meta !== undefined || emptyCloseEventEnabled) {
+          const event = result.done ? 'close' : 'message'
+          controller.enqueue(encodeEventStreamMessage({
+            ...meta,
+            event,
+            data: stringifyJSON(data),
+          }))
+        }
+      }
+      catch (err) {
+        /**
+         * The event could not be serialized (e.g. BigInt, circular data, a throwing toJSON).
+         * An errored stream never calls `cancel()`, so release the suspended iterator here.
+         */
+        try {
+          if (!result.done) {
+            await iterator.return?.()
+          }
+        }
+        finally {
+          controller.error(err)
+        }
+
+        return
+      }
+
+      if (result.done) {
+        controller.close()
       }
     },
     async cancel() {
