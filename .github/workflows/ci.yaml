@@ -36,9 +36,12 @@ jobs:
 
       - run: pnpm runtime set node ${{ matrix.node-version }}
 
-      - run: pnpm runtime set bun 1
-
-      - run: pnpm runtime set deno 2
+      # Fetching the bun/deno release index fails intermittently, so retry
+      - name: Setup bun and deno
+        run: |
+          retry() { "$@" || (sleep 10 && "$@") || (sleep 10 && "$@"); }
+          retry pnpm runtime set bun 1
+          retry pnpm runtime set deno 2
 
       - run: pnpm i
 
