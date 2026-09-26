@@ -10,8 +10,8 @@
   "devDependencies": {
     "@standard-server/core": "latest",
     "@standard-server/node": "latest",
-    "@types/node": "^26.4.1",
-    "tsx": "^4.22.4",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
 }
