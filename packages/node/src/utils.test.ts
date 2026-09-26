@@ -7,6 +7,7 @@ import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import { canWriteToNodeResponse, getNodeResponseError, toWebReadableStream } from './utils'
 
 describe('canWriteToNodeResponse', () => {
@@ -529,4 +530,87 @@ describe('toWebReadableStream', () => {
     expect(crashes).toEqual([])
     expect(handled).toBe(25)
   }, 30_000)
+
+  /** Beyond socket buffers and the HTTP/2 flow-control window, so an unread upload stalls. */
+  const UPLOAD = Buffer.alloc(1024 * 1024, 0x61)
+
+  /** Reads one chunk of a request body, then cancels it like a handler rejecting the upload. */
+  async function readOneChunkThenCancel(req: Readable): Promise<void> {
+    const reader = toWebReadableStream(req).getReader()
+    await reader.read()
+    await reader.cancel()
+  }
+
+  it('keeps an HTTP/1 keep-alive connection usable after cancelling a request body', async ({ onTestFinished }) => {
+    const otherListener = vi.fn()
+    let readableListeners: unknown[] = []
+
+    const server = createServer(async (req, res) => {
+      if (req.method === 'POST') {
+        req.on('readable', otherListener) // e.g. added by a framework; draining must leave it alone
+        await readOneChunkThenCancel(req)
+        readableListeners = req.listeners('readable')
+        res.statusCode = 413
+        res.end('too large')
+      }
+      else {
+        res.end('ok')
+      }
+    })
+    onTestFinished(() => new Promise<any>((r) => {
+      server.closeAllConnections()
+      server.close(r)
+    }))
+
+    await new Promise<void>(resolve => server.listen(0, resolve))
+    const { port } = server.address() as AddressInfo
+
+    const socket = net.connect(port, '127.0.0.1')
+    socket.write(`POST / HTTP/1.1\r\nHost: x\r\nContent-Length: ${UPLOAD.byteLength}\r\n\r\n`)
+    socket.write(UPLOAD)
+    // Queued behind the rejected body, so it's only answered once that body is off the wire
+    socket.write('GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n')
+
+    const received = await text(socket)
+
+    expect(received).toMatch(/^HTTP\/1\.1 413 [\s\S]*too large/)
+    expect(received).toMatch(/HTTP\/1\.1 200 [\s\S]*ok$/)
+    expect(readableListeners).toContain(otherListener)
+  })
+
+  it('lets an HTTP/2 stream close after cancelling a request body', async ({ onTestFinished }) => {
+    const server = createHttp2Server()
+
+    const responseClosed = new Promise<void>((resolve) => {
+      server.on('request', async (req, res) => {
+        await readOneChunkThenCancel(req)
+        res.once('close', () => resolve()) // what `sendStandardResponse` settles on
+        res.end('ok')
+      })
+    })
+
+    await new Promise<void>(resolve => server.listen(0, resolve))
+    const { port } = server.address() as AddressInfo
+
+    const client = http2Connect(`http://127.0.0.1:${port}`)
+    onTestFinished(() => new Promise<any>((r) => {
+      client.destroy()
+      server.close(r)
+    }))
+
+    const request = client.request({ ':method': 'POST', ':path': '/' })
+    request.end(UPLOAD)
+    request.setEncoding('utf8')
+
+    let received = ''
+    request.on('data', (chunk) => {
+      received += chunk
+    })
+
+    await new Promise(resolve => request.once('close', resolve))
+    await responseClosed
+
+    expect(received).toBe('ok')
+    expect(request.rstCode).toBe(http2.constants.NGHTTP2_NO_ERROR)
+  })
 })

@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream'
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
 import { IncomingMessage } from 'node:http'
+import { Http2ServerRequest } from 'node:http2'
 
 /**
  * A cancel-safe alternative to `Readable.toWeb`.
@@ -17,10 +18,11 @@ import { IncomingMessage } from 'node:http'
  * Fixed upstream in Node 26.10 (nodejs/node#62773); switch back to
  * `Readable.toWeb` once every supported Node release has the fix.
  *
- * Cancel destroys the source, except http1 server requests: they share their
- * socket with the response, so destroying them would kill an in-flight
- * response. They are abandoned instead — stalled by backpressure and reclaimed
- * on connection teardown.
+ * Cancel destroys the source, except server requests, which are read to the
+ * end and discarded, the way Node drains a body the handler never reads:
+ * destroying an http1 request kills the socket its response shares, and an
+ * unread body stalls on backpressure, blocking the next keep-alive request
+ * (http1) or the response's `close` (http2).
  */
 export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array<ArrayBuffer>> {
   const iterator = stream[Symbol.asyncIterator]()
@@ -31,7 +33,7 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
       const { done, value } = await iterator.next()
 
       if (canceled) {
-        return // a chunk in flight while cancel happened; drop it
+        return // a read in flight while cancel happened; drop it
       }
 
       if (done) {
@@ -44,13 +46,24 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
     cancel(reason) {
       canceled = true
 
-      const isHttp1ServerRequest = stream instanceof IncomingMessage && stream.method !== null
+      const isServerRequest = (stream instanceof IncomingMessage && stream.method !== null)
+        || stream instanceof Http2ServerRequest
 
-      if (!isHttp1ServerRequest) {
+      if (isServerRequest) {
+        // Errors mean the request is already torn down (e.g. the client aborted)
+        void _drainIterator(iterator).catch(() => {})
+      }
+      else {
         stream.destroy(reason instanceof Error ? reason : undefined)
       }
     },
   })
+}
+
+async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
+  while (!(await iterator.next()).done) {
+    // discard
+  }
 }
 
 /**
