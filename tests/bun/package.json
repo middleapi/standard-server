@@ -20,6 +20,6 @@
     "@standard-server/fetch": "workspace:*",
     "@standard-server/peer": "workspace:*",
     "@standard-server/shared": "workspace:*",
-    "@types/bun": "^1.4.0"
+    "@types/bun": "^1.4.2"
   }
 }
