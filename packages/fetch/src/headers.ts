@@ -25,11 +25,19 @@ export function toStandardHeaders(headers: Headers): StandardHeaders {
 
 /**
  * Convert standard headers to fetch headers.
+ *
+ * HTTP/2 pseudo-headers (`:method`, `:path`, ...), which node's http2 request
+ * headers carry, are skipped: they are not header fields (RFC 9113 §8.3) and
+ * fetch rejects their names.
  */
 export function toFetchHeaders(standardHeaders: StandardHeaders): Headers {
   const headers = new Headers()
 
   for (const key of Object.keys(standardHeaders)) {
+    if (key.startsWith(':')) {
+      continue
+    }
+
     const value = standardHeaders[key]
     if (Array.isArray(value)) {
       for (const v of value) {

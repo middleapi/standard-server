@@ -1,4 +1,5 @@
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { expectPeerMessages } from './client-server'
 import { createExpressjsClientServerTest } from './client-server.expressjs'
@@ -87,6 +88,8 @@ describe.each([
       ...headers,
       'x-from': 'client',
     })
+    // node http2 request headers carry pseudo-headers, which fetch rejects
+    expect(toFetchHeaders(request.headers).get('x-from')).toEqual('client')
   })
 
   it.each([

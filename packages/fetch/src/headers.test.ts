@@ -49,3 +49,19 @@ it('toFetchHeaders', () => {
     ['x-custom-header', 'custom-value'],
   ])
 })
+
+it('toFetchHeaders skips http2 pseudo-headers', () => {
+  const standardHeaders: StandardHeaders = {
+    ':method': 'POST',
+    ':path': '/hello?foo=bar',
+    ':scheme': 'https',
+    ':authority': 'example.com',
+    'content-type': 'application/json',
+  }
+
+  const fetchHeaders = toFetchHeaders(standardHeaders)
+
+  expect([...fetchHeaders]).toEqual([
+    ['content-type', 'application/json'],
+  ])
+})
