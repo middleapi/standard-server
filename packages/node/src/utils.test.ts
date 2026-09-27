@@ -494,6 +494,20 @@ describe('toWebReadableStream', () => {
     expect(Buffer.concat(received).equals(Buffer.concat(chunks))).toBe(true)
   })
 
+  it.for(['latin1', 'hex', 'base64', 'utf8'] as const)('restores the bytes of a stream decoded with setEncoding(%s)', async (encoding) => {
+    const bytes = Buffer.from('héllo 😀 world')
+    const source = Readable.from([bytes.subarray(0, 8), bytes.subarray(8)], { objectMode: false })
+    source.setEncoding(encoding)
+
+    const received: Uint8Array[] = []
+    for await (const chunk of toWebReadableStream(source)) {
+      expect(chunk).toBeInstanceOf(Uint8Array)
+      received.push(chunk)
+    }
+
+    expect(Buffer.concat(received).equals(bytes)).toBe(true)
+  })
+
   it('does not throw when a raw buffer stream is cancelled mid-read', async () => {
     const source = Readable.from((async function* () {
       for (let i = 0; i < 10_000; i++) {

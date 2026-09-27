@@ -12,6 +12,12 @@ export type NodeHttpRequest = (IncomingMessage | Http2ServerRequest) & {
    * Only used once the request stream has been consumed.
    */
   body?: unknown
+
+  /**
+   * Unparsed body kept by platforms that consume the request stream before the handler runs,
+   * like Firebase and Google Cloud Functions. Preferred over `body` once the stream has been consumed.
+   */
+  rawBody?: unknown
 }
 
 export type NodeHttpResponse = ServerResponse | Http2ServerResponse

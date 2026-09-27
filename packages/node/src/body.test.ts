@@ -1,10 +1,13 @@
 import type { StandardBody } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import type { NodeHttpRequest } from './types'
 import { Buffer } from 'node:buffer'
+import http from 'node:http'
 import http2 from 'node:http2'
+import net from 'node:net'
 import { Readable } from 'node:stream'
-import { text } from 'node:stream/consumers'
+import { buffer, text } from 'node:stream/consumers'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
@@ -192,6 +195,246 @@ describe('toStandardBody', () => {
         .get('/')
 
       expect(standardBody).toBe(undefined)
+    })
+  })
+
+  // Firebase and Google Cloud Functions read every request before the handler runs: json, text and
+  // url-encoded bodies are parsed into `req.body`, anything else is left as the raw bytes,
+  // which are also kept in `req.rawBody`
+  describe('rawBody', () => {
+    function withRawBody(parse: (raw: Buffer) => unknown) {
+      let standardBody: any
+
+      const handler = async (req: IncomingMessage, res: ServerResponse) => {
+        const raw = await buffer(req)
+        Object.assign(req, { body: parse(raw), rawBody: raw })
+        standardBody = await toStandardBody(req)
+        res.end()
+      }
+
+      return [handler, () => standardBody] as const
+    }
+
+    it('form-data', async () => {
+      const [handler, result] = withRawBody(raw => raw)
+
+      await request(handler).post('/').field('foo', 'bar')
+
+      expect(result()).toBeInstanceOf(FormData)
+      expect(result().get('foo')).toBe('bar')
+    })
+
+    it('url-search-params', async () => {
+      const [handler, result] = withRawBody(() => ({ foo: ['bar', 'baz'] }))
+
+      await request(handler).post('/').type('form').send('foo=bar&foo=baz')
+
+      expect(result()).toEqual(new URLSearchParams('foo=bar&foo=baz'))
+    })
+
+    it('file', async () => {
+      const [handler, result] = withRawBody(raw => raw)
+
+      await request(handler)
+        .post('/')
+        .set('content-type', 'application/pdf')
+        .set('content-disposition', 'attachment; filename="foo.pdf"')
+        .send(Buffer.from([0xDE, 0xAD, 0xBE, 0xEF]))
+
+      expect(result()).toBeInstanceOf(File)
+      expect(result().name).toBe('foo.pdf')
+      expect(new Uint8Array(await result().arrayBuffer())).toEqual(new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]))
+    })
+
+    it('json', async () => {
+      const [handler, result] = withRawBody(raw => JSON.parse(raw.toString()))
+
+      await request(handler).post('/').send({ foo: 'bar' })
+
+      expect(result()).toEqual({ foo: 'bar' })
+    })
+
+    it('ignored while the stream is unread', async () => {
+      let standardBody: any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        Object.assign(req, { body: {}, rawBody: Buffer.from('stale') })
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .send({ foo: 'bar' })
+
+      expect(standardBody).toEqual({ foo: 'bar' })
+    })
+  })
+
+  describe('request stream with an encoding set', () => {
+    async function roundtrip(
+      encoding: BufferEncoding,
+      send: (test: request.Test) => request.Test,
+    ): Promise<any> {
+      let standardBody: any
+
+      await send(request(async (req: IncomingMessage, res: ServerResponse) => {
+        req.setEncoding(encoding)
+        standardBody = await toStandardBody(req)
+
+        // a streaming body must be drained while the request is still alive
+        if (standardBody instanceof ReadableStream) {
+          standardBody = new Uint8Array(await new Response(standardBody).arrayBuffer())
+        }
+        else if (isAsyncIteratorObject(standardBody)) {
+          const events: unknown[] = []
+          for await (const event of standardBody) {
+            events.push(event)
+          }
+          standardBody = events
+        }
+
+        res.end()
+      }).post('/'))
+
+      return standardBody
+    }
+
+    const bytes = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF, 0xE9, 0x00, 0xFF])
+
+    it.for(['latin1', 'hex', 'base64', 'utf8'] as const)('%s: json', async (encoding) => {
+      expect(await roundtrip(encoding, test => test.send({ emoji: '😀' }))).toEqual({ emoji: '😀' })
+    })
+
+    it.for(['latin1', 'hex', 'base64', 'utf8'] as const)('%s: url-search-params', async (encoding) => {
+      expect(await roundtrip(encoding, test => test.type('form').send('emoji=😀'))).toEqual(new URLSearchParams('emoji=😀'))
+    })
+
+    it.for(['latin1', 'hex', 'base64', 'utf8'] as const)('%s: form-data', async (encoding) => {
+      const result = await roundtrip(encoding, test => test.field('emoji', '😀'))
+
+      expect(result).toBeInstanceOf(FormData)
+      expect(result.get('emoji')).toBe('😀')
+    })
+
+    it.for(['latin1', 'hex', 'base64', 'utf8'] as const)('%s: event-stream', async (encoding) => {
+      const result = await roundtrip(encoding, test => test
+        .set('content-type', 'text/event-stream')
+        .send('event: message\ndata: "😀"\n\nevent: close\n\n'))
+
+      expect(result).toEqual(['😀'])
+    })
+
+    // utf8 is left out: decoding invalid utf-8 bytes into a string is lossy
+    it.for(['latin1', 'hex', 'base64'] as const)('%s: file', async (encoding) => {
+      const result = await roundtrip(encoding, test => test
+        .set('content-type', 'application/pdf')
+        .set('content-disposition', 'attachment; filename="foo.pdf"')
+        .send(Buffer.from(bytes)))
+
+      expect(result).toBeInstanceOf(File)
+      expect(new Uint8Array(await result.arrayBuffer())).toEqual(bytes)
+    })
+
+    it.for(['latin1', 'hex', 'base64'] as const)('%s: octet-stream', async (encoding) => {
+      const result = await roundtrip(encoding, test => test
+        .set('content-type', 'application/octet-stream')
+        .set('standard-server', 'octet-stream')
+        .send(Buffer.from(bytes)))
+
+      expect(result).toEqual(bytes)
+    })
+  })
+
+  describe('body buffered before the client disconnected', () => {
+    /**
+     * Sends a raw http1 request and closes the connection right away, so node tears the request
+     * down before `read` gets to it.
+     */
+    async function sendThenDisconnect(
+      onTestFinished: (fn: () => Promise<any>) => void,
+      rawRequest: string,
+      read: (req: IncomingMessage) => Promise<unknown>,
+      beforeDisconnect?: (req: IncomingMessage) => void,
+    ): Promise<unknown> {
+      let resolve!: (value: unknown) => void
+      const result = new Promise<unknown>(r => (resolve = r))
+
+      const server = http.createServer(async (req, res) => {
+        beforeDisconnect?.(req)
+
+        if (!req.destroyed) {
+          await new Promise(r => req.once('close', r))
+        }
+
+        resolve(await read(req).catch(error => error))
+        res.end()
+      })
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      await new Promise<void>(r => server.listen(0, r))
+      const { port } = server.address() as AddressInfo
+
+      const socket = net.connect(port, '127.0.0.1', () => socket.end(Buffer.from(rawRequest, 'latin1')))
+      socket.on('error', () => {})
+
+      return result
+    }
+
+    it('content-length body', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnect(
+        onTestFinished,
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{"foo":"bar"}',
+        req => toStandardBody(req),
+      )
+
+      expect(result).toEqual({ foo: 'bar' })
+    })
+
+    it('chunked body', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnect(
+        onTestFinished,
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/pdf\r\nTransfer-Encoding: chunked\r\n\r\n4\r\n\xDE\xAD\xBE\xEF\r\n0\r\n\r\n',
+        req => toStandardBody(req),
+      )
+
+      expect(result).toBeInstanceOf(ReadableStream)
+      expect(new Uint8Array(await new Response(result as ReadableStream).arrayBuffer())).toEqual(new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]))
+    })
+
+    it('only once', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnect(
+        onTestFinished,
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/pdf\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nfoo\r\n0\r\n\r\n',
+        async (req) => {
+          await toStandardBody(req)
+          return toStandardBody(req)
+        },
+      )
+
+      expect(result).toBeInstanceOf(TypeError)
+      expect((result as Error).message).toContain('Failed to read body')
+    })
+
+    it('not when the body is incomplete', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnect(
+        onTestFinished,
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 20\r\n\r\n{"foo":"bar"}',
+        req => toStandardBody(req),
+      )
+
+      expect(result).toBeInstanceOf(TypeError)
+      expect((result as Error).message).toContain('Failed to read body')
+    })
+
+    it('not when the request was destroyed with another error', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnect(
+        onTestFinished,
+        'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 13\r\n\r\n{"foo":"bar"}',
+        req => toStandardBody(req),
+        req => req.destroy(new Error('body too large')),
+      )
+
+      expect(result).toBeInstanceOf(TypeError)
+      expect((result as Error).message).toContain('Failed to read body')
     })
   })
 
@@ -576,6 +819,24 @@ describe('toNodeHttpBody', () => {
 
     expect(generateContentDispositionSpy).toHaveBeenCalledTimes(1)
     expect(generateContentDispositionSpy).toHaveBeenCalledWith('foo.pdf')
+  })
+
+  it('file with transfer-encoding header', async () => {
+    const file = new File(['foo'], 'foo.pdf', { type: 'application/pdf' })
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toNodeHttpBody(file, { ...baseHeaders, 'transfer-encoding': 'chunked' }, {})
+
+    expect(body).toBeInstanceOf(Readable)
+    // a content-length must not be sent alongside a transfer-encoding
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="__mocked__"',
+      'content-type': 'application/pdf',
+      'transfer-encoding': 'chunked',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
   })
 
   it('file with undefined name (Bun compatibility)', async () => {

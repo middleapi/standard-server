@@ -112,7 +112,11 @@ export function toFetchBody(
 
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {
-      headers['content-length'] = body.size.toString()
+      // a content-length must not be sent alongside a transfer-encoding (RFC 9112 §6.2)
+      if (headers['transfer-encoding'] === undefined) {
+        headers['content-length'] = body.size.toString()
+      }
+
       return [body, headers]
     }
 

@@ -1,6 +1,8 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import type { NodeHttpResponse } from './types'
+import { Http2ServerResponse } from 'node:http2'
+import { isAsyncIteratorObject } from '@standard-server/shared'
 import { toNodeHttpBody } from './body'
 import { canWriteToNodeResponse, getNodeResponseError } from './utils'
 
@@ -63,6 +65,18 @@ export async function sendStandardResponse(
 
         // WARNING: errors that occur here are silently ignored and not reported to the Promise
         resBody.once('error', error => res.destroy(error))
+
+        // Node holds the status and headers back until the first chunk is written,
+        // so send them now: a stream can take a while to produce its first chunk.
+        if (standardResponse.body instanceof ReadableStream || isAsyncIteratorObject(standardResponse.body)) {
+          if (res instanceof Http2ServerResponse) {
+            // http2 responses document `writeHead`, not `flushHeaders`, for this
+            res.writeHead(standardResponse.status)
+          }
+          else {
+            res.flushHeaders()
+          }
+        }
 
         resBody.pipe(res)
       }
