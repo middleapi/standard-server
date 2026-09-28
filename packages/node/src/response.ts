@@ -1,4 +1,5 @@
 import type { StandardResponse } from '@standard-server/core'
+import type { ServerResponse } from 'node:http'
 import type { ToNodeHttpBodyOptions } from './body'
 import type { NodeHttpResponse } from './types'
 import { toNodeHttpBody } from './body'
@@ -37,8 +38,8 @@ export async function sendStandardResponse(
     res.once('close', resolve)
 
     try {
-      // DON'T use `res.writeHead` because it send response immediately in chunked mode
-      // while we only need chunked if the response body is stream
+      // DON'T use `res.writeHead` here: it commits the head (chunked on http1, sent right away on http2),
+      // while a buffered body should get its content-length from `res.end`
       res.statusCode = standardResponse.status
       for (const key of Object.keys(resHeaders)) {
         const value = resHeaders[key]
@@ -55,6 +56,12 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
+        // Commit the head now: Node defers some status/header checks (e.g. an out-of-range status on http1,
+        // connection-specific headers on http2) until it is written. Left to the first piped chunk, they
+        // throw inside `pipe`'s data handler, crashing the process and leaving this promise unsettled.
+        // (both response types accept a bare status, but their overloads don't unify)
+        ;(res as ServerResponse).writeHead(standardResponse.status)
+
         res.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)

@@ -1,6 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Buffer } from 'node:buffer'
+import http2 from 'node:http2'
 import Stream from 'node:stream'
 import request from 'supertest'
 import * as Body from './body'
@@ -272,6 +273,79 @@ describe('sendStandardResponse', () => {
     expect((resBody as any).destroyed).toBe(true)
   })
 
+  describe('rejects instead of crashing when node rejects the head of a stream body', () => {
+    const bodies = [
+      ['readable stream', () => new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('foo'))
+          controller.close()
+        },
+      })],
+      ['async iterator', () => (async function* () {
+        yield 'foo'
+      })()],
+    ] as const
+
+    it.for(bodies)('http1 invalid status (%s)', async ([, body]) => {
+      let destroySpy: any
+      let thrownError: any
+
+      await expect(request(async (req: IncomingMessage, res: ServerResponse) => {
+        destroySpy = vi.spyOn(res, 'destroy')
+
+        try {
+          await sendStandardResponse(res, {
+            status: 1000,
+            headers: {},
+            body: body(),
+          })
+        }
+        catch (err) {
+          thrownError = err
+        }
+      }).get('/')).rejects.toThrow()
+
+      expect(thrownError).toBeInstanceOf(RangeError)
+      expect(thrownError.code).toBe('ERR_HTTP_INVALID_STATUS_CODE')
+
+      expect(destroySpy).toHaveBeenCalledWith(thrownError)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    })
+
+    it.for(bodies)('http2 connection-specific header (%s)', async ([, body], { onTestFinished }) => {
+      const server = http2.createServer()
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      const sent = new Promise<any>((resolve) => {
+        server.on('request', (req, res) => {
+          sendStandardResponse(res, {
+            status: 200,
+            // e.g. forwarded from an upstream http1 response
+            headers: { 'keep-alive': 'timeout=5', 'transfer-encoding': 'chunked' },
+            body: body(),
+          }).then(() => resolve(undefined), resolve)
+        })
+      })
+
+      await new Promise<void>(r => server.listen(0, r))
+      const port = (server.address() as any).port
+
+      const client = http2.connect(`http://localhost:${port}`)
+      onTestFinished(() => client.close())
+      const reqStream = client.request({ ':path': '/' })
+      reqStream.once('error', () => {})
+
+      const error = await sent
+      expect(error).toBeInstanceOf(TypeError)
+      expect(error.code).toBe('ERR_HTTP2_INVALID_CONNECTION_HEADERS')
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    })
+  })
+
   it('resolves without sending when headers were already flushed', async () => {
     let sendError: any
 
@@ -335,6 +409,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow('test')
 
@@ -392,6 +467,7 @@ describe('sendStandardResponse', () => {
       })
 
      ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
