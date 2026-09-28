@@ -169,7 +169,7 @@ import { ErrorEvent, withEventMeta } from '@standard-server/core'
 const response: StandardResponse = {
   status: 200,
   headers: {},
-  async* body() {
+  body: (async function* () {
     yield withEventMeta(
       { message: 'Hello, World!' },
       { id: '1', retry: 3000, comments: ['hidden'] },
@@ -178,7 +178,7 @@ const response: StandardResponse = {
     throw new ErrorEvent({ message: 'Something went wrong' })
 
     return { message: 'This is the end of the stream' }
-  },
+  })(), // <- call the generator: body must be the iterator, not the function
 }
 ```
 
@@ -441,9 +441,9 @@ const extractedMeta = getEventMeta(event)
 const response: StandardResponse = {
   status: 200,
   headers: {},
-  async* body() {
+  body: (async function* () {
     yield event
-  },
+  })(),
 }
 ```
 
