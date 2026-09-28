@@ -110,6 +110,44 @@ describe('toAsyncIteratorObject', () => {
     expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 
+  it('treats messages without an event type as message events', async () => {
+    const stream = new ReadableStream<string>({
+      async pull(controller) {
+        controller.enqueue('data: {"order": 1}\nid: id-1\nretry: 10000\n\n')
+        controller.enqueue(': ping\nid: id-ignored\nretry: 20000\n\n')
+        controller.enqueue('event: message\ndata: {"order": 2}\n\n')
+        controller.enqueue('event:\ndata: {"order": 3}\nid: id-3\n\n')
+        controller.enqueue('data: 4\n\n')
+        controller.enqueue('data:\n\n')
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    expect(await generator.next()).toSatisfy(({ done, value }) => {
+      expect(done).toEqual(false)
+      expect(value).toStrictEqual({ order: 1 })
+      expect(getEventMeta(value)).toEqual({ id: 'id-1', retry: 10000 })
+
+      return true
+    })
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 2 } })
+
+    expect(await generator.next()).toSatisfy(({ done, value }) => {
+      expect(done).toEqual(false)
+      expect(value).toStrictEqual({ order: 3 })
+      expect(getEventMeta(value)).toEqual({ id: 'id-3' })
+
+      return true
+    })
+
+    expect(await generator.next()).toEqual({ done: false, value: 4 })
+    expect(await generator.next()).toEqual({ done: false, value: undefined })
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
+  })
+
   it('with empty stream', async () => {
     const generator = toAsyncIteratorObject(null)
     expect(generator).toSatisfy(isAsyncIteratorObject)
