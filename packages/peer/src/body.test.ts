@@ -306,6 +306,41 @@ describe('encodeAtomicStandardBody', () => {
     expect(headers['content-disposition']).toBe('existing')
   })
 
+  it('encodes Blob body and preserves existing content-type and content-length headers', async () => {
+    const blob = new Blob(['data'])
+    const { headers, binary } = await encodeAtomicStandardBody(blob, {
+      'content-type': 'image/png',
+      'content-length': '4',
+    })
+
+    expect(headers['content-type']).toBe('image/png')
+    expect(headers['content-length']).toBe('4')
+    expect(binary).toBe(blob)
+
+    const { resolveBody } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { method: 'POST', url: '/test', headers },
+      binary: new Uint8Array(await blob.arrayBuffer()),
+    }, async () => {})
+
+    const file = await resolveBody() as File
+    expect(file).toBeInstanceOf(File)
+    expect(file.type).toBe('image/png')
+    expect(await file.text()).toBe('data')
+  })
+
+  it('encodes Blob body and keeps content-type and content-length removed by an empty array', async () => {
+    const blob = new Blob(['data'], { type: 'text/plain' })
+    const { headers } = await encodeAtomicStandardBody(blob, {
+      'content-type': [],
+      'content-length': [],
+    })
+
+    expect(headers['content-type']).toEqual([])
+    expect(headers['content-length']).toEqual([])
+  })
+
   it('encodes URLSearchParams body', async () => {
     const params = new URLSearchParams('a=1&b=2')
     const { jsonBody, headers, binary } = await encodeAtomicStandardBody(params, {})

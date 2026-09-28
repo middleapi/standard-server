@@ -452,6 +452,60 @@ describe('toFetchBody', () => {
     expect(await reader.read()).toEqual({ done: false, value: 'order3' })
     expect(await reader.read()).toEqual({ done: true })
   })
+
+  describe('override auto-set headers', () => {
+    it('blob: explicit content-type and content-length', async () => {
+      const blob = new Blob(['foo'])
+
+      const [body, headers] = toFetchBody(blob, {
+        ...baseHeaders,
+        'content-type': 'image/png',
+        'content-length': '3',
+        'content-disposition': 'inline; filename="foo.png"',
+      })
+
+      expect(body).toBe(blob)
+      expect(headers).toEqual({
+        'content-disposition': 'inline; filename="foo.png"',
+        'content-length': '3',
+        'content-type': 'image/png',
+        'x-custom-header': 'custom-value',
+        'standard-server': 'file',
+      })
+
+      const file = await toStandardBody(new Response(body, { headers: toFetchHeaders(headers) })) as File
+      expect(file).toBeInstanceOf(File)
+      expect(file.type).toBe('image/png')
+      expect(await file.text()).toBe('foo')
+    })
+
+    it('blob: unset content-type, content-length, standard-server, and content-disposition', () => {
+      const blob = new Blob(['foo'], { type: 'application/pdf' })
+
+      const [body, headers] = toFetchBody(blob, {
+        ...baseHeaders,
+        'content-type': [],
+        'content-length': [],
+        'standard-server': [],
+        'content-disposition': [],
+      })
+
+      expect(body).toBe(blob)
+      expect(headers).toEqual({
+        'content-type': [],
+        'content-length': [],
+        'x-custom-header': 'custom-value',
+        'standard-server': [],
+        'content-disposition': [],
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.has('content-type')).toBe(false)
+      expect(fetchHeaders.has('content-length')).toBe(false)
+      expect(fetchHeaders.has('standard-server')).toBe(false)
+      expect(fetchHeaders.has('content-disposition')).toBe(false)
+    })
+  })
 })
 
 /**

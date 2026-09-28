@@ -106,13 +106,13 @@ export function toFetchBody(
     // and a transport can drop the empty ones (bun) or a proxy rewrite the content-length.
     headers['standard-server'] ??= 'file' satisfies StandardBodyHint // A File is also a Blob
 
-    headers['content-type'] = body.type
+    headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(body instanceof File ? body.name ?? '' : 'blob')
 
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {
-      headers['content-length'] = body.size.toString()
+      headers['content-length'] ??= body.size.toString()
       return [body, headers]
     }
 

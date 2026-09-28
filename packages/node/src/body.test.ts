@@ -691,5 +691,54 @@ describe('toNodeHttpBody', () => {
       expect(fetchHeaders.has('standard-server')).toBe(false)
       expect(fetchHeaders.has('content-disposition')).toBe(false)
     })
+
+    it('blob: unset content-type, and content-length', async () => {
+      const blob = new Blob(['foo'], { type: 'application/pdf' })
+      const [body, headers] = toNodeHttpBody(blob, {
+        ...baseHeaders,
+        'content-type': [],
+        'content-length': [],
+      })
+
+      expect(body).toBeInstanceOf(Readable)
+      expect(headers).toEqual({
+        'content-disposition': expect.any(String),
+        'content-length': [],
+        'content-type': [],
+        'x-custom-header': 'custom-value',
+        'standard-server': 'file',
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.has('content-type')).toBe(false)
+      expect(fetchHeaders.has('content-length')).toBe(false)
+    })
+  })
+
+  it('blob: explicit content-type and content-length override the auto-set ones', async () => {
+    const blob = new Blob(['foo'])
+    const [body, headers] = toNodeHttpBody(blob, {
+      ...baseHeaders,
+      'content-type': 'image/png',
+      'content-length': '3',
+      'content-disposition': 'inline; filename="foo.png"',
+    })
+
+    expect(body).toBeInstanceOf(Readable)
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="foo.png"',
+      'content-length': '3',
+      'content-type': 'image/png',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
+
+    const response = new Response(body, {
+      headers: toFetchHeaders(headers),
+    })
+    const resBlob = await response.blob()
+
+    expect(resBlob.type).toBe('image/png')
+    expect(await resBlob.text()).toBe('foo')
   })
 })
