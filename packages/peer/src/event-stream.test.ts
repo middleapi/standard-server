@@ -1,6 +1,6 @@
 import type { PeerEventStreamMessage } from './types'
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
-import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
+import { AsyncIteratorClass, promiseWithResolvers, Queue, sleep } from '@standard-server/shared'
 import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream'
 
 describe('toAsyncIteratorObject', () => {
@@ -290,6 +290,89 @@ describe('eventStreamTransmitter', () => {
     // The first next() was already in progress when cancel was called.
     // After cancel, the transmitter should not send the result.
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('does not wait for a native generator suspended in an await to settle cancel', async () => {
+    const send = vi.fn(async () => {})
+    const cleanup = vi.fn()
+    const { resolve, promise } = promiseWithResolvers<void>()
+    async function* gen() {
+      try {
+        yield 1
+        await promise
+        yield 2
+      }
+      finally {
+        cleanup()
+      }
+    }
+
+    const transmitter = new EventStreamTransmitter(gen(), 'msg-1', send)
+    const transmitPromise = transmitter.transmit()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+
+    // return() is queued behind the in-flight next(), so awaiting it would hang
+    let cancelled = false
+    void transmitter.cancel().then(() => cancelled = true)
+    await sleep(10)
+    expect(cancelled).toBe(true)
+    expect(cleanup).not.toHaveBeenCalled()
+
+    // the queued return() still runs the generator's finally once it yields
+    resolve()
+    await transmitPromise
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1))
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for return() when cancelled while no next() is in flight', async () => {
+    const { resolve: releaseReturn, promise: returnBlocker } = promiseWithResolvers<void>()
+    const returnFn = vi.fn(async () => {
+      await returnBlocker
+      return { done: true as const, value: undefined }
+    })
+    const iter: AsyncIterator<unknown> = {
+      next: async () => ({ done: false, value: 'data' }),
+      return: returnFn,
+    }
+    const { resolve: releaseSend, promise: sendBlocker } = promiseWithResolvers<void>()
+    const send = vi.fn(() => sendBlocker)
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
+    const transmitPromise = transmitter.transmit()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+
+    // the iterator is suspended at a yield, so return() settles promptly and is worth awaiting
+    let cancelled = false
+    const cancelPromise = transmitter.cancel().then(() => cancelled = true)
+    await sleep(10)
+    expect(returnFn).toHaveBeenCalledTimes(1)
+    expect(cancelled).toBe(false)
+
+    releaseReturn()
+    await cancelPromise
+    releaseSend()
+    await transmitPromise
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not surface a rejected return() requested while next() is in flight', async () => {
+    const { resolve, promise } = promiseWithResolvers<IteratorResult<unknown>>()
+    const iter: AsyncIterator<unknown> = {
+      next: () => promise,
+      return: async () => {
+        throw new Error('return failed')
+      },
+    }
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', vi.fn())
+    const transmitPromise = transmitter.transmit()
+    await sleep(0)
+
+    await expect(transmitter.cancel()).resolves.toBeUndefined()
+
+    resolve({ done: false, value: 'data' })
+    await transmitPromise
   })
 
   it('cancel is idempotent', async () => {

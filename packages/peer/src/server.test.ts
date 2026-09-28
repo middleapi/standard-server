@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { PeerCancelMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
-import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
+import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, promiseWithResolvers, sleep } from '@standard-server/shared'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { ServerPeer } from './server'
 
@@ -443,6 +443,35 @@ describe('serverPeer', () => {
 
         expect(returnFn).toHaveBeenCalled()
         await promise
+      })
+
+      it.each(['close', 'cancel message'])('does not hang on %s while a native generator is suspended in an await', async (via) => {
+        const cleanup = vi.fn()
+        const { resolve, promise } = promiseWithResolvers<void>()
+        async function* gen() {
+          try {
+            yield 1
+            await promise
+            yield 2
+          }
+          finally {
+            cleanup()
+          }
+        }
+
+        const requestPromise = peer.message(makeRequestMessage(), async () => eventStreamResponse(gen()))
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+
+        let settled = false
+        const cancelPromise = via === 'close' ? peer.close() : peer.message(makeCancelMessage('1'), vi.fn())
+        void cancelPromise.then(() => settled = true)
+        await sleep(10)
+        expect(settled).toBe(true)
+
+        resolve()
+        await requestPromise
+        await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1))
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response', 'event-stream'])
       })
 
       it('sends cancel message when iterator throws non-protocol error', async () => {

@@ -438,6 +438,44 @@ describe('clientPeer', () => {
         await promise
       })
 
+      it.each(['close', 'stream/cancel message'])('does not hang on %s while a native generator is suspended in an await', async (via) => {
+        const cleanup = vi.fn()
+        const { resolve, promise: blocker } = promiseWithResolvers<void>()
+        async function* gen() {
+          try {
+            yield 1
+            await blocker
+            yield 2
+          }
+          finally {
+            cleanup()
+          }
+        }
+
+        const { id, promise } = await requestAndGetId(makeRequest({ body: gen() }))
+        // close rejects the request right away, so observe the outcome before triggering it
+        const outcome = promise.then(() => undefined, error => error)
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+
+        let settled = false
+        const cancelPromise = via === 'close' ? peer.close() : peer.message(makeStreamCancelMessage(id))
+        void cancelPromise.then(() => settled = true)
+        await sleep(10)
+        expect(settled).toBe(true)
+
+        resolve()
+        await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1))
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
+
+        if (via === 'close') {
+          expect(await outcome).toBeInstanceOf(AbortError)
+        }
+        else {
+          await peer.message(makeResponseMessage(id))
+          expect(await outcome).toBeUndefined()
+        }
+      })
+
       it('send cancel message and reject request on non-protocol error', async () => {
         const nonProtocolError = new Error('non-protocol error')
         const iter = new AsyncIteratorClass<unknown>(async () => {

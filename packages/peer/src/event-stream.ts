@@ -47,6 +47,7 @@ export function toAsyncIteratorObject(
 
 export class EventStreamTransmitter {
   private isDone = false
+  private isPulling = false
 
   constructor(
     private readonly iterator: AsyncIterator<unknown>,
@@ -58,14 +59,37 @@ export class EventStreamTransmitter {
   async cancel(): Promise<void> {
     if (!this.isDone) {
       this.isDone = true
-      await this.iterator.return?.()
+      const promise = this.iterator.return?.()
+
+      if (this.isPulling) {
+        /**
+         * A native async generator queues `return()` behind the in-flight `next()`,
+         * so it only settles once the generator yields again, which may be never.
+         * Request the return without waiting for it; nothing is left to report a failure to.
+         */
+        void promise?.catch(() => {})
+      }
+      else {
+        await promise
+      }
+    }
+  }
+
+  private async pull(): Promise<IteratorResult<unknown>> {
+    this.isPulling = true
+
+    try {
+      return await this.iterator.next()
+    }
+    finally {
+      this.isPulling = false
     }
   }
 
   async transmit(): Promise<void> {
     while (true) {
       try {
-        const item = await this.iterator.next()
+        const item = await this.pull()
 
         if (this.isDone) {
           return
