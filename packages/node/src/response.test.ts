@@ -1,7 +1,10 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
+import http2 from 'node:http2'
 import Stream from 'node:stream'
+import { text } from 'node:stream/consumers'
 import request from 'supertest'
 import * as Body from './body'
 import { sendStandardResponse } from './response'
@@ -299,6 +302,98 @@ describe('sendStandardResponse', () => {
     expect(res.status).toBe(200)
     expect(res.headers).not.toHaveProperty('x-custom-header')
     expect(res.text).toEqual('flushed')
+  })
+
+  describe('bodiless response with a stream body', () => {
+    function createEndlessBody() {
+      const state = { clean: false }
+
+      const body = (async function* () {
+        try {
+          while (true) {
+            yield 'tick'
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        finally {
+          state.clean = true
+        }
+      })()
+
+      return { body, state }
+    }
+
+    it.each([
+      ['HEAD', 200],
+      ['GET', 204],
+      ['GET', 304],
+    ] as const)('ends a %s %i response instead of piping the body (http1)', async (method, status) => {
+      const { body, state } = createEndlessBody()
+      let endSpy: any
+      let sendPromise: Promise<void> | undefined
+
+      const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+        endSpy = vi.spyOn(res, 'end')
+
+        sendPromise = sendStandardResponse(res, {
+          status,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body,
+        })
+
+        await sendPromise
+      })[method === 'HEAD' ? 'head' : 'get']('/')
+
+      expect(res.status).toBe(status)
+      expect(res.headers['x-custom-header']).toEqual('custom-value')
+
+      expect(endSpy).toBeCalledTimes(1)
+      expect(endSpy).toBeCalledWith()
+
+      await expect(sendPromise).resolves.toBeUndefined()
+      await vi.waitFor(() => {
+        expect(state.clean).toBe(true)
+      })
+    })
+
+    it('ends a HEAD response instead of piping the body (http2)', async ({ onTestFinished }) => {
+      const { body, state } = createEndlessBody()
+      let sendPromise: Promise<void> | undefined
+
+      const server = http2.createServer((req, res) => {
+        sendPromise = sendStandardResponse(res, {
+          status: 200,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body,
+        })
+      })
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      await new Promise<void>(r => server.listen(0, r))
+
+      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+      onTestFinished(() => client.close())
+
+      const reqStream = client.request({ ':method': 'HEAD', ':path': '/' })
+      const [headers, data] = await Promise.all([
+        new Promise<http2.IncomingHttpHeaders>(r => reqStream.once('response', r)),
+        text(reqStream),
+      ])
+
+      expect(headers[':status']).toBe(200)
+      expect(headers['content-type']).toEqual('text/event-stream')
+      expect(headers['x-custom-header']).toEqual('custom-value')
+      expect(data).toEqual('')
+
+      await expect(sendPromise).resolves.toBeUndefined()
+      await vi.waitFor(() => {
+        expect(state.clean).toBe(true)
+      })
+    })
   })
 
   describe('stream destroy while sending', () => {

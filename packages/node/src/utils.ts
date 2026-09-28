@@ -74,6 +74,12 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
     return false
   }
 
+  if ('stream' in res && res.req?.method === 'HEAD') {
+    // Node ends a HEAD request's stream for writing up front (no body may follow), which
+    // `res.writableFinished` mirrors, yet the headers can still be sent until it closes
+    return !res.writableEnded && !res.stream.closed && !res.stream.destroyed
+  }
+
   if ('stream' in res && !_canWriteToStream(res.stream)) {
     return false
   }
