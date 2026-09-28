@@ -1,5 +1,3 @@
-import { AbortError } from './error'
-
 /**
  * Combines multiple AbortSignals using OR semantics.
  * Aborts when the first signal aborts and forwards its reason.
@@ -48,11 +46,10 @@ export function anyAbortSignal(...signals: (AbortSignal | undefined)[]): AbortSi
 
 /**
  * Throws the signal's abort reason if it is aborted, like `signal.throwIfAborted()`.
- * React Native's AbortSignal polyfill has no `throwIfAborted` and never sets a reason,
- * so use this instead. A missing reason falls back to an `AbortError`.
+ * React Native's AbortSignal polyfill has no `throwIfAborted`, so use this instead.
  */
 export function throwIfAborted(signal: AbortSignal | undefined | null): void {
   if (signal?.aborted) {
-    throw signal.reason ?? new AbortError('This operation was aborted')
+    throw signal.reason
   }
 }

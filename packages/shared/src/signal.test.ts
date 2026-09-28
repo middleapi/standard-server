@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AbortError } from './error'
 import { anyAbortSignal, throwIfAborted } from './signal'
 
 /**
@@ -119,13 +118,5 @@ describe('throwIfAborted', () => {
     controller.abort(reason)
 
     expect(() => throwIfAborted(controller.signal)).toThrow(reason)
-  })
-
-  it('throws an AbortError when the signal has no reason (React Native polyfill)', () => {
-    const controller = new AbortController()
-    Object.defineProperty(controller.signal, 'reason', { value: undefined })
-    controller.abort()
-
-    expect(() => throwIfAborted(controller.signal)).toThrow(AbortError)
   })
 })
