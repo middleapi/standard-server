@@ -31,7 +31,7 @@ export function toStandardBody(
       }
     }
 
-    if (contentType !== undefined) {
+    if (contentType !== undefined || bodyHint === 'octet-stream' satisfies StandardBodyHint) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
@@ -117,6 +117,12 @@ export async function encodeAtomicStandardBody(
 
   if (body instanceof ReadableStream) {
     headers['content-type'] ??= 'application/octet-stream'
+
+    // content-type marks an octet stream, so it needs a standard-server marker once removed (empty array)
+    if (flattenStandardHeader(headers['content-type']) === undefined) {
+      headers['standard-server'] = 'octet-stream' satisfies StandardBodyHint
+    }
+
     return { jsonBody: undefined, headers, binary: undefined }
   }
 
