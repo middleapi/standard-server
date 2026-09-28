@@ -1,5 +1,5 @@
 import type { StandardHeaders } from '@standard-server/core'
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { ErrorEvent, flattenStandardHeader, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 import { NOT_FOUND_HANDLER } from './client-server'
@@ -217,6 +217,32 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         else {
           expect(await response.resolveBody()).toEqual(createBody() as any)
         }
+      })
+    }
+
+    for (const [name, headers, expectedContentType] of [
+      ['overridden', { 'content-type': 'application/octet-stream' }, 'application/octet-stream'],
+      ['removed', { 'content-type': [] }, undefined],
+    ] satisfies [string, StandardHeaders, string | undefined][]) {
+      it(`file response with ${name} content-type`, async () => {
+        clientServer.setHandler(async () => ({
+          headers,
+          status: 200,
+          body: new File(['<script>alert(1)</script>'], 'x.html', { type: 'text/html' }),
+        }))
+
+        const response = await clientServer.request({
+          headers: {},
+          method: 'GET',
+          url: '/test',
+        })
+
+        expect(response.status).toEqual(200)
+        expect(flattenStandardHeader(response.headers['content-type'])).toEqual(expectedContentType)
+
+        const body = await response.resolveBody()
+        expect(body).toBeInstanceOf(File)
+        expect(await (body as File).text()).toEqual('<script>alert(1)</script>')
       })
     }
 

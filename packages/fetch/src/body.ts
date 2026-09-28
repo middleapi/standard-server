@@ -1,6 +1,6 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { ToEventStreamOptions } from './event-stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
@@ -106,17 +106,24 @@ export function toFetchBody(
     // and a transport can drop the empty ones (bun) or a proxy rewrite the content-length.
     headers['standard-server'] ??= 'file' satisfies StandardBodyHint // A File is also a Blob
 
-    headers['content-type'] = body.type
+    headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(body instanceof File ? body.name ?? '' : 'blob')
+
+    // A Response falls back to the blob's own type when no content-type header is given, so a removed
+    // content-type needs a body detached from the blob to stay removed (bun ties even blob.stream() to it)
+    const hidesBlobType = body.type !== '' && flattenStandardHeader(headers['content-type']) === undefined
 
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {
       headers['content-length'] = body.size.toString()
-      return [body, headers]
+
+      if (!hidesBlobType) {
+        return [body, headers]
+      }
     }
 
-    return [body.stream(), headers]
+    return [hidesBlobType ? body.stream().pipeThrough(new TransformStream()) : body.stream(), headers]
   }
 
   headers['standard-server'] = undefined
