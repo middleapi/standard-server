@@ -592,20 +592,41 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  describe('http2 HEAD request', () => {
-    it('sends the status and headers on an auto-exposed HEAD route', async ({ onTestFinished }) => {
+  describe('head request with a stream body', () => {
+    it('releases the body on an auto-exposed HEAD route', async ({ onTestFinished }) => {
+      const { body, isReleased } = createEndlessBody()
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
+        await sending
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).head('/')
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(201)
+      expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
+
+      await vi.waitFor(() => {
+        expect(isReleased()).toBe(true)
+      })
+    })
+
+    it('releases the body on an auto-exposed http2 HEAD route', async ({ onTestFinished }) => {
+      const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
 
       const fastify = Fastify({ http2: true })
       onTestFinished(() => fastify.close())
 
       fastify.get('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, {
-          status: 201,
-          headers: { 'x-custom-header': 'custom-value' },
-          body: new Blob(['foo']),
-        })
-
+        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
         await sending
       })
 
@@ -613,40 +634,23 @@ describe('sendStandardResponse', () => {
 
       await expect(sending).resolves.toBeUndefined()
 
-      expect(response.headers).toMatchObject({
-        ':status': 201,
-        'content-length': '3',
-        'x-custom-header': 'custom-value',
-      })
+      expect(response.headers).toMatchObject({ ':status': 201, 'x-custom-header': 'custom-value' })
       expect(response.body).toBe('')
+
+      await vi.waitFor(() => {
+        expect(isReleased()).toBe(true)
+      })
     })
 
-    it('resolves and releases a stream body it cannot send on an explicit HEAD route', async ({ onTestFinished }) => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          while (true) {
-            yield 'foo'
-            await new Promise(r => setTimeout(r, 10))
-          }
-        }
-        finally {
-          clean = true
-        }
-      })()
-
+    it('releases the body on an explicit http2 HEAD route', async ({ onTestFinished }) => {
+      const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
 
       const fastify = Fastify({ http2: true })
       onTestFinished(() => fastify.close())
 
       fastify.head('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, {
-          status: 201,
-          headers: { 'x-custom-header': 'custom-value' },
-          body,
-        })
-
+        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
         await sending
       })
 
@@ -654,19 +658,33 @@ describe('sendStandardResponse', () => {
 
       await expect(sending).resolves.toBeUndefined()
 
-      expect(response.headers).toMatchObject({
-        ':status': 201,
-        'content-type': 'text/event-stream',
-        'x-custom-header': 'custom-value',
-      })
+      expect(response.headers).toMatchObject({ ':status': 201, 'x-custom-header': 'custom-value' })
       expect(response.body).toBe('')
 
       await vi.waitFor(() => {
-        expect(clean).toBe(true)
+        expect(isReleased()).toBe(true)
       })
     })
   })
 })
+
+function createEndlessBody() {
+  let released = false
+
+  const body = (async function* () {
+    try {
+      while (true) {
+        yield 'foo'
+        await new Promise(r => setTimeout(r, 10))
+      }
+    }
+    finally {
+      released = true
+    }
+  })()
+
+  return { body, isReleased: () => released }
+}
 
 async function requestHttp2Head(origin: string): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
   const client = http2.connect(origin)

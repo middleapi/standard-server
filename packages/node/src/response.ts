@@ -33,8 +33,10 @@ export async function sendStandardResponse(
       return
     }
 
+    const connection = 'stream' in res ? res.stream : res
+
     res.once('error', reject)
-    res.once('close', resolve)
+    connection.once('close', resolve)
 
     try {
       // DON'T use `res.writeHead` because it send response immediately in chunked mode
@@ -47,11 +49,7 @@ export async function sendStandardResponse(
         }
       }
 
-      if (resBody === undefined || ('stream' in res && res.stream.writableEnded)) {
-        if (typeof resBody === 'object') {
-          resBody.destroy()
-        }
-
+      if (resBody === undefined) {
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
       }
@@ -59,7 +57,7 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
-        res.once('close', () => {
+        connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)
           }

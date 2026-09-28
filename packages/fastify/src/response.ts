@@ -1,7 +1,6 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AnyFastifyReply } from './types'
-import { Readable } from 'node:stream'
 import { canWriteToNodeResponse, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
@@ -33,8 +32,16 @@ export async function sendStandardResponse(
       return
     }
 
+    const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
+
     reply.raw.once('error', reject)
-    reply.raw.once('close', resolve)
+    connection.once('close', () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy()
+      }
+
+      resolve()
+    })
 
     try {
       reply.status(standardResponse.status)
@@ -47,14 +54,8 @@ export async function sendStandardResponse(
         }
       }
 
-      if (typeof resBody === 'object' && 'stream' in reply.raw && reply.raw.stream.writableEnded) {
-        resBody.destroy()
-        reply.send(Readable.from([]))
-      }
-      else {
-        // fastify pipes and cleans up the stream body itself, no manual piping needed
-        reply.send(resBody)
-      }
+      // fastify pipes the stream body itself, no manual piping needed
+      reply.send(resBody)
     }
     catch (error) {
       if (typeof resBody === 'object' && !resBody.closed) {
