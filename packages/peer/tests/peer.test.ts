@@ -2,6 +2,7 @@ import type { StandardLazyRequest, StandardResponse } from '@standard-server/cor
 import type { ClientPeer, ServerPeer } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { promiseWithResolvers } from '@standard-server/shared'
 import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
 
 /**
@@ -281,6 +282,96 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     const controller = new AbortController()
     const promise = client.request({ url: '/slow', method: 'GET', headers: {}, signal: controller.signal })
+
+    await vi.waitFor(() => expect(serverSignal).toBeDefined())
+    controller.abort(new Error('user navigated away'))
+
+    await expect(promise).rejects.toThrow('user navigated away')
+    await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+  })
+
+  it('propagates a client abort fired while the request message is still being sent', async () => {
+    const prefix = 'peer:'
+    const wire = {} as { client: ClientPeer, server: ServerPeer }
+    const requestSendStarted = promiseWithResolvers<void>()
+    const requestEncoded = promiseWithResolvers<void>()
+
+    let serverSignal: AbortSignal | undefined
+    const handler = async (request: StandardLazyRequest): Promise<StandardResponse> => {
+      serverSignal = request.signal
+      return new Promise(() => {}) // handler never resolves
+    }
+
+    // like `connect()`, but encoding the request message (e.g. awaiting `blob.arrayBuffer()`)
+    // takes longer than encoding the cancel message that follows it
+    wire.client = new ClientPeerClass(async (message) => {
+      if (message.kind === 'request') {
+        requestSendStarted.resolve()
+        await requestEncoded.promise
+      }
+      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
+      if (!decoded.matched) {
+        throw new Error('Failed to decode message on the wire')
+      }
+      void wire.server.message(decoded.message as ClientPeerSendMessage, handler).catch(() => {})
+    })
+
+    wire.server = new ServerPeerClass(async (message) => {
+      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
+      if (!decoded.matched) {
+        throw new Error('Failed to decode message on the wire')
+      }
+      void wire.client.message(decoded.message as ServerPeerSendMessage)
+    })
+
+    const controller = new AbortController()
+    const promise = wire.client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: {},
+      body: new File(['hello'], 'hello.txt', { type: 'text/plain' }),
+      signal: controller.signal,
+    })
+
+    await requestSendStarted.promise
+    controller.abort(new Error('user navigated away'))
+    await expect(promise).rejects.toThrow('user navigated away')
+
+    requestEncoded.resolve()
+    await vi.waitFor(() => expect(serverSignal).toBeDefined())
+    await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+  })
+
+  it('propagates client aborts when the transport waits for full remote processing before send resolves', async () => {
+    const prefix = 'peer:'
+    const wire = {} as { client: ClientPeer, server: ServerPeer }
+
+    let serverSignal: AbortSignal | undefined
+    const handler = async (request: StandardLazyRequest): Promise<StandardResponse> => {
+      serverSignal = request.signal
+      await new Promise(resolve => request.signal!.addEventListener('abort', resolve))
+      return { status: 200, headers: {}, body: 'too late' }
+    }
+
+    // the request `send` stays in flight until the handler settles, so only a cancel sent meanwhile can abort it
+    wire.client = new ClientPeerClass(async (message) => {
+      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
+      if (!decoded.matched) {
+        throw new Error('Failed to decode message on the wire')
+      }
+      await wire.server.message(decoded.message as ClientPeerSendMessage, handler)
+    })
+
+    wire.server = new ServerPeerClass(async (message) => {
+      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
+      if (!decoded.matched) {
+        throw new Error('Failed to decode message on the wire')
+      }
+      await wire.client.message(decoded.message as ServerPeerSendMessage)
+    })
+
+    const controller = new AbortController()
+    const promise = wire.client.request({ url: '/slow', method: 'GET', headers: {}, signal: controller.signal })
 
     await vi.waitFor(() => expect(serverSignal).toBeDefined())
     controller.abort(new Error('user navigated away'))

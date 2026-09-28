@@ -15,6 +15,13 @@ interface ClientPeerRequestStateInternal {
   eventStreamTransmitter?: EventStreamTransmitter | undefined
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
   removeAbortListener?: (() => void) | undefined
+  /**
+   * A cancel message sent while the request message is in flight can reach the server first,
+   * and the server ignores cancels for requests it has not seen, so such a cancel is sent again
+   * once the request message is sent.
+   */
+  sendingRequestMessage?: boolean | undefined
+  resendCancel?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -77,6 +84,7 @@ export class ClientPeer {
       }
 
       // PeerRequestMessage must be sent before stream messages
+      state.sendingRequestMessage = true
       await this.send({
         id,
         kind: 'request',
@@ -88,9 +96,16 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
+      state.sendingRequestMessage = undefined
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
+        if (state.resendCancel) {
+          // the first cancel may have overtaken the request message, otherwise the server ignores this one
+          // a failed cancel delivery must not surface as an unhandled rejection
+          await this.send({ id, kind: 'cancel' }).catch(() => {})
+        }
+
         return
       }
 
@@ -264,6 +279,12 @@ export class ClientPeer {
     state.octetStreamMessageQueue?.abort(reason)
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
+
+    /**
+     * Still cancel right away even if the request message is in flight: some transports only resolve
+     * `send` once the server has handled the message, and this cancel is what aborts that handling.
+     */
+    state.resendCancel = state.sendingRequestMessage
 
     const promises = [
       this.send({ id, kind: 'cancel' }),
