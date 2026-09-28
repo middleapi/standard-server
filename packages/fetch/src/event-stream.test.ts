@@ -1,4 +1,4 @@
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { ErrorEvent, EventStreamEncoderError, getEventMeta, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
@@ -526,6 +526,33 @@ describe('toEventStream', () => {
         vi.advanceTimersByTimeAsync(100),
       ])
 
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: true })
+    })
+
+    it.each(['\n', '\r', '\r\n'])('throws upfront when the comment contains a line break: %j', (lineBreak) => {
+      async function* gen() {
+        yield 'hello'
+      }
+
+      expect(() => toEventStream(gen(), {
+        keepAlive: { enabled: true, interval: 40, comment: `ping${lineBreak}` },
+      })).toThrow(new EventStreamEncoderError('Event\'s comment must not contain a carriage return or newline character'))
+    })
+
+    it('ignores an invalid comment when disabled', async () => {
+      async function* gen() {
+        yield 'hello'
+      }
+
+      const reader = toEventStream(gen(), {
+        initialComment: { enabled: false },
+        keepAlive: { enabled: false, comment: 'ping\n' },
+      })
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
+
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })

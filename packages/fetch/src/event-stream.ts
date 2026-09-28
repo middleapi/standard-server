@@ -129,10 +129,17 @@ export function toEventStream(
 ): ReadableStream<Uint8Array<ArrayBuffer>> {
   const keepAliveEnabled = options.keepAlive?.enabled ?? true
   const keepAliveInterval = options.keepAlive?.interval ?? 15000
-  const keepAliveComment = options.keepAlive?.comment ?? ''
   const initialCommentEnabled = options.initialComment?.enabled ?? true
   const initialComment = options.initialComment?.comment ?? ''
   const emptyCloseEventEnabled = options.emptyCloseEventEnabled ?? true
+
+  /**
+   * Encoded once up front so an invalid comment throws here, like an invalid initial comment,
+   * instead of later from the keep-alive timer, where nothing can catch it.
+   */
+  const keepAliveMessage = keepAliveEnabled
+    ? encodeEventStreamMessage({ comments: [options.keepAlive?.comment ?? ''] })
+    : undefined
 
   let cancelled = false
   let timeout: ReturnType<typeof setInterval> | undefined
@@ -149,11 +156,9 @@ export function toEventStream(
       let result: IteratorResult<unknown>
 
       try {
-        if (keepAliveEnabled) {
+        if (keepAliveMessage !== undefined) {
           timeout = setInterval(() => {
-            controller.enqueue(encodeEventStreamMessage({
-              comments: [keepAliveComment],
-            }))
+            controller.enqueue(keepAliveMessage)
           }, keepAliveInterval)
         }
 
