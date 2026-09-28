@@ -502,7 +502,6 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  // Node ends the writable side of an http2 HEAD stream before the request is handled
   describe('http2 HEAD request', () => {
     it('sends the status and headers without the body', async () => {
       let res: Http2ServerResponse | undefined
@@ -526,7 +525,6 @@ describe('sendStandardResponse', () => {
       })
       expect(response.body).toBe('')
 
-      // the body was never written to the ended stream
       expect(res!.stream.errored).toBe(null)
     })
 

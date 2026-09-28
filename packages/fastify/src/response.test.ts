@@ -592,7 +592,6 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  // Node ends the writable side of an http2 HEAD stream before the request is handled
   describe('http2 HEAD request', () => {
     it('sends the status and headers on an auto-exposed HEAD route', async ({ onTestFinished }) => {
       let sending: Promise<void> | undefined

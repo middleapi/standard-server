@@ -67,18 +67,12 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
 }
 
 /**
- * Check a response can still be sent: its headers aren't sent, it hasn't ended,
- * and its connection (the underlying stream on http2) is still open.
- *
- * Only `destroyed` is read from an http2 stream: Node ends its writable side up front
- * for a HEAD request, whose headers can still be sent.
+ * Check the response can still be sent.
  */
 export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
-  if (('headersSent' in res && res.headersSent) || res.writableEnded) {
-    return false
-  }
-
-  return !('stream' in res ? res.stream : res).destroyed
+  return !('headersSent' in res && res.headersSent)
+    && !res.writableEnded
+    && !('stream' in res ? res.stream : res).destroyed
 }
 
 /**

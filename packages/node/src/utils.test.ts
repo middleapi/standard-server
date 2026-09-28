@@ -196,7 +196,6 @@ describe('canWriteToNodeResponse', () => {
           resolve()
         }
         catch (error) {
-          res.end()
           reject(error)
         }
       })

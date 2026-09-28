@@ -219,7 +219,6 @@ describe('toAbortSignal', async () => {
 
             expect(signal.aborted).toBe(false)
 
-            // Node emits no `close` on an http2 HEAD response that never ended
             await new Promise<void>(r => res.stream.once('close', () => r()))
 
             expect(signal.aborted).toBe(true)
