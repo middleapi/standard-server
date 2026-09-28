@@ -178,6 +178,40 @@ describe('canWriteToNodeResponse', () => {
 
     await handled
   })
+
+  it('on http2 HEAD response, whose stream Node already ended', async ({ onTestFinished }) => {
+    const server = http2.createServer()
+    onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+    const handled = new Promise<void>((resolve, reject) => {
+      server.on('request', async (req, res) => {
+        try {
+          expect(res.stream.writableEnded).toBe(true)
+          expect(canWriteToNodeResponse(res)).toBe(true)
+
+          res.end()
+
+          expect(canWriteToNodeResponse(res)).toBe(false)
+
+          resolve()
+        }
+        catch (error) {
+          res.end()
+          reject(error)
+        }
+      })
+    })
+
+    await new Promise<void>(r => server.listen(0, r))
+    const port = (server.address() as any).port
+
+    const client = http2.connect(`http://localhost:${port}`)
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    reqStream.resume()
+    reqStream.once('close', () => client.close())
+
+    await handled
+  })
 })
 
 describe('getNodeResponseError', () => {

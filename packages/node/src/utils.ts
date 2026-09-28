@@ -74,8 +74,11 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
     return false
   }
 
-  if ('stream' in res && !_canWriteToStream(res.stream)) {
-    return false
+  if ('stream' in res) {
+    // Node ends the writable side of an http2 HEAD stream up front (`res.writableFinished`
+    // mirrors it), yet its headers can still be sent, so only the stream staying open
+    // and the response itself not ending matter here.
+    return !res.stream.closed && !res.stream.destroyed && !res.writableEnded
   }
 
   return _canWriteToStream(res)

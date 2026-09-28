@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import http2 from 'node:http2'
 import { Readable, Writable } from 'node:stream'
 import FastifyCookie from '@fastify/cookie'
 import * as StandardServerNode from '@standard-server/node'
@@ -590,4 +591,103 @@ describe('sendStandardResponse', () => {
       expect(reply.send).not.toHaveBeenCalled()
     })
   })
+
+  // Node ends the writable side of an http2 HEAD stream before the request is handled
+  describe('http2 HEAD request', () => {
+    it('sends the status and headers on an auto-exposed HEAD route', async ({ onTestFinished }) => {
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: new Blob(['foo']),
+        })
+
+        await sending
+      })
+
+      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': 201,
+        'content-length': '3',
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+    })
+
+    it('resolves and releases a stream body it cannot send on an explicit HEAD route', async ({ onTestFinished }) => {
+      let clean = false
+      const body = (async function* () {
+        try {
+          while (true) {
+            yield 'foo'
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        finally {
+          clean = true
+        }
+      })()
+
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
+
+      fastify.head('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
+
+        await sending
+      })
+
+      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': 201,
+        'content-type': 'text/event-stream',
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
+    })
+  })
 })
+
+async function requestHttp2Head(origin: string): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
+  const client = http2.connect(origin)
+
+  try {
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+
+    const chunks: Buffer[] = []
+    reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
+
+    const headers = await new Promise<http2.IncomingHttpHeaders>((resolve, reject) => {
+      reqStream.once('response', resolve)
+      reqStream.once('error', reject)
+    })
+
+    await new Promise(r => reqStream.once('close', r))
+
+    return { headers, body: Buffer.concat(chunks).toString() }
+  }
+  finally {
+    client.close()
+  }
+}

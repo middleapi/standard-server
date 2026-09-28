@@ -47,7 +47,11 @@ export async function sendStandardResponse(
         }
       }
 
-      if (resBody === undefined) {
+      // Node ends the writable side of an http2 HEAD stream up front, so its body can't be written:
+      // a write fails with ERR_STREAM_WRITE_AFTER_END, and a pipe stalls without ever closing `res`
+      const isHeadersOnly = 'stream' in res && res.stream.writableEnded
+
+      if (resBody === undefined || (typeof resBody === 'string' && isHeadersOnly)) {
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
       }
@@ -64,7 +68,12 @@ export async function sendStandardResponse(
         // WARNING: errors that occur here are silently ignored and not reported to the Promise
         resBody.once('error', error => res.destroy(error))
 
-        resBody.pipe(res)
+        if (isHeadersOnly) {
+          res.end() // the `close` listener above releases the unsent body
+        }
+        else {
+          resBody.pipe(res)
+        }
       }
     }
     catch (error) {

@@ -1,6 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AnyFastifyReply } from './types'
+import { Readable } from 'node:stream'
 import { canWriteToNodeResponse, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
@@ -46,8 +47,17 @@ export async function sendStandardResponse(
         }
       }
 
-      // fastify pipes and cleans up the stream body itself, no manual piping needed
-      reply.send(resBody)
+      // Node ends the writable side of an http2 HEAD stream up front, so a stream body can't be
+      // piped there (fastify stalls without ever closing `reply.raw`): release it and send an
+      // empty one, which both explicit and auto-exposed HEAD routes end cleanly with the headers
+      if (typeof resBody === 'object' && 'stream' in reply.raw && reply.raw.stream.writableEnded) {
+        resBody.destroy()
+        reply.send(Readable.from([]))
+      }
+      else {
+        // fastify pipes and cleans up the stream body itself, no manual piping needed
+        reply.send(resBody)
+      }
     }
     catch (error) {
       if (typeof resBody === 'object' && !resBody.closed) {

@@ -19,7 +19,11 @@ export function toAbortSignal(stream: Stream.Writable | NodeHttpResponse): Abort
   else {
     stream.once('error', error => controller.abort(error))
 
-    stream.once('close', () => {
+    // Node skips the http2 response's `close` when a HEAD stream closes before `res.end()`,
+    // so listen to the underlying stream instead
+    const closable = 'stream' in stream ? stream.stream : stream
+
+    closable.once('close', () => {
       if (!stream.writableFinished || !stream.writableEnded) {
         controller.abort(new AbortError('Writable stream closed before it finished writing'))
       }
