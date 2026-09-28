@@ -77,6 +77,22 @@ describe('sendStandardResponse', () => {
     expect(res.body).toEqual({ foo: 'bar' })
   })
 
+  it('buffered with a differently cased content-length', async () => {
+    const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+      await sendStandardResponse(res, {
+        status: 200,
+        headers: {
+          'Content-Length': '99',
+        },
+        body: { foo: 'bar' },
+      })
+    }).get('/')
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-length']).toBe('13')
+    expect(res.body).toEqual({ foo: 'bar' })
+  })
+
   it('chunked (file)', async () => {
     const blob = new Blob(['foo'], { type: 'text/plain' })
     let endSpy: any

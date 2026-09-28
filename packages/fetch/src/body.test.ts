@@ -452,6 +452,49 @@ describe('toFetchBody', () => {
     expect(await reader.read()).toEqual({ done: false, value: 'order3' })
     expect(await reader.read()).toEqual({ done: true })
   })
+
+  describe('differently cased body headers', () => {
+    it('json: override content-type and clear content-length and standard-server', () => {
+      const [body, headers] = toFetchBody({ foo: 'bar' }, {
+        ...baseHeaders,
+        'Content-Type': 'text/plain',
+        'Content-Length': '99',
+        'Standard-Server': 'file',
+      })
+
+      expect(body).toBe('{"foo":"bar"}')
+      expect(headers).toEqual({
+        'content-type': 'application/json',
+        'x-custom-header': 'custom-value',
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.get('content-type')).toBe('application/json')
+      expect(fetchHeaders.has('content-length')).toBe(false)
+      expect(fetchHeaders.has('standard-server')).toBe(false)
+    })
+
+    it('undefined: clear content-type', () => {
+      const [body, headers] = toFetchBody(undefined, { ...baseHeaders, 'Content-Type': 'application/json' })
+
+      expect(body).toBe(undefined)
+      expect(headers).toEqual({
+        'x-custom-header': 'custom-value',
+      })
+    })
+
+    it('octet stream: keep content-type', () => {
+      const stream = new ReadableStream()
+      const [body, headers] = toFetchBody(stream, { ...baseHeaders, 'Content-Type': 'text/plain' })
+
+      expect(body).toBe(stream)
+      expect(headers).toEqual({
+        'content-type': 'text/plain',
+        'x-custom-header': 'custom-value',
+        'standard-server': 'octet-stream',
+      })
+    })
+  })
 })
 
 /**

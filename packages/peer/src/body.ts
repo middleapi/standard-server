@@ -1,7 +1,7 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { AsyncCleanupFn } from '@standard-server/shared'
 import type { PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage } from './types'
-import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition } from '@standard-server/core'
+import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, normalizeStandardBodyHeaders } from '@standard-server/core'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 import { toAsyncIteratorObject } from './event-stream'
 import { toOctetStream } from './octet-stream'
@@ -113,7 +113,7 @@ export async function encodeAtomicStandardBody(
   body: StandardBody,
   headers: StandardHeaders,
 ): Promise<EncodedAtomicStandardBody> {
-  headers = { ...headers }
+  headers = normalizeStandardBodyHeaders(headers)
 
   if (body instanceof ReadableStream) {
     headers['content-type'] ??= 'application/octet-stream'

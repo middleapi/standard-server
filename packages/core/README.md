@@ -226,7 +226,7 @@ A `StandardBody` is richer than what HTTP content headers can describe. `content
 
 The `standard-server` header closes this gap. It carries the sender's `StandardBodyHint` verbatim — `json`, `form-data`, `url-search-params`, `event-stream`, `octet-stream`, `file`, or `none` — so the receiver reconstructs exactly the body representation the sender had.
 
-Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely. For the other body types, the content headers are enough, so adapters clear it.
+Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely. For the other body types, the content headers are enough, so adapters clear it. Header names match case-insensitively here, so a `Content-Type` you set is honored or replaced exactly like `content-type`.
 
 The header is optional: when it is absent or invalid, the receiver falls back to content-header inference, so plain HTTP clients work as-is. Just set the header yourself whenever the content type alone could be misread:
 
@@ -318,6 +318,15 @@ const headers = mergeStandardHeaders(
 
 const cookieHeader = flattenStandardHeader(headers['set-cookie'])
 // 'a=1, b=2'
+```
+
+`normalizeStandardBodyHeaders()` copies headers with differently cased `standard-server`, `content-type`, `content-length`, and `content-disposition` keys moved to their lowercase key. Call it in a custom adapter before setting or clearing those headers for a body, so a `Content-Type` cannot survive next to the one the adapter sets.
+
+```ts
+import { normalizeStandardBodyHeaders } from '@standard-server/core'
+
+normalizeStandardBodyHeaders({ 'Content-Type': 'text/plain', 'X-Trace': '1' })
+// { 'X-Trace': '1', 'content-type': 'text/plain' }
 ```
 
 ### URL parsing

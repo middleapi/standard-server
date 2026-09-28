@@ -359,6 +359,22 @@ describe('encodeAtomicStandardBody', () => {
     expect(binary).toBe(undefined)
   })
 
+  it('encodes ReadableStream body and preserves a differently cased content-type header', async () => {
+    const { headers } = await encodeAtomicStandardBody(new ReadableStream(), { 'Content-Type': 'custom/type' })
+
+    expect(headers).toEqual({ 'content-type': 'custom/type' })
+  })
+
+  it('encodes JSON body and removes differently cased content-type and standard-server headers', async () => {
+    const { jsonBody, headers } = await encodeAtomicStandardBody({ a: 1 }, {
+      'Content-Type': 'custom/type',
+      'Standard-Server': 'file',
+    })
+
+    expect(jsonBody).toEqual({ a: 1 })
+    expect(headers).toEqual({})
+  })
+
   it('clones headers and does not mutate originals', async () => {
     const originalHeaders: StandardHeaders = { 'x-custom': 'value' }
     const { headers } = await encodeAtomicStandardBody(undefined, originalHeaders)

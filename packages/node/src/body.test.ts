@@ -644,6 +644,34 @@ describe('toNodeHttpBody', () => {
     expect(await reader.read()).toEqual({ done: true })
   })
 
+  describe('differently cased body headers', () => {
+    it('json: override content-type and clear content-length and standard-server', () => {
+      const [body, headers] = toNodeHttpBody({ foo: 'bar' }, {
+        ...baseHeaders,
+        'Content-Type': 'text/plain',
+        'Content-Length': '99',
+        'Standard-Server': 'file',
+      })
+
+      expect(body).toBe('{"foo":"bar"}')
+      expect(headers).toEqual({
+        'content-type': 'application/json',
+        'x-custom-header': 'custom-value',
+      })
+    })
+
+    it('octet stream: keep content-type', () => {
+      const [body, headers] = toNodeHttpBody(new ReadableStream(), { ...baseHeaders, 'Content-Type': 'text/plain' })
+
+      expect(body).toBeInstanceOf(Readable)
+      expect(headers).toEqual({
+        'content-type': 'text/plain',
+        'x-custom-header': 'custom-value',
+        'standard-server': 'octet-stream',
+      })
+    })
+  })
+
   describe('override auto-set headers with empty array', () => {
     it('readable stream: unset content-type, and standard-server', async () => {
       const stream = new ReadableStream({

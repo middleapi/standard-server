@@ -3,7 +3,7 @@ import type { Buffer } from 'node:buffer'
 import type { ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
 import { Readable } from 'node:stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import { generateContentDisposition, getFilenameFromContentDisposition, normalizeStandardBodyHeaders, resolveStandardBodyHint } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 import { toWebReadableStream } from './utils'
@@ -96,7 +96,7 @@ export function toNodeHttpBody(
   body: Readable | undefined | string,
   headers: StandardHeaders,
 ] {
-  headers = { ...headers }
+  headers = normalizeStandardBodyHeaders(headers)
 
   if (body instanceof ReadableStream) {
     // Always set the body hint: the length of a stream is unknown here, but the transport

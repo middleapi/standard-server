@@ -35,6 +35,17 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledTimes(1)
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
+
+  it('send a single content-type when the given one is differently cased', async () => {
+    const fetchResponse = toFetchResponse({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: { ok: true },
+    })
+
+    expect(fetchResponse.headers.get('content-type')).toBe('application/json')
+    expect(await toStandardLazyResponse(fetchResponse).resolveBody()).toEqual({ ok: true })
+  })
 })
 
 describe('toStandardLazyResponse', () => {

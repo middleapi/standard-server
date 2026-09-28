@@ -111,6 +111,34 @@ export function resolveStandardBodyHint(headers: {
   return 'octet-stream'
 }
 
+const STANDARD_BODY_HEADER_KEY_SET: ReadonlySet<string> = new Set([
+  'standard-server',
+  'content-type',
+  'content-length',
+  'content-disposition',
+])
+
+/**
+ * Copies headers for a body encoder, moving differently cased keys of the headers
+ * it sets or clears (`standard-server`, `content-type`, `content-length`, `content-disposition`)
+ * to their lowercase key, so a `Content-Type` cannot survive next to the encoder's `content-type`.
+ * A value under the lowercase key wins over its case variants.
+ */
+export function normalizeStandardBodyHeaders(headers: StandardHeaders): StandardHeaders {
+  const normalized = { ...headers }
+
+  for (const key of Object.keys(headers)) {
+    const lowerKey = key.toLowerCase()
+
+    if (key !== lowerKey && STANDARD_BODY_HEADER_KEY_SET.has(lowerKey)) {
+      normalized[lowerKey] ??= headers[key]
+      delete normalized[key]
+    }
+  }
+
+  return normalized
+}
+
 /**
  * Cancel a body that will not be consumed, so its stream or iterator source can clean up.
  * Other bodies are left as is. Rejects if that cleanup fails.

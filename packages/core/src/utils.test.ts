@@ -1,5 +1,5 @@
 import { AsyncIteratorClass } from '@standard-server/shared'
-import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
+import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, normalizeStandardBodyHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -269,6 +269,63 @@ describe('mergeStandardHeaders', () => {
 
     expect(Object.getPrototypeOf(merged)).toEqual(Object.prototype)
     expect(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value).toEqual(['1', '2'])
+  })
+})
+
+describe('normalizeStandardBodyHeaders', () => {
+  afterEach(() => {
+    expect(({} as any).polluted).toEqual(undefined)
+  })
+
+  it('move differently cased body headers to their lowercase key', () => {
+    const normalized = normalizeStandardBodyHeaders({
+      'Standard-Server': 'file',
+      'Content-Type': 'text/plain',
+      'CONTENT-LENGTH': '3',
+      'Content-Disposition': 'inline',
+      'X-Custom': 'a',
+      'set-cookie': ['a=1', 'b=2'],
+    })
+
+    expect(normalized).toEqual({
+      'standard-server': 'file',
+      'content-type': 'text/plain',
+      'content-length': '3',
+      'content-disposition': 'inline',
+      'X-Custom': 'a',
+      'set-cookie': ['a=1', 'b=2'],
+    })
+  })
+
+  it('prefer the lowercase key over its case variants', () => {
+    expect(normalizeStandardBodyHeaders({ 'Content-Type': 'text/plain', 'content-type': 'application/json' }))
+      .toEqual({ 'content-type': 'application/json' })
+    expect(normalizeStandardBodyHeaders({ 'content-type': 'application/json', 'Content-Type': 'text/plain' }))
+      .toEqual({ 'content-type': 'application/json' })
+    expect(normalizeStandardBodyHeaders({ 'content-type': [], 'Content-Type': 'text/plain' }))
+      .toEqual({ 'content-type': [] })
+
+    // an undefined value is an absent header, so a case variant fills it
+    expect(normalizeStandardBodyHeaders({ 'content-type': undefined, 'Content-Type': 'text/plain' }))
+      .toEqual({ 'content-type': 'text/plain' })
+  })
+
+  it('copy instead of mutating the headers', () => {
+    const headers = { 'Content-Type': 'text/plain', 'x-custom': 'a' }
+    const normalized = normalizeStandardBodyHeaders(headers)
+
+    expect(normalized).not.toBe(headers)
+    expect(headers).toEqual({ 'Content-Type': 'text/plain', 'x-custom': 'a' })
+  })
+
+  it('not pollute the prototype through __proto__', () => {
+    const headers = JSON.parse('{ "__proto__": { "polluted": "yes" }, "Content-Type": "text/plain" }')
+
+    const normalized = normalizeStandardBodyHeaders(headers)
+
+    expect(Object.getPrototypeOf(normalized)).toEqual(Object.prototype)
+    expect(Object.getOwnPropertyDescriptor(normalized, '__proto__')?.value).toEqual({ polluted: 'yes' })
+    expect(normalized['content-type']).toEqual('text/plain')
   })
 })
 
