@@ -2,7 +2,7 @@ import type { StandardBody, StandardLazyResponse, StandardRequest } from '@stand
 import type { Queue } from '@standard-server/shared'
 import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
-import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator } from '@standard-server/shared'
+import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator, throwIfAborted } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
 import { OctetStreamTransmitter } from './octet-stream'
@@ -32,7 +32,7 @@ export class ClientPeer {
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
       const signal = request.signal
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
 
       const id = this.idGenerator.generate()
       const state: ClientPeerRequestStateInternal = { resolve, reject }
@@ -69,7 +69,7 @@ export class ClientPeer {
       const encodedAtomicBody = await encodeAtomicStandardBody(request.body, request.headers)
 
       // signal can be aborted during encode
-      request.signal?.throwIfAborted()
+      throwIfAborted(request.signal)
 
       // the peer can be closed during encode
       if (this.requests.get(id) !== state) {
