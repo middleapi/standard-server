@@ -81,6 +81,9 @@ export async function fetchHandler(request: Request): Promise<Response> {
 }
 ```
 
+> [!NOTE]
+> The Fetch API forbids a body on a `204`, `205`, or `304` response, so `toFetchResponse()` drops it instead of throwing. A dropped stream or async iterator body is cancelled so its source can clean up. The same happens to a stream or iterator body when `toFetchResponse()` throws because of an invalid status or header.
+
 ## Client-side response handling
 
 Use `toFetchBody()` and `toFetchHeaders()` to serialize an outgoing request, and `toStandardLazyResponse()` when you receive a Fetch `Response` but want to work with the Standard Server response contract.

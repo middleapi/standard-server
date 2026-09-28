@@ -35,6 +35,123 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledTimes(1)
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
+
+  function createPendingIterator() {
+    return {
+      // like a subscription waiting for its next event
+      next: vi.fn(() => new Promise<IteratorResult<unknown>>(() => {})),
+      return: vi.fn(async () => ({ done: true as const, value: undefined })),
+      [Symbol.asyncIterator]() {
+        return this
+      },
+    }
+  }
+
+  describe.each([204, 205, 304])('status %i', (status) => {
+    it.each([
+      ['null', null],
+      ['json', { value: 123 }],
+      ['blob', new Blob(['value'])],
+      ['form-data', new FormData()],
+    ])('drops a %s body', async (_, body) => {
+      const fetchResponse = toFetchResponse({
+        body,
+        headers: { 'x-custom-header': 'custom-value' },
+        status,
+      })
+
+      expect(fetchResponse.status).toBe(status)
+      expect(fetchResponse.body).toBe(null)
+      expect(fetchResponse.headers.get('x-custom-header')).toBe('custom-value')
+      expect(fetchResponse.headers.get('content-type')).toBe(null)
+      expect(fetchResponse.headers.get('content-length')).toBe(null)
+      expect(fetchResponse.headers.get('standard-server')).toBe(null)
+    })
+
+    it('releases a dropped iterator without starting it', async () => {
+      vi.useFakeTimers()
+
+      try {
+        const iterator = createPendingIterator()
+        const fetchResponse = toFetchResponse({ body: iterator, headers: {}, status })
+
+        await vi.advanceTimersByTimeAsync(100)
+
+        expect(fetchResponse.body).toBe(null)
+        expect(iterator.next).not.toHaveBeenCalled()
+        expect(iterator.return).toHaveBeenCalledTimes(1)
+        expect(vi.getTimerCount()).toBe(0) // no keep-alive
+      }
+      finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('cancels a dropped stream', async () => {
+      const cancel = vi.fn()
+      const fetchResponse = toFetchResponse({ body: new ReadableStream({ cancel }), headers: {}, status })
+
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(fetchResponse.body).toBe(null)
+      expect(cancel).toHaveBeenCalledTimes(1)
+    })
+
+    it('ignores a failure to release a dropped body', async () => {
+      const iterator = createPendingIterator()
+      iterator.return.mockRejectedValueOnce(new Error('cleanup'))
+
+      expect(toFetchResponse({ body: iterator, headers: {}, status }).status).toBe(status)
+
+      // an unhandled rejection would fail the test run
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(iterator.return).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe.each([
+    ['an invalid status', 600, {}, 'status'],
+    ['an invalid header', 200, { 'x-custom-header': 'a\nb' }, 'header'],
+  ])('when the response cannot be built from %s', (_, status, headers, message) => {
+    it('releases an iterator body and stops keep-alive', async () => {
+      vi.useFakeTimers()
+
+      try {
+        const iterator = createPendingIterator()
+
+        expect(() => toFetchResponse(
+          { body: iterator, headers, status },
+          { eventStream: { keepAlive: { enabled: true, interval: 10 } } },
+        )).toThrow(message)
+
+        await vi.advanceTimersByTimeAsync(100)
+
+        expect(iterator.return).toHaveBeenCalledTimes(1)
+        expect(vi.getTimerCount()).toBe(0) // no keep-alive
+      }
+      finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('cancels a stream body with the error', async () => {
+      const cancel = vi.fn()
+
+      let error: unknown
+      try {
+        toFetchResponse({ body: new ReadableStream({ cancel }), headers, status })
+      }
+      catch (e) {
+        error = e
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(error).toBeInstanceOf(Error)
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(cancel).toHaveBeenCalledWith(error)
+    })
+  })
 })
 
 describe('toStandardLazyResponse', () => {
