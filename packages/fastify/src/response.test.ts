@@ -349,6 +349,85 @@ describe('sendStandardResponse', () => {
       })
     })
 
+    it('destroys the body when fastify discards it (HEAD request)', async ({ onTestFinished }) => {
+      let yields = 0
+      let clean = false
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        await sendStandardResponse(reply, {
+          status: 207,
+          headers: {},
+          body: (async function* () {
+            try {
+              while (true) {
+                yields++
+                yield 'foo'
+                await new Promise(r => setTimeout(r, 10))
+              }
+            }
+            finally {
+              clean = true
+            }
+          })(),
+        }, { eventStream: { keepAlive: { enabled: true, interval: 10 } } })
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).head('/')
+
+      expect(res.status).toBe(207)
+      expect(res.headers['content-type']).toBe('text/event-stream')
+
+      // fastify's auto HEAD route only resumes the stream and swaps it for `null`
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
+
+      const yieldsAfterClean = yields
+      await new Promise(r => setTimeout(r, 50))
+      expect(yields).toBe(yieldsAfterClean)
+    })
+
+    it('destroys the body when an onSend hook replaces it', async ({ onTestFinished }) => {
+      let clean = false
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.addHook('onSend', async () => 'replaced')
+
+      fastify.get('/', async (req, reply) => {
+        await sendStandardResponse(reply, {
+          status: 207,
+          headers: {},
+          body: (async function* () {
+            try {
+              while (true) {
+                yield 'foo'
+                await new Promise(r => setTimeout(r, 10))
+              }
+            }
+            finally {
+              clean = true
+            }
+          })(),
+        })
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).get('/')
+
+      expect(res.status).toBe(207)
+      expect(res.text).toBe('replaced')
+
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
+    })
+
     it('rejects and destroys the body when reply throws synchronously', async ({ onTestFinished }) => {
       const cancelMock = vi.fn()
 
