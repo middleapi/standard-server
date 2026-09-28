@@ -1,33 +1,31 @@
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
 import { AbortError } from '@standard-server/shared'
-import { canWriteToNodeResponse, getNodeResponseError } from './utils'
+import { getNodeResponseError } from './utils'
 
-export function toAbortSignal(stream: Stream.Writable | NodeHttpResponse): AbortSignal {
+/**
+ * Abort when the response closes before it ends.
+ */
+export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSignal {
   const controller = new AbortController()
 
-  const error = getNodeResponseError(stream)
+  // On http2 the connection closes on the underlying stream: Node skips the response's own
+  // `close` when a HEAD stream closes before `res.end()`
+  const stream = 'stream' in res ? res.stream : res
 
-  if (error) {
-    controller.abort(error)
-  }
-  else if (!canWriteToNodeResponse(stream)) {
-    if (!stream.writableFinished || !stream.writableEnded) {
-      controller.abort(new AbortError('Writable stream closed before it finished writing'))
+  const onClose = () => {
+    if (!res.writableEnded) {
+      controller.abort(getNodeResponseError(res) ?? new AbortError('Writable stream closed before it finished writing'))
     }
   }
+
+  if (stream.destroyed) {
+    onClose()
+  }
   else {
-    stream.once('error', error => controller.abort(error))
-
-    // Node skips the http2 response's `close` when a HEAD stream closes before `res.end()`,
-    // so listen to the underlying stream instead
-    const closable = 'stream' in stream ? stream.stream : stream
-
-    closable.once('close', () => {
-      if (!stream.writableFinished || !stream.writableEnded) {
-        controller.abort(new AbortError('Writable stream closed before it finished writing'))
-      }
-    })
+    // also keeps an 'error' nobody else listens to from crashing the process
+    res.once('error', error => controller.abort(error))
+    stream.once('close', onClose)
   }
 
   return controller.signal
