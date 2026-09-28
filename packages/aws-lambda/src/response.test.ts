@@ -274,6 +274,87 @@ describe('sendStandardResponse', () => {
     await sendPromise
   })
 
+  describe('preparing the response stream throws', () => {
+    it('rejects, destroys the response stream and the body when `from` throws', async () => {
+      const responseStream = createResponseStream()
+
+      const error = new Error('Cannot set content-type, too late.')
+      fromSpy.mockImplementationOnce(() => {
+        throw error
+      })
+
+      let clean = false
+      const standardResponse: StandardResponse = {
+        body: (async function* () {
+          try {
+            yield 1
+          }
+          finally {
+            clean = true
+          }
+        })(),
+        headers: {},
+        status: 200,
+      }
+
+      await expect(sendStandardResponse(responseStream, standardResponse, {
+        eventStream: { keepAlive: { enabled: true, interval: 10 } },
+      })).rejects.toBe(error)
+
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
+
+      expect(responseStream.destroyed).toBe(true)
+      expect(responseStream.errored).toBe(error)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    })
+
+    it('rejects and cancels the body when the `awslambda` global is missing', async () => {
+      vi.unstubAllGlobals()
+
+      const responseStream = createResponseStream()
+
+      const cancel = vi.fn()
+      const stream = new ReadableStream({ cancel })
+
+      await expect(sendStandardResponse(responseStream, {
+        status: 200,
+        headers: {},
+        body: stream,
+      })).rejects.toBeInstanceOf(ReferenceError)
+
+      await vi.waitFor(() => {
+        expect(cancel).toHaveBeenCalledTimes(1)
+      })
+
+      expect(responseStream.destroyed).toBe(true)
+    })
+
+    it('rejects, destroys the response stream and the body when the first write throws', async () => {
+      const responseStream = createResponseStream()
+
+      const error = new Error('write failed')
+      responseStream.write = () => {
+        throw error
+      }
+
+      await expect(sendStandardResponse(responseStream, {
+        status: 200,
+        headers: {},
+        body: new Blob(['foo']),
+      })).rejects.toBe(error)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+
+      expect(responseStream.destroyed).toBe(true)
+      expect(responseStream.errored).toBe(error)
+    })
+  })
+
   describe('response stream closed before sending', () => {
     it('resolves and destroys the body', async () => {
       const responseStream = createResponseStream()

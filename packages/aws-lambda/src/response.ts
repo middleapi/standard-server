@@ -44,41 +44,56 @@ export async function sendStandardResponse(
       return
     }
 
-    const [headers, setCookies] = toLambdaHeaders(resHeaders)
+    try {
+      const [headers, setCookies] = toLambdaHeaders(resHeaders)
 
-    // arms the metadata prelude (status, headers, cookies) and
-    // returns the stream the body should be written to
-    const res = awslambda.HttpResponseStream.from(responseStream, {
-      statusCode: standardResponse.status,
-      headers,
-      cookies: setCookies,
-    })
-
-    res.once('error', reject)
-    res.once('close', resolve)
-
-    // The runtime only sends the armed prelude ahead of the first `write` call:
-    // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
-    res.write('')
-
-    if (resBody === undefined) {
-      // NOTE: Lambda functions don't allow passing undefined to `res.end`
-      res.end()
-    }
-    else if (typeof resBody === 'string') {
-      res.end(resBody)
-    }
-    else {
-      res.once('close', () => {
-        if (!resBody.closed) {
-          resBody.destroy(getNodeResponseError(res) ?? undefined)
-        }
+      // arms the metadata prelude (status, headers, cookies) and
+      // returns the stream the body should be written to
+      const res = awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: standardResponse.status,
+        headers,
+        cookies: setCookies,
       })
 
-      // WARNING: errors that occur here are silently ignored and not reported to the Promise
-      resBody.once('error', error => res.destroy(error))
+      res.once('error', reject)
+      res.once('close', resolve)
 
-      resBody.pipe(res)
+      // The runtime only sends the armed prelude ahead of the first `write` call:
+      // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
+      res.write('')
+
+      if (resBody === undefined) {
+        // NOTE: Lambda functions don't allow passing undefined to `res.end`
+        res.end()
+      }
+      else if (typeof resBody === 'string') {
+        res.end(resBody)
+      }
+      else {
+        res.once('close', () => {
+          if (!resBody.closed) {
+            resBody.destroy(getNodeResponseError(res) ?? undefined)
+          }
+        })
+
+        // WARNING: errors that occur here are silently ignored and not reported to the Promise
+        resBody.once('error', error => res.destroy(error))
+
+        resBody.pipe(res)
+      }
+    }
+    catch (error) {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.on('error', reject)
+        resBody.destroy(error as any)
+      }
+
+      // Destroy instead of leaving the response half-open: the metadata prelude may be
+      // partially applied. `from` may throw before the listeners above are attached,
+      // so listen here too to keep the `error` event from going unhandled.
+      responseStream.once('error', reject)
+      responseStream.destroy(error as any)
+      reject(error)
     }
   })
 }
