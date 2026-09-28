@@ -1,3 +1,4 @@
+import { AbortError } from './error'
 import { throwIfAborted } from './signal'
 
 export interface SleepOptions {
@@ -24,7 +25,7 @@ export function sleep(ms: number, { signal }: SleepOptions = {}): Promise<void> 
     if (signal) {
       signal.addEventListener('abort', abortListener = () => {
         clearTimeout(timeout)
-        reject(signal?.reason)
+        reject(signal.reason ?? new AbortError('This operation was aborted'))
       }, { once: true })
     }
   })

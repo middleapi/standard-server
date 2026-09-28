@@ -1,3 +1,4 @@
+import { AbortError } from './error'
 import { sleep } from './time'
 
 describe('sleep', () => {
@@ -27,5 +28,17 @@ describe('sleep', () => {
     const start = Date.now()
     await expect(sleep(100, { signal: controller.signal })).rejects.toThrow('cancelled')
     expect(Date.now() - start).toBeLessThan(80)
+  })
+
+  it('sleep rejects with an AbortError when the signal has no reason (React Native polyfill)', async () => {
+    const aborted = new AbortController()
+    Object.defineProperty(aborted.signal, 'reason', { value: undefined })
+    aborted.abort()
+    await expect(sleep(100, { signal: aborted.signal })).rejects.toThrow(AbortError)
+
+    const controller = new AbortController()
+    Object.defineProperty(controller.signal, 'reason', { value: undefined })
+    setTimeout(() => controller.abort(), 20)
+    await expect(sleep(100, { signal: controller.signal })).rejects.toThrow(AbortError)
   })
 })
