@@ -178,7 +178,7 @@ const response: StandardResponse = {
     throw new ErrorEvent({ message: 'Something went wrong' })
 
     return { message: 'This is the end of the stream' }
-  })(), // <- call the generator: body must be the iterator, not the function
+  })(),
 }
 ```
 
