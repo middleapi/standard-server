@@ -20,6 +20,7 @@ interface ClientPeerRequestStateInternal {
    * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
    */
   requestSent?: boolean | undefined
+  streamCancelled?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -104,6 +105,10 @@ export class ClientPeer {
         return
       }
 
+      if (state.streamCancelled) {
+        return
+      }
+
       untransmittedBody = undefined
 
       if (isAsyncIteratorObject(request.body)) {
@@ -150,6 +155,7 @@ export class ClientPeer {
     }
 
     if (message.kind === 'stream/cancel') {
+      state.streamCancelled = true
       const promise = Promise.all([
         state.eventStreamTransmitter?.cancel(),
         state.octetStreamTransmitter?.cancel(),
