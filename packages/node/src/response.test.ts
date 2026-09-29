@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
 import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
+import http from 'node:http'
 import http2 from 'node:http2'
 import Stream from 'node:stream'
 import request from 'supertest'
@@ -304,6 +305,89 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('flushed')
   })
 
+  describe('sends the headers before a stream body produces its first chunk', () => {
+    function createGatedBodies() {
+      let release!: () => void
+      const gate = new Promise<void>(r => (release = r))
+
+      const bodies = {
+        'octet-stream': new ReadableStream({
+          async start(controller) {
+            await gate
+            controller.enqueue(new TextEncoder().encode('hello'))
+            controller.close()
+          },
+        }),
+        'event-stream': (async function* () {
+          await gate
+          yield 'hello'
+        })(),
+      }
+
+      return { bodies, release }
+    }
+
+    it.for(['octet-stream', 'event-stream'] as const)('http1 (%s)', async (kind, { onTestFinished }) => {
+      const { bodies, release } = createGatedBodies()
+      onTestFinished(release)
+
+      const server = http.createServer(async (req, res) => {
+        await sendStandardResponse(res, {
+          status: 207,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: bodies[kind],
+        }, { eventStream: { initialComment: { enabled: false } } })
+      })
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      await new Promise<void>(r => server.listen(0, r))
+      const { port } = server.address() as AddressInfo
+
+      const response = await new Promise<http.IncomingMessage>(r => http.get(`http://127.0.0.1:${port}`, r))
+      expect(response.statusCode).toBe(207)
+      expect(response.headers['x-custom-header']).toBe('custom-value')
+
+      release()
+      let text = ''
+      for await (const chunk of response) {
+        text += chunk
+      }
+      expect(text).toContain('hello')
+    })
+
+    it.for(['octet-stream', 'event-stream'] as const)('http2 (%s)', async (kind, { onTestFinished }) => {
+      const { bodies, release } = createGatedBodies()
+      onTestFinished(release)
+
+      const server = http2.createServer(async (req, res) => {
+        await sendStandardResponse(res, {
+          status: 207,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: bodies[kind],
+        }, { eventStream: { initialComment: { enabled: false } } })
+      })
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      await new Promise<void>(r => server.listen(0, r))
+      const { port } = server.address() as AddressInfo
+
+      const client = http2.connect(`http://127.0.0.1:${port}`)
+      onTestFinished(() => client.close())
+
+      const stream = client.request({ ':path': '/' })
+      const headers = await new Promise<http2.IncomingHttpHeaders>(r => stream.once('response', r))
+      expect(headers[':status']).toBe(207)
+      expect(headers['x-custom-header']).toBe('custom-value')
+
+      release()
+      let text = ''
+      for await (const chunk of stream) {
+        text += chunk
+      }
+      expect(text).toContain('hello')
+    })
+  })
+
   describe('stream destroy while sending', () => {
     it('with error', async () => {
       let clean = false
@@ -338,6 +422,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).flushHeaders = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow('test')
 
@@ -395,6 +480,7 @@ describe('sendStandardResponse', () => {
       })
 
      ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).flushHeaders = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 

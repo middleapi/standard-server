@@ -387,6 +387,24 @@ describe('toFetchBody', () => {
     expect(generateContentDispositionSpy).toHaveBeenCalledTimes(0)
   })
 
+  it('file with transfer-encoding header', () => {
+    const blob = new File(['foo'], 'foo.pdf', { type: 'application/pdf' })
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'transfer-encoding': 'chunked' }, {})
+
+    expect(body).toBe(blob)
+    // a content-length must not be sent alongside a transfer-encoding
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="__mocked__"',
+      'content-type': 'application/pdf',
+      'transfer-encoding': 'chunked',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
+  })
+
   it('file with existing content-type header', async () => {
     const file = new File(['<script>alert(1)</script>'], 'foo.html', { type: 'text/html' })
 

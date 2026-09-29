@@ -1,7 +1,8 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
-import type { Buffer } from 'node:buffer'
 import type { ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
+import { Buffer } from 'node:buffer'
+import { IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
@@ -22,8 +23,12 @@ export async function toStandardBody(
   req: NodeHttpRequest,
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
+  // Some platforms (e.g. Firebase and Google Cloud Functions) consume the stream before
+  // the handler runs and keep the unparsed bytes, while `req.body` is only parsed for some types
+  const rawBody = !req.readable && req.rawBody instanceof Uint8Array ? req.rawBody : undefined
+
   // body's already parsed by upstream framework like express, ...
-  if (req.body !== undefined && !req.readable) {
+  if (rawBody === undefined && req.body !== undefined && !req.readable) {
     return req.body
   }
 
@@ -38,29 +43,37 @@ export async function toStandardBody(
     return undefined
   }
 
+  let stream: Readable = req
+
   if (!req.readable) {
-    // native fetch error use TypeError
-    throw new TypeError('Failed to read body: body stream already read or destroyed')
+    const buffered = rawBody ?? _readBodyBufferedBeforeDisconnect(req)
+
+    if (buffered === undefined) {
+      // native fetch error use TypeError
+      throw new TypeError('Failed to read body: body stream already read or destroyed')
+    }
+
+    stream = Readable.from([buffered])
   }
 
   if (hint === 'json') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(stream)
     return parseEmptyableJSON(text)
   }
 
   const contentType = req.headers['content-type']
 
   if (hint === 'form-data') {
-    return _streamToFormData(req, contentType)
+    return _streamToFormData(stream, contentType)
   }
 
   if (hint === 'url-search-params') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(stream)
     return new URLSearchParams(text)
   }
 
   if (hint === 'event-stream') {
-    return toAsyncIteratorObject(req)
+    return toAsyncIteratorObject(stream)
   }
 
   if (hint === 'file') {
@@ -69,10 +82,47 @@ export async function toStandardBody(
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined
 
-    return _streamToFile(req, fileName ?? 'blob', contentType ?? '')
+    return _streamToFile(stream, fileName ?? 'blob', contentType ?? '')
   }
 
-  return toWebReadableStream(req)
+  return toWebReadableStream(stream)
+}
+
+const RECOVERED_REQUESTS = new WeakSet<IncomingMessage>()
+
+/**
+ * A client can disconnect after node parsed its whole http1 request, but before the handler
+ * reads the body: node then destroys the request, with the unread body still buffered in it.
+ * Returns that body once, or `undefined` when it cannot be recovered.
+ *
+ * http2 is left out: a stream reset discards the buffered data, and `complete` is not reliable there.
+ */
+function _readBodyBufferedBeforeDisconnect(req: NodeHttpRequest): Uint8Array | undefined {
+  if (
+    !(req instanceof IncomingMessage)
+    || !req.complete
+    || !req.readableAborted
+    || req.readableDidRead
+    // any other error (e.g. a body size guard destroying the request) must surface
+    || (req.errored as NodeJS.ErrnoException | null)?.code !== 'ECONNRESET'
+    || RECOVERED_REQUESTS.has(req)
+  ) {
+    return undefined
+  }
+
+  RECOVERED_REQUESTS.add(req)
+
+  const chunk: Buffer<ArrayBuffer> | string | null = req.read()
+  const body = chunk === null ? new Uint8Array() : _toBytes(chunk, req.readableEncoding)
+
+  // `read()` on a destroyed stream does not flag it as read, so something
+  // may have taken part of the body without `readableDidRead` noticing
+  const contentLength = req.headers['content-length']
+  if (contentLength !== undefined && /^\d+$/.test(contentLength) && Number(contentLength) !== body.length) {
+    return undefined
+  }
+
+  return body
 }
 
 export interface ToNodeHttpBodyOptions {
@@ -118,8 +168,9 @@ export function toNodeHttpBody(
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(body instanceof File ? body.name ?? '' : 'blob')
 
-    // BunS3 can use NaN for the size
-    if (Number.isFinite(body.size)) {
+    // BunS3 can use NaN for the size, and a content-length must not
+    // be sent alongside a transfer-encoding (RFC 9112 §6.2)
+    if (Number.isFinite(body.size) && headers['transfer-encoding'] === undefined) {
       headers['content-length'] = body.size.toString()
     }
 
@@ -155,7 +206,7 @@ export function toNodeHttpBody(
 }
 
 function _streamToFormData(stream: Readable, contentType: string | undefined): Promise<FormData> {
-  const response = new Response(stream, {
+  const response = new Response(toWebReadableStream(stream), {
     headers: {
       'content-type': contentType,
     },
@@ -169,7 +220,7 @@ async function _streamToString(stream: Readable): Promise<string> {
   let string = ''
 
   for await (const chunk of stream) {
-    string += decoder.decode(chunk, { stream: true })
+    string += decoder.decode(_toBytes(chunk, stream.readableEncoding), { stream: true })
   }
 
   // Flush any remaining bytes (e.g. incomplete multi-byte sequences)
@@ -179,11 +230,19 @@ async function _streamToString(stream: Readable): Promise<string> {
 }
 
 async function _streamToFile(stream: Readable, fileName: string, contentType: string): Promise<File> {
-  const chunks: Buffer<ArrayBuffer>[] = []
+  const chunks: Uint8Array<ArrayBuffer>[] = []
 
   for await (const chunk of stream) {
-    chunks.push(chunk)
+    chunks.push(_toBytes(chunk, stream.readableEncoding))
   }
 
   return new File(chunks, fileName, { type: contentType })
+}
+
+/**
+ * Node yields strings instead of bytes once `setEncoding()` is called on a stream,
+ * encoding them back with the same encoding recovers the original bytes.
+ */
+function _toBytes(chunk: Uint8Array<ArrayBuffer> | string, encoding: BufferEncoding | null): Uint8Array<ArrayBuffer> {
+  return typeof chunk === 'string' ? Buffer.from(chunk, encoding ?? 'utf8') : chunk
 }

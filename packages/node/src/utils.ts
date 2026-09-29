@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream'
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
+import { Buffer } from 'node:buffer'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
 
@@ -38,6 +39,10 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
 
       if (done) {
         controller.close()
+      }
+      else if (typeof value === 'string') {
+        // node yields strings once `setEncoding()` is called, encode them back to the original bytes
+        controller.enqueue(new Uint8Array(Buffer.from(value, stream.readableEncoding ?? 'utf8')))
       }
       else {
         controller.enqueue(new Uint8Array(value))
