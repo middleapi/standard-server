@@ -423,7 +423,7 @@ describe('toFetchBody', () => {
     const reader = (body as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
 
     expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
-    expect(await reader.read()).toEqual({ done: false, value: 'event: message\ndata: 123\n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: 'data: 123\n\n' })
     expect(await reader.read()).toEqual({ done: false, value: 'event: close\ndata: 456\n\n' })
   })
 
