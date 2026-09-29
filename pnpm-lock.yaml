@@ -178,9 +178,6 @@ importers:
       '@remix-run/node-fetch-server':
         specifier: ^0.14.0
         version: 0.14.1
-      '@standard-server/aws-lambda':
-        specifier: workspace:*
-        version: link:packages/aws-lambda
       '@standard-server/core':
         specifier: workspace:*
         version: link:packages/core

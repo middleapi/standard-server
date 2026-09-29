@@ -1,5 +1,3 @@
-/// <reference lib="es2024.string" />
-
 import type { StandardBody, StandardBodyHint } from '@standard-server/core'
 import type { AnyAPIGatewayProxyEvent } from './types'
 import { Buffer } from 'node:buffer'
@@ -29,25 +27,24 @@ export async function toStandardBody(
     return undefined
   }
 
-  if (hint === 'json') {
-    return parseEmptyableJSON(_eventBodyToString(event))
-  }
-
-  if (hint === 'url-search-params') {
-    return new URLSearchParams(_eventBodyToString(event))
-  }
-
   const bytes: Uint8Array<ArrayBuffer> = typeof event.body !== 'string'
     ? new Uint8Array()
     : event.isBase64Encoded
-      // copy out of Node's shared Buffer pool so `.buffer` exposes only this body
       ? new Uint8Array(Buffer.from(event.body, 'base64'))
       : new TextEncoder().encode(event.body)
+
+  if (hint === 'json') {
+    return parseEmptyableJSON(new TextDecoder().decode(bytes))
+  }
 
   const contentType = flattenStandardHeader(headers['content-type'])
 
   if (hint === 'form-data') {
     return _bytesToFormData(bytes, contentType)
+  }
+
+  if (hint === 'url-search-params') {
+    return new URLSearchParams(new TextDecoder().decode(bytes))
   }
 
   if (hint === 'event-stream') {
@@ -64,25 +61,6 @@ export async function toStandardBody(
   }
 
   return _bytesToReadableStream(bytes)
-}
-
-/**
- * Decodes the body as `TextDecoder` would decode its UTF-8 bytes, without materializing
- * them for a plain body: lone surrogates become U+FFFD and a leading BOM is stripped.
- */
-function _eventBodyToString(event: AnyAPIGatewayProxyEvent): string {
-  if (typeof event.body !== 'string') {
-    return ''
-  }
-
-  if (event.isBase64Encoded) {
-    return new TextDecoder().decode(Buffer.from(event.body, 'base64'))
-  }
-
-  // one-byte strings cannot hold surrogates, so this returns them without scanning
-  const string = event.body.toWellFormed()
-
-  return string.charCodeAt(0) === 0xFEFF ? string.slice(1) : string
 }
 
 function _bytesToFormData(bytes: Uint8Array<ArrayBuffer>, contentType: string | undefined): Promise<FormData> {

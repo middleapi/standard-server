@@ -86,6 +86,20 @@ describe('toStandardBody', () => {
       expect(standardBody).toEqual({ foo: 'bar' })
     })
 
+    it('json strips a leading BOM', async () => {
+      let standardBody: StandardBody = {} as any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'json')
+        .send('\uFEFF{"foo":"bar"}')
+
+      expect(standardBody).toEqual({ foo: 'bar' })
+    })
+
     it('async iterator object', async () => {
       let standardBody: any
 
@@ -131,6 +145,20 @@ describe('toStandardBody', () => {
         .send('foo=bar&bar=baz')
 
       expect(standardBody).toEqual(new URLSearchParams('foo=bar&bar=baz'))
+    })
+
+    it('url-search-params strips a leading BOM', async () => {
+      let standardBody: any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'url-search-params')
+        .send('\uFEFFfoo=bar')
+
+      expect(standardBody).toEqual(new URLSearchParams('foo=bar'))
     })
 
     it('file/blob', async () => {

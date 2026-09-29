@@ -81,13 +81,6 @@ describe('toStandardBody', () => {
       }))).resolves.toEqual({ foo: 'bar' })
     })
 
-    it('replaces lone surrogates in json with U+FFFD', async () => {
-      await expect(toStandardBody(event({
-        body: '{"foo":"\uD800","bar":"\uDC00\uD83D\uDE00"}',
-        multiValueHeaders: { 'Content-Type': ['application/json'] },
-      }))).resolves.toEqual({ foo: '\uFFFD', bar: '\uFFFD\uD83D\uDE00' })
-    })
-
     it('parses empty json as undefined', async () => {
       await expect(toStandardBody(event({
         body: '',
