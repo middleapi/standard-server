@@ -21,10 +21,7 @@ export interface EventMeta {
 
 export interface EventStreamMessage extends EventMeta {
   /**
-   * Event name (e.g., `message`, `error`).
-   *
-   * `message` is the default for a message with data: the encoder omits it there,
-   * and the decoder fills it in.
+   * Event name (e.g., `message`, `error`). Defaults to `message` for a message with data.
    */
   event?: string | undefined
 

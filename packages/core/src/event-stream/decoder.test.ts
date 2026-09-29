@@ -92,11 +92,11 @@ describe('decodeEventStreamMessage', () => {
     expect(decodeEventStreamMessage('data:\n\n')).toStrictEqual({ event: 'message', data: '' })
     expect(decodeEventStreamMessage('event:\ndata:\n\n')).toStrictEqual({ event: 'message', data: '' })
 
-    // named messages keep their event type, with or without data
+    // named messages keep their event type, even without data
     expect(decodeEventStreamMessage('event: close\n\n')).toStrictEqual({ event: 'close' })
     expect(decodeEventStreamMessage('event: message\n\n')).toStrictEqual({ event: 'message' })
 
-    // unnamed messages without data are never dispatched, so they get no event type
+    // unnamed messages without data get no event type
     expect(decodeEventStreamMessage(': ping\n\n')).toStrictEqual({ comments: ['ping'] })
     expect(decodeEventStreamMessage('id: 1\nretry: 10\n\n')).toStrictEqual({ id: '1', retry: 10 })
     expect(decodeEventStreamMessage('event:\nid: 1\n\n')).toStrictEqual({ id: '1' })

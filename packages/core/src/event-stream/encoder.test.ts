@@ -148,7 +148,7 @@ describe('encodeEventStreamMessage', () => {
     expect(encodeEventStreamMessage({ event: 'message', id: '123', data: 'hello', comments: ['hi'] }))
       .toBe(': hi\nid: 123\ndata: hello\n\n')
 
-    // without data the event type is kept, so the message is not mistaken for a comment
+    // kept without data, so it is not mistaken for a comment
     expect(encodeEventStreamMessage({ event: 'message' })).toBe('event: message\n\n')
     expect(encodeEventStreamMessage({ event: 'message', comments: ['hi'] })).toBe(': hi\nevent: message\n\n')
   })
