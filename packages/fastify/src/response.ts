@@ -36,23 +36,15 @@ export async function sendStandardResponse(
 
     connection.once('error', reject)
     connection.once('close', () => {
+      // fastify only cleans up a stream body it pipes itself: the auto HEAD route, or an
+      // onSend hook replacing the payload, leaves it running (e.g. an endless event stream).
+      // No error: nothing may listen for `error` on a body fastify never piped
       if (typeof resBody === 'object' && !resBody.closed) {
         resBody.destroy()
       }
 
       resolve()
     })
-
-    if (typeof resBody === 'object') {
-      // fastify only cleans up a stream body it pipes itself: the auto HEAD route, or an
-      // onSend hook replacing the payload, leaves it running (e.g. an endless event stream)
-      reply.raw.once('close', () => {
-        if (!resBody.closed) {
-          // No error: nothing may listen for `error` on a body fastify never piped
-          resBody.destroy()
-        }
-      })
-    }
 
     try {
       reply.status(standardResponse.status)

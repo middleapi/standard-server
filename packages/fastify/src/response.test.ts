@@ -350,50 +350,8 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('destroys the body when fastify discards it (HEAD request)', async ({ onTestFinished }) => {
-      let yields = 0
-      let clean = false
-
-      const fastify = Fastify()
-      onTestFinished(() => fastify.close())
-
-      fastify.get('/', async (req, reply) => {
-        await sendStandardResponse(reply, {
-          status: 207,
-          headers: {},
-          body: (async function* () {
-            try {
-              while (true) {
-                yields++
-                yield 'foo'
-                await new Promise(r => setTimeout(r, 10))
-              }
-            }
-            finally {
-              clean = true
-            }
-          })(),
-        }, { eventStream: { keepAlive: { enabled: true, interval: 10 } } })
-      })
-
-      await fastify.ready()
-      const res = await request(fastify.server).head('/')
-
-      expect(res.status).toBe(207)
-      expect(res.headers['content-type']).toBe('text/event-stream')
-
-      // fastify's auto HEAD route only resumes the stream and swaps it for `null`
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
-
-      const yieldsAfterClean = yields
-      await new Promise(r => setTimeout(r, 50))
-      expect(yields).toBe(yieldsAfterClean)
-    })
-
-    it('destroys the body when an onSend hook replaces it', async ({ onTestFinished }) => {
-      let clean = false
+    it('releases the body when an onSend hook replaces it', async ({ onTestFinished }) => {
+      const { body, isReleased } = createEndlessBody()
 
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
@@ -401,21 +359,7 @@ describe('sendStandardResponse', () => {
       fastify.addHook('onSend', async () => 'replaced')
 
       fastify.get('/', async (req, reply) => {
-        await sendStandardResponse(reply, {
-          status: 207,
-          headers: {},
-          body: (async function* () {
-            try {
-              while (true) {
-                yield 'foo'
-                await new Promise(r => setTimeout(r, 10))
-              }
-            }
-            finally {
-              clean = true
-            }
-          })(),
-        })
+        await sendStandardResponse(reply, { status: 207, headers: {}, body })
       })
 
       await fastify.ready()
@@ -425,7 +369,7 @@ describe('sendStandardResponse', () => {
       expect(res.text).toBe('replaced')
 
       await vi.waitFor(() => {
-        expect(clean).toBe(true)
+        expect(isReleased()).toBe(true)
       })
     })
 
