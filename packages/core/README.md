@@ -294,7 +294,7 @@ const filename = getFilenameFromContentDisposition(disposition)
 // 'report "Q2".csv'
 ```
 
-`generateContentDisposition()` preserves an ASCII-safe `filename="..."` value and also emits `filename*=` for UTF-8 aware clients.
+`generateContentDisposition()` emits the exact name in `filename*=` for UTF-8 aware clients, plus an ASCII-safe `filename="..."` fallback where non-ASCII characters, `;` and `=` become `_`, so quote-unaware parsers cannot misread it.
 
 ### Header helpers
 
