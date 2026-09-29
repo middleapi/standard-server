@@ -2,8 +2,7 @@ import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } fro
 import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
 export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
-  // ';' and '=' are legal in a quoted-string, but a quote-unaware parser would read them
-  // as parameters (e.g. a filename containing `;filename*=utf-8''evil.exe`), so keep them out of the fallback
+  // ';' and '=' are legal when quoted, but a quote-unaware parser would read them as new parameters
   const encodedFilename = filename.replace(/[^\x20-\x7E]|[;=]/g, '_').replace(/[\\"]/g, '\\$&')
 
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
@@ -15,18 +14,20 @@ export function generateContentDisposition(filename: string, type: 'inline' | 'a
 }
 
 /**
- * name, then a quoted-string (group 2, anything after it before the next ';' is malformed and skipped),
- * an unterminated quoted-string that runs to the end, or a token (group 3)
+ * name (group 1), then a quoted-string (group 2, anything after it before the next ';' is malformed and skipped),
+ * an unterminated quoted-string that runs to the end, or a token (group 3).
+ * Always matches, and advances while input remains.
  */
-const CONTENT_DISPOSITION_PARAM_REGEX = /([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?;?/g
+const CONTENT_DISPOSITION_PARAM_REGEX = /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
 
-/**
- * Returns the first value of a Content-Disposition parameter.
- * Quoted-strings are honored, so a ';' or `filename*=` inside a quoted value is never read as a parameter.
- */
+/** First value of a Content-Disposition parameter, honoring quoted-strings. */
 function getContentDispositionParam(contentDisposition: string, name: string): string | undefined {
-  for (const [, paramName = '', quoted, token] of contentDisposition.matchAll(CONTENT_DISPOSITION_PARAM_REGEX)) {
-    if (paramName.trim().toLowerCase() === name) {
+  CONTENT_DISPOSITION_PARAM_REGEX.lastIndex = 0
+
+  while (CONTENT_DISPOSITION_PARAM_REGEX.lastIndex < contentDisposition.length) {
+    const [, paramName = '', quoted, token] = CONTENT_DISPOSITION_PARAM_REGEX.exec(contentDisposition)!
+
+    if (paramName.trimEnd().toLowerCase() === name) {
       return quoted !== undefined
         ? quoted.replace(/\\(.)/g, '$1')
         : token?.trim() || undefined
