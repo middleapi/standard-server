@@ -125,6 +125,66 @@ describe('clientPeer', () => {
       expect(await response.resolveBody()).toBe('server-body')
     })
 
+    it('passes lowercase response headers through unchanged', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      const headers = { 'content-type': 'text/plain', 'x-server': 'true', 'set-cookie': ['a=1', 'b=2'] }
+      await peer.message({ id, kind: 'response', json: { headers, body: 'ok' } })
+
+      const response = await promise
+      expect(response.headers).toEqual(headers)
+      expect(Object.keys(response.headers)).toEqual(['content-type', 'x-server', 'set-cookie'])
+    })
+
+    it('lowercases response header names and merges differently-cased duplicates', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      const message = makeResponseMessage(id, 'server-body', { 'Set-Cookie': 'a=1', 'set-cookie': 'b=2', 'X-Server': 'true' })
+      await peer.message(message)
+
+      const response = await promise
+      expect(response.headers).toEqual({ 'set-cookie': ['a=1', 'b=2'], 'x-server': 'true' })
+      expect(await response.resolveBody()).toBe('server-body')
+      expect(message.json.headers).toEqual({ 'Set-Cookie': 'a=1', 'set-cookie': 'b=2', 'X-Server': 'true' })
+    })
+
+    it('types the response body from a differently-cased content-type', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      await peer.message(makeResponseMessage(id, undefined, { 'Content-Type': 'application/octet-stream' }))
+      await peer.message(makeOctetStreamMessage(id, true, new Uint8Array([1, 2])))
+
+      const response = await promise
+      expect(response.headers).toEqual({ 'content-type': 'application/octet-stream' })
+      const body = await response.resolveBody()
+      expect(body).toBeInstanceOf(ReadableStream)
+      expect(await new Response(body as ReadableStream).bytes()).toEqual(new Uint8Array([1, 2]))
+    })
+
+    it('keeps __proto__ and constructor response headers as plain own properties', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      await peer.message(makeResponseMessage(id, undefined, JSON.parse('{"__proto__":"polluted","Constructor":"a"}')))
+
+      const response = await promise
+      expect(Object.getPrototypeOf(response.headers)).toBe(null)
+      expect(Object.getOwnPropertyDescriptor(response.headers, '__proto__')?.value).toBe('polluted')
+      expect(response.headers.constructor).toBe('a')
+      expect(({} as any).polluted).toBe(undefined)
+    })
+
+    it('lowercases request header names before sending', async () => {
+      const { id, promise } = await requestAndGetId(
+        makeRequest({ method: 'GET', headers: { 'Content-Type': 'application/json', 'X-Client': 'true' } }),
+      )
+
+      const sentMsg = send.mock.calls[0]![0] as PeerRequestMessage
+      expect(sentMsg.json.headers).toEqual({ 'x-client': 'true' })
+
+      await peer.message(makeResponseMessage(id))
+      await promise
+    })
+
     it('ignores response for non-existing request', async () => {
       await peer.message(makeResponseMessage('nonexist'))
     })

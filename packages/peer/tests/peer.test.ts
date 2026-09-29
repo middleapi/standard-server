@@ -386,6 +386,59 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
   })
 
+  it('delivers header names lowercased in both directions', async () => {
+    let requestHeaders: Record<string, unknown> | undefined
+
+    const { client } = connect(async (request) => {
+      requestHeaders = request.headers
+      return { status: 200, headers: { 'X-Served-By': 'peer', 'x-served-by': 'again' }, body: 'ok' }
+    })
+
+    const response = await client.request({
+      url: '/headers',
+      method: 'POST',
+      headers: { 'X-User-Id': 'admin', 'x-user-id': '42' },
+      body: 'hello',
+    })
+
+    expect(requestHeaders).toEqual({ 'x-user-id': ['admin', '42'] })
+    expect(response.headers).toEqual({ 'x-served-by': ['peer', 'again'] })
+    expect(await response.resolveBody()).toBe('ok')
+  })
+
+  it('does not mistake a differently-cased content-type on a bodyless message for a stream', async () => {
+    const { client } = connect(async request => ({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: { received: await request.resolveBody(), headers: request.headers },
+    }))
+
+    const response = await client.request({
+      url: '/empty',
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(await response.resolveBody()).toEqual({ received: undefined, headers: {} })
+  })
+
+  it('streams server events when the handler sets a differently-cased content-type', async () => {
+    const { client } = connect(async () => ({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+      body: (async function* () {
+        yield 'a'
+        return 'b'
+      })(),
+    }))
+
+    const response = await client.request({ url: '/events', method: 'GET', headers: {} })
+    const iterator = await response.resolveBody() as AsyncIterator<unknown>
+
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 'a' })
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: 'b' })
+  })
+
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {
     let serverBody: Record<string, unknown> | undefined
 

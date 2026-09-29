@@ -1,4 +1,4 @@
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
+import type { StandardHeaders, StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { PeerCancelMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
 import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { HibernationAsyncIteratorClass } from './hibernation'
@@ -119,6 +119,72 @@ describe('serverPeer', () => {
         id: message.id,
         json: { status: 201, headers: { 'x-server': 'true' }, body: 'response-body' },
       })
+    })
+
+    it('passes lowercase request headers through unchanged', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      const headers = { 'content-type': 'text/plain', 'x-client': 'true', 'set-cookie': ['a=1', 'b=2'] }
+      await peer.message(makeRequestMessage({ headers }), handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(req.headers).toEqual(headers)
+      expect(Object.keys(req.headers)).toEqual(['content-type', 'x-client', 'set-cookie'])
+    })
+
+    it('lowercases request header names and merges differently-cased duplicates', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      const message = makeRequestMessage({
+        headers: { 'X-User-Id': 'admin', 'x-user-id': '42', 'X-Internal-Auth': 'forged', 'X-Skipped': undefined },
+      })
+      await peer.message(message, handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(req.headers).toEqual({ 'x-user-id': ['admin', '42'], 'x-internal-auth': 'forged' })
+
+      // handler code written for the HTTP adapters now sees every copy
+      const forwarded: StandardHeaders = { ...req.headers, 'x-user-id': 'session-user' }
+      delete forwarded['x-internal-auth']
+      expect(forwarded).toEqual({ 'x-user-id': 'session-user' })
+
+      // the incoming message is left as is
+      expect(message.json.headers).toEqual({ 'X-User-Id': 'admin', 'x-user-id': '42', 'X-Internal-Auth': 'forged', 'X-Skipped': undefined })
+    })
+
+    it('types the request body from a differently-cased content-type', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.message(makeRequestMessage({ headers: { 'Content-Type': 'text/plain' } }, new TextEncoder().encode('hi')), handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(req.headers).toEqual({ 'content-type': 'text/plain' })
+      const body = await req.resolveBody()
+      expect(body).toBeInstanceOf(File)
+      expect((body as File).type).toBe('text/plain')
+    })
+
+    it('keeps __proto__ and constructor request headers as plain own properties', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      const headers = JSON.parse('{"__proto__":"polluted","Constructor":"a","x-client":"true"}')
+      await peer.message(makeRequestMessage({ headers }), handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(Object.getPrototypeOf(req.headers)).toBe(null)
+      expect(Object.getOwnPropertyDescriptor(req.headers, '__proto__')?.value).toBe('polluted')
+      expect(req.headers.constructor).toBe('a')
+      expect(req.headers['x-client']).toBe('true')
+      expect(({} as any).polluted).toBe(undefined)
+    })
+
+    it('lowercases response header names before sending', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse(undefined, { 'Content-Type': 'application/json', 'X-Server': 'true' }))
+
+      await peer.message(makeRequestMessage(), handler)
+
+      const sentMsg = send.mock.calls[0]![0] as PeerResponseMessage
+      expect(sentMsg.json.headers).toEqual({ 'x-server': 'true' })
     })
 
     it('ignores duplicate request messages for the same id', async () => {

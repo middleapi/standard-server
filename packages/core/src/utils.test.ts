@@ -1,5 +1,5 @@
 import { AsyncIteratorClass } from '@standard-server/shared'
-import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
+import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, normalizeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -308,6 +308,63 @@ describe('mergeStandardHeaders', () => {
 
     expect(Object.getPrototypeOf(merged)).toEqual(Object.prototype)
     expect(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value).toEqual(['1', '2'])
+  })
+})
+
+describe('normalizeStandardHeaders', () => {
+  afterEach(() => {
+    expect(({} as any).polluted).toEqual(undefined)
+  })
+
+  it('lowercase header names', () => {
+    expect(normalizeStandardHeaders({ 'Content-Type': 'application/json', 'X-Custom': ['a', 'b'] })).toEqual({
+      'content-type': 'application/json',
+      'x-custom': ['a', 'b'],
+    })
+  })
+
+  it('keep lowercase headers as they are', () => {
+    const headers = { 'content-type': 'application/json', 'set-cookie': ['a=1', 'b=2'], 'x-empty': [] }
+
+    const normalized = normalizeStandardHeaders(headers)
+
+    expect(normalized).toEqual(headers)
+    expect(Object.keys(normalized)).toEqual(['content-type', 'set-cookie', 'x-empty'])
+  })
+
+  it('merge names differing only in case, in order', () => {
+    expect(normalizeStandardHeaders({ 'X-User-Id': 'admin', 'x-user-id': '42' })).toEqual({ 'x-user-id': ['admin', '42'] })
+    expect(normalizeStandardHeaders({ 'x-a': ['1', '2'], 'X-A': '3', 'X-a': ['4'] })).toEqual({ 'x-a': ['1', '2', '3', '4'] })
+    expect(normalizeStandardHeaders({ 'X-A': [], 'x-a': '1' })).toEqual({ 'x-a': ['1'] })
+  })
+
+  it('skip undefined values', () => {
+    const normalized = normalizeStandardHeaders({ 'X-A': undefined, 'x-a': '1', 'X-B': undefined })
+
+    expect(normalized).toEqual({ 'x-a': '1' })
+    expect(Object.keys(normalized)).toEqual(['x-a'])
+  })
+
+  it('not mutate the input', () => {
+    const values = ['1']
+    const headers = { 'x-a': values, 'X-A': '2' }
+
+    normalizeStandardHeaders(headers)
+
+    expect(headers).toEqual({ 'x-a': ['1'], 'X-A': '2' })
+    expect(values).toEqual(['1'])
+  })
+
+  it('keep __proto__ and constructor as plain own properties', () => {
+    const headers = JSON.parse('{ "__proto__": { "polluted": "yes" }, "Constructor": "a", "constructor": "b", "x-a": "1" }')
+
+    const normalized = normalizeStandardHeaders(headers)
+
+    expect(Object.getPrototypeOf(normalized)).toBe(null)
+    expect(Object.getOwnPropertyDescriptor(normalized, '__proto__')?.value).toEqual({ polluted: 'yes' })
+    expect(normalized.constructor).toEqual(['a', 'b'])
+    expect(normalized['x-a']).toBe('1')
+    expect(normalizeStandardHeaders({}).constructor).toBe(undefined)
   })
 })
 

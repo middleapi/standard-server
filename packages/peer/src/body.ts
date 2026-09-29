@@ -1,12 +1,16 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { AsyncCleanupFn } from '@standard-server/shared'
 import type { PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage } from './types'
-import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition } from '@standard-server/core'
+import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, normalizeStandardHeaders } from '@standard-server/core'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 import { toAsyncIteratorObject } from './event-stream'
 import { toOctetStream } from './octet-stream'
 
 export interface ToStandardBodyResult {
+  /**
+   * The message headers with lowercased names, the same ones the body is typed from.
+   */
+  headers: StandardHeaders
   resolveBody: () => Promise<StandardBody>
   eventStreamMessageQueue?: Queue<PeerEventStreamMessage>
   octetStreamMessageQueue?: Queue<PeerOctetStreamMessage>
@@ -14,20 +18,26 @@ export interface ToStandardBodyResult {
 
 /**
  * Parse a peer message body.
+ *
+ * The peer on the other side is not an HTTP stack, so nothing has lowercased
+ * its header names yet. They are normalized here, and the returned headers are
+ * the ones the body is typed from.
  */
 export function toStandardBody(
   message: PeerRequestMessage | PeerResponseMessage,
   cleanup: AsyncCleanupFn,
 ): ToStandardBodyResult {
-  const rawContentType = message.json.headers?.['content-type']
+  const headers = normalizeStandardHeaders(message.json.headers ?? {})
+  const rawContentType = headers['content-type']
   const contentType = flattenStandardHeader(rawContentType)
-  const bodyHint = flattenStandardHeader(message.json.headers?.['standard-server'])
+  const bodyHint = flattenStandardHeader(headers['standard-server'])
 
   if (message.json.body === undefined && message.binary === undefined) {
     // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
     if (rawContentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
+        headers,
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
         eventStreamMessageQueue,
       }
@@ -36,6 +46,7 @@ export function toStandardBody(
     if (rawContentType !== undefined) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
+        headers,
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
         octetStreamMessageQueue,
       }
@@ -62,7 +73,7 @@ export function toStandardBody(
           return form
         }
 
-        const contentDisposition = flattenStandardHeader(message.json.headers?.['content-disposition'])
+        const contentDisposition = flattenStandardHeader(headers['content-disposition'])
         const filename = contentDisposition !== undefined
           ? getFilenameFromContentDisposition(contentDisposition)
           : undefined
@@ -93,7 +104,7 @@ export function toStandardBody(
     }
   }
 
-  return { resolveBody }
+  return { headers, resolveBody }
 }
 
 export interface EncodedAtomicStandardBody {
@@ -110,12 +121,16 @@ export interface EncodedAtomicStandardBody {
  * so they way it use `standard-server` header to indicate how the body is sent is different.
  *
  * In sematic "content-type" only need to set when transfering binary data.
+ *
+ * Header names are lowercased first, so the body headers set or removed here
+ * also replace differently-cased copies from the caller. The receiver lowercases
+ * names too, and a stray `Content-Type` would otherwise turn a missing body into an octet stream.
  */
 export async function encodeAtomicStandardBody(
   body: StandardBody,
   headers: StandardHeaders,
 ): Promise<EncodedAtomicStandardBody> {
-  headers = { ...headers }
+  headers = normalizeStandardHeaders(headers)
 
   if (body instanceof ReadableStream) {
     headers['content-type'] ??= 'application/octet-stream'

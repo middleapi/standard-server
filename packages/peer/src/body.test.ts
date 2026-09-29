@@ -241,6 +241,76 @@ describe('toStandardBody', () => {
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
   })
+
+  it('returns the headers with lowercased names', () => {
+    const message: PeerRequestMessage = {
+      id: '1',
+      kind: 'request',
+      json: { url: '/test', headers: { 'X-User-Id': 'admin', 'x-user-id': '42', 'x-other': 'value' }, body: 'hello' },
+    }
+
+    const { headers } = toStandardBody(message, vi.fn())
+
+    expect(headers).toEqual({ 'x-user-id': ['admin', '42'], 'x-other': 'value' })
+    expect(Object.getPrototypeOf(headers)).toBe(null)
+    expect(message.json.headers).toEqual({ 'X-User-Id': 'admin', 'x-user-id': '42', 'x-other': 'value' })
+  })
+
+  it('returns empty headers when the message has none', () => {
+    const { headers } = toStandardBody({ id: '1', kind: 'request', json: { url: '/test' } }, vi.fn())
+
+    expect(headers).toEqual({})
+  })
+
+  it('types the body from differently-cased headers', async () => {
+    const cleanup = vi.fn()
+    const { resolveBody } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { url: '/test', headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="test.txt"' } },
+      binary: new TextEncoder().encode('file content'),
+    }, cleanup)
+
+    const body = await resolveBody()
+
+    expect(body).toBeInstanceOf(File)
+    expect((body as File).name).toBe('test.txt')
+    expect((body as File).type).toBe('text/plain')
+    expect(await (body as File).text()).toBe('file content')
+  })
+
+  it('receives a binary download stream from a differently-cased content-type', async () => {
+    const cleanup = vi.fn()
+    const { resolveBody, octetStreamMessageQueue, eventStreamMessageQueue } = toStandardBody({
+      id: '1',
+      kind: 'response',
+      json: { headers: { 'Content-Type': 'application/octet-stream', 'standard-server': 'event-stream' } },
+    }, cleanup)
+
+    expect(await resolveBody()).toBeInstanceOf(ReadableStream)
+    expect(octetStreamMessageQueue).toBeInstanceOf(Queue)
+    expect(eventStreamMessageQueue).toBe(undefined)
+
+    octetStreamMessageQueue?.close()
+  })
+
+  it('receives a form-data payload from a differently-cased standard-server header', async () => {
+    const form = new FormData()
+    form.append('a', '1')
+    const blob = await new Response(form).blob()
+
+    const { resolveBody } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { url: '/test', headers: { 'Standard-Server': 'form-data', 'Content-Type': blob.type } },
+      binary: new Uint8Array(await blob.arrayBuffer()),
+    }, vi.fn())
+
+    const body = await resolveBody()
+
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('a')).toBe('1')
+  })
 })
 
 describe('encodeAtomicStandardBody', () => {
@@ -251,6 +321,31 @@ describe('encodeAtomicStandardBody', () => {
     expect(binary).toBe(undefined)
     expect(headers['standard-server']).toBe(undefined)
     expect(headers['content-type']).toBe(undefined)
+  })
+
+  it('lowercases header names so body headers replace differently-cased copies', async () => {
+    const { headers } = await encodeAtomicStandardBody(undefined, {
+      'Content-Type': 'application/json',
+      'Standard-Server': 'event-stream',
+      'X-Custom': 'value',
+    })
+
+    expect(headers).toEqual({ 'x-custom': 'value' })
+    expect(Object.keys(headers).filter(key => key !== key.toLowerCase())).toEqual([])
+
+    const file = new File(['hi'], 'hi.txt', { type: 'text/plain' })
+    const { headers: fileHeaders } = await encodeAtomicStandardBody(file, { 'Content-Type': 'text/html' })
+
+    expect(fileHeaders['content-type']).toBe('text/html')
+    expect(fileHeaders).not.toHaveProperty('Content-Type')
+  })
+
+  it('does not mutate the given headers', async () => {
+    const given = { 'Content-Type': 'application/json', 'x-custom': 'value' }
+
+    await encodeAtomicStandardBody({ a: 1 }, given)
+
+    expect(given).toEqual({ 'Content-Type': 'application/json', 'x-custom': 'value' })
   })
 
   it('encodes null body', async () => {

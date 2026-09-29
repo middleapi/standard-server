@@ -87,7 +87,7 @@ export class ServerPeer {
       const response = await handleRequest({
         url: message.json.url,
         method: message.json.method ?? 'POST',
-        headers: message.json.headers ?? {},
+        headers: decoded.headers,
         resolveBody: decoded.resolveBody,
         signal,
       })

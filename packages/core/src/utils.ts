@@ -164,6 +164,35 @@ export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): St
   return merged
 }
 
+/**
+ * Lowercase header names, merging names that differ only in case into one array
+ * in their original order. `undefined` values are skipped.
+ *
+ * Use it on headers that did not come through an HTTP stack, which would
+ * already have lowercased them.
+ */
+export function normalizeStandardHeaders(headers: StandardHeaders): StandardHeaders {
+  // Null prototype so header names like __proto__ become plain own
+  // properties instead of touching the object's prototype.
+  const normalized: StandardHeaders = Object.create(null)
+
+  for (const key of Object.keys(headers)) {
+    const value = headers[key]
+    if (value === undefined) {
+      continue
+    }
+
+    const lowerKey = key.toLowerCase()
+    const existing = normalized[lowerKey]
+
+    normalized[lowerKey] = existing === undefined
+      ? value
+      : [...toArray(existing), ...toArray(value)]
+  }
+
+  return normalized
+}
+
 export function parseStandardUrl(url: StandardUrl): [
   pathname: `/${string}`,
   search: `?${string}` | undefined,

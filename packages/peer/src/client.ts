@@ -202,7 +202,7 @@ export class ClientPeer {
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
       resolve({
-        headers: message.json.headers ?? {},
+        headers: decoded.headers,
         status: message.json.status ?? 200,
         resolveBody: decoded.resolveBody,
       })

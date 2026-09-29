@@ -298,12 +298,13 @@ const filename = getFilenameFromContentDisposition(disposition)
 
 ### Header helpers
 
-`mergeStandardHeaders()` combines two `StandardHeaders` objects while preserving duplicate values, and `flattenStandardHeader()` turns a single header value into a plain string when needed.
+`mergeStandardHeaders()` combines two `StandardHeaders` objects while preserving duplicate values, `flattenStandardHeader()` turns a single header value into a plain string when needed, and `normalizeStandardHeaders()` lowercases header names for adapters whose transport does not.
 
 ```ts
 import {
   flattenStandardHeader,
   mergeStandardHeaders,
+  normalizeStandardHeaders,
 } from '@standard-server/core'
 
 const headers = mergeStandardHeaders(
@@ -318,7 +319,12 @@ const headers = mergeStandardHeaders(
 
 const cookieHeader = flattenStandardHeader(headers['set-cookie'])
 // 'a=1, b=2'
+
+const normalized = normalizeStandardHeaders({ 'X-User-Id': 'a', 'x-user-id': 'b', 'Accept': undefined })
+// { 'x-user-id': ['a', 'b'] }
 ```
+
+`normalizeStandardHeaders()` merges names that differ only in case into one array in their original order, skips `undefined` values, and returns an object with a `null` prototype so names like `__proto__` stay plain own properties.
 
 ### URL parsing
 
