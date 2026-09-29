@@ -88,6 +88,10 @@ describe('decodeEventStreamMessage', () => {
     expect(decodeEventStreamMessage('event:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
     expect(decodeEventStreamMessage('event: a\nevent:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
 
+    // an empty data line still counts as data
+    expect(decodeEventStreamMessage('data:\n\n')).toStrictEqual({ event: 'message', data: '' })
+    expect(decodeEventStreamMessage('event:\ndata:\n\n')).toStrictEqual({ event: 'message', data: '' })
+
     // named messages keep their event type, with or without data
     expect(decodeEventStreamMessage('event: close\n\n')).toStrictEqual({ event: 'close' })
     expect(decodeEventStreamMessage('event: message\n\n')).toStrictEqual({ event: 'message' })
