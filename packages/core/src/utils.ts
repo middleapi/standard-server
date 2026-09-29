@@ -1,17 +1,18 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
 import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
-export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
-  // ';' and '=' are legal when quoted, but a quote-unaware parser would read them as new parameters
-  const encodedFilename = filename.replace(/[^\x20-\x7E]|[;=]/g, '_').replace(/[\\"]/g, '\\$&')
+// ';' and '=' are legal when quoted, but a quote-unaware parser would read them as new parameters
+const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
+const QUOTED_STRING_SPECIAL_CHAR_REGEX = /[\\"]/g
+const QUOTED_PAIR_REGEX = /\\(.)/g
 
-  // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
-  const encodedFilenameStar = safeEncodeURIComponent(filename)
-    .replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%(7C|60|5E)/g, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
+const EXT_VALUE_RESERVED_CHAR_REGEX = /['()*]/g
+const EXT_VALUE_ALLOWED_ESCAPE_REGEX = /%(7C|60|5E)/g
 
-  return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
-}
+// RFC 8187 ext-value: charset "'" [ language ] "'" value-chars
+const EXT_VALUE_REGEX = /^([^']*)'[^']*'(.*)$/
+const EXT_VALUE_SUPPORTED_CHARSET_REGEX = /^(?:utf-8|us-ascii)$/i
 
 /**
  * name (group 1), then a quoted-string (group 2, anything after it before the next ';' is malformed and skipped),
@@ -19,6 +20,18 @@ export function generateContentDisposition(filename: string, type: 'inline' | 'a
  * Always matches, and advances while input remains.
  */
 const CONTENT_DISPOSITION_PARAM_REGEX = /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
+
+export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
+  const encodedFilename = filename
+    .replace(FALLBACK_FILENAME_UNSAFE_CHAR_REGEX, '_')
+    .replace(QUOTED_STRING_SPECIAL_CHAR_REGEX, '\\$&')
+
+  const encodedFilenameStar = safeEncodeURIComponent(filename)
+    .replace(EXT_VALUE_RESERVED_CHAR_REGEX, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(EXT_VALUE_ALLOWED_ESCAPE_REGEX, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+
+  return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
+}
 
 /** First value of a Content-Disposition parameter, honoring quoted-strings. */
 function getContentDispositionParam(contentDisposition: string, name: string): string | undefined {
@@ -29,7 +42,7 @@ function getContentDispositionParam(contentDisposition: string, name: string): s
 
     if (paramName.trimEnd().toLowerCase() === name) {
       return quoted !== undefined
-        ? quoted.replace(/\\(.)/g, '$1')
+        ? quoted.replace(QUOTED_PAIR_REGEX, '$1')
         : token?.trim() || undefined
     }
   }
@@ -39,14 +52,12 @@ function getContentDispositionParam(contentDisposition: string, name: string): s
 
 export function getFilenameFromContentDisposition(contentDisposition: string): string | undefined {
   const extValue = getContentDispositionParam(contentDisposition, 'filename*')
-
-  // RFC 8187 ext-value: charset "'" [ language ] "'" value-chars
-  const extValueMatch = extValue?.match(/^([^']*)'[^']*'(.*)$/)
+  const extValueMatch = extValue?.match(EXT_VALUE_REGEX)
 
   if (extValueMatch) {
     const [, charset = '', encodedFilename = ''] = extValueMatch
 
-    if (/^(?:utf-8|us-ascii)$/i.test(charset)) {
+    if (EXT_VALUE_SUPPORTED_CHARSET_REGEX.test(charset)) {
       return safeDecodeURIComponent(encodedFilename)
     }
     // unsupported charset: fall through to the plain filename param
