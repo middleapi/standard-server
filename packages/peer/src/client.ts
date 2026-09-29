@@ -20,6 +20,7 @@ interface ClientPeerRequestStateInternal {
    * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
    */
   requestSent?: boolean | undefined
+  streamCancelled?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -37,8 +38,6 @@ export class ClientPeer {
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
       const signal = request.signal
-      throwIfAborted(signal)
-
       const id = this.idGenerator.generate()
       const state: ClientPeerRequestStateInternal = { resolve, reject }
       this.requests.set(id, state)
@@ -71,6 +70,8 @@ export class ClientPeer {
     let failure: unknown
 
     try {
+      throwIfAborted(request.signal)
+
       const encodedAtomicBody = await encodeAtomicStandardBody(request.body, request.headers)
 
       // signal can be aborted during encode
@@ -101,6 +102,10 @@ export class ClientPeer {
           await this.send({ id, kind: 'cancel' })
         }
 
+        return
+      }
+
+      if (state.streamCancelled) {
         return
       }
 
@@ -150,6 +155,7 @@ export class ClientPeer {
     }
 
     if (message.kind === 'stream/cancel') {
+      state.streamCancelled = true
       const promise = Promise.all([
         state.eventStreamTransmitter?.cancel(),
         state.octetStreamTransmitter?.cancel(),

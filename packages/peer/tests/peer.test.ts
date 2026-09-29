@@ -9,8 +9,14 @@ import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, Se
  * Wires a ClientPeer and a ServerPeer together through the real codec,
  * simulating a full-duplex connection (e.g. a WebSocket) where every
  * message crosses the wire encoded.
+ *
+ * With `waitForRemote`, each send resolves only after the remote side handled the message,
+ * so the remote's replies arrive while the send is still in flight.
  */
-function connect(handler: (request: StandardLazyRequest) => Promise<StandardResponse>): { client: ClientPeer, server: ServerPeer } {
+function connect(
+  handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
+  { waitForRemote = false } = {},
+): { client: ClientPeer, server: ServerPeer } {
   const prefix = 'peer:'
   const wire = {} as { client: ClientPeer, server: ServerPeer }
 
@@ -19,7 +25,13 @@ function connect(handler: (request: StandardLazyRequest) => Promise<StandardResp
     if (!decoded.matched) {
       throw new Error('Failed to decode message on the wire')
     }
-    void wire.server.message(decoded.message as ClientPeerSendMessage, handler).catch(() => {})
+    const handled = wire.server.message(decoded.message as ClientPeerSendMessage, handler)
+    if (waitForRemote) {
+      await handled
+    }
+    else {
+      void handled.catch(() => {})
+    }
   })
 
   wire.server = new ServerPeerClass(async (message) => {
@@ -27,7 +39,10 @@ function connect(handler: (request: StandardLazyRequest) => Promise<StandardResp
     if (!decoded.matched) {
       throw new Error('Failed to decode message on the wire')
     }
-    void wire.client.message(decoded.message as ServerPeerSendMessage)
+    const handled = wire.client.message(decoded.message as ServerPeerSendMessage)
+    if (waitForRemote) {
+      await handled
+    }
   })
 
   return wire
@@ -54,34 +69,13 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 
   it('completes when the transport waits for full remote processing before send resolves', async () => {
-    const prefix = 'peer:'
-    const wire = {} as { client: ClientPeer, server: ServerPeer }
-
-    const handler = async (request: StandardLazyRequest): Promise<StandardResponse> => ({
+    const { client } = connect(async request => ({
       status: 200,
       headers: {},
       body: { pong: request.url },
-    })
+    }), { waitForRemote: true })
 
-    // unlike `connect()`, each send awaits the remote side handling the message,
-    // so the response arrives while the request `send` is still in flight
-    wire.client = new ClientPeerClass(async (message) => {
-      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
-      if (!decoded.matched) {
-        throw new Error('Failed to decode message on the wire')
-      }
-      await wire.server.message(decoded.message as ClientPeerSendMessage, handler)
-    })
-
-    wire.server = new ServerPeerClass(async (message) => {
-      const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
-      if (!decoded.matched) {
-        throw new Error('Failed to decode message on the wire')
-      }
-      await wire.client.message(decoded.message as ServerPeerSendMessage)
-    })
-
-    const response = await wire.client.request({ url: '/ping', method: 'GET', headers: {} })
+    const response = await client.request({ url: '/ping', method: 'GET', headers: {} })
     expect(response.status).toBe(200)
     expect(await response.resolveBody()).toEqual({ pong: '/ping' })
   })
@@ -321,6 +315,27 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     const body = await response.resolveBody()
     expect(body).toBeInstanceOf(ReadableStream)
     expect(await readAll(body as ReadableStream<Uint8Array>)).toEqual([4, 5])
+  })
+
+  it('does not upload a request body the server cancelled while the request message was still being sent', async () => {
+    const { client } = connect(async (request) => {
+      await (await request.resolveBody() as ReadableStream).cancel()
+      // a streamed response keeps the request open after the request `send` resolves
+      return { status: 200, headers: {}, body: (async function* () {})() }
+    }, { waitForRemote: true })
+
+    const cancel = vi.fn()
+    await client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: {},
+      body: new ReadableStream<Uint8Array>({
+        start: controller => controller.enqueue(new Uint8Array([1, 2])),
+        cancel,
+      }),
+    })
+
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
   })
 
   it('propagates client aborts to the server handler signal', async () => {

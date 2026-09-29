@@ -243,6 +243,35 @@ describe('clientPeer', () => {
       ).rejects.toThrow('pre-aborted')
     })
 
+    it('cancels an octet-stream request body if signal already aborted', async () => {
+      const controller = new AbortController()
+      const error = new Error('pre-aborted')
+      controller.abort(error)
+      const cancel = vi.fn()
+
+      await expect(
+        peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal })),
+      ).rejects.toBe(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toEqual(0)
+    })
+
+    it('returns an event-stream request body if signal already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort(new Error('pre-aborted'))
+      const cleanup = vi.fn()
+
+      await expect(
+        peer.request(makeRequest({ body: new AsyncIteratorClass<unknown>(() => new Promise(() => {}), cleanup), signal: controller.signal })),
+      ).rejects.toThrow('pre-aborted')
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toEqual(0)
+    })
+
     it('sends abort message when signal aborts after request sent', async () => {
       const controller = new AbortController()
       const promise = peer.request(makeRequest({ signal: controller.signal }))
@@ -482,6 +511,28 @@ describe('clientPeer', () => {
         await promise
       })
 
+      it('does not transmit the event-stream request body when stream/cancel arrives while the request is being sent', async () => {
+        const iter = makeAsyncIter(['a', 'b'])
+        const returnSpy = vi.spyOn(iter, 'return')
+
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            await peer.message(makeStreamCancelMessage(message.id))
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: iter }),
+        )
+
+        await vi.waitFor(() => expect(returnSpy).toHaveBeenCalled())
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        const response = await promise
+        expect(await response.resolveBody()).toBe('ok')
+      })
+
       it('send cancel message and reject request on non-protocol error', async () => {
         const nonProtocolError = new Error('non-protocol error')
         const iter = new AsyncIteratorClass<unknown>(async () => {
@@ -707,6 +758,33 @@ describe('clientPeer', () => {
         await promise
 
         expect(cancel).toHaveBeenCalled()
+      })
+
+      it('does not transmit the octet-stream request body when stream/cancel arrives while the request is being sent', async () => {
+        const cancel = vi.fn()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2]))
+          },
+          cancel,
+        })
+
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            await peer.message(makeStreamCancelMessage(message.id))
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: stream }),
+        )
+
+        await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        const response = await promise
+        expect(await response.resolveBody()).toBe('ok')
       })
 
       it('send cancel message and reject request on stream error', async () => {
