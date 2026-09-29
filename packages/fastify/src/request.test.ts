@@ -1,4 +1,6 @@
 import type { StandardLazyRequest } from '@standard-server/core'
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
@@ -134,5 +136,73 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardBodySpy).toBeCalledTimes(1)
     expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: 'json' })
     expect(standardBody).toEqual({ foo: 'bar' })
+  })
+
+  describe.each(['/rpc/*', '/*'])('keeps absolute-form request targets raw, standard handler on `%s`', (route) => {
+    it('can not skip a guard on `/rpc/admin`', async ({ onTestFinished }) => {
+      let adminExecutions = 0
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      await fastify.register(async (admin) => {
+        admin.addHook('onRequest', async (req, reply) => {
+          await reply.code(401).send()
+        })
+        admin.all('/*', async () => {})
+      }, { prefix: '/rpc/admin' })
+
+      fastify.all(route, async (req, reply) => {
+        // stands for a standard handler routing on the url it is given
+        const { url } = toStandardLazyRequest(req, reply)
+
+        if (url.startsWith('/rpc/admin/')) {
+          adminExecutions++
+          return reply.code(200).send(url)
+        }
+
+        return reply.code(404).send(url)
+      })
+
+      await fastify.listen({ port: 0, host: '127.0.0.1' })
+      const { port } = fastify.server.address() as AddressInfo
+
+      const send = (target: string) => new Promise<{ status: number, body: string }>((resolve, reject) => {
+        let response = ''
+        const socket = net.connect(port, '127.0.0.1', () => {
+          socket.end(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
+        })
+        socket.setEncoding('utf8')
+        socket.on('data', chunk => response += chunk)
+        socket.on('close', () => resolve({
+          status: Number(response.split(' ')[1]),
+          body: response.slice(response.indexOf('\r\n\r\n') + 4),
+        }))
+        socket.on('error', reject)
+      })
+
+      expect((await send('/rpc/admin/x')).status).toBe(401)
+      expect((await send(`http://127.0.0.1:${port}/rpc/admin/x`)).status).toBe(401)
+      expect(await send(`http://127.0.0.1:${port}/rpc/public/x?a=1`)).toEqual({ status: 404, body: '/rpc/public/x?a=1' })
+
+      for (const path of [
+        '/rpc/public/../admin/x',
+        '/rpc/public/%2e%2e/admin/x',
+        '/rpc/public/.%2E/admin/x',
+        '/rpc/public/./../admin/x',
+        '/rpc/public\\..\\admin/x',
+      ]) {
+        // the handler gets exactly what an origin-form request for the same path would give it
+        expect(await send(`http://127.0.0.1:${port}${path}`)).toEqual({ status: 404, body: path })
+        expect(await send(path)).toEqual({ status: 404, body: path })
+      }
+
+      // find-my-way hands non-http schemes and paths after `*` to a catch-all route unstripped
+      for (const target of ['ws://127.0.0.1/rpc/admin/x', '*/../rpc/admin/x']) {
+        expect((await send(target)).status).toBe(404)
+      }
+
+      expect(adminExecutions).toBe(0)
+    })
   })
 })
