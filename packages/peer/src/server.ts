@@ -18,6 +18,8 @@ interface ServerPeerRequestStateInternal {
 
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
+  private closed = false
+  private closing: Promise<unknown> | undefined
 
   constructor(
     private readonly send: (message: ServerPeerSendMessage) => Promise<void>,
@@ -31,6 +33,16 @@ export class ServerPeer {
     message: ClientPeerSendMessage,
     handleRequest: (request: StandardLazyRequest) => Promise<StandardResponse>,
   ): Promise<void> {
+    /**
+     * Drop everything after close, including new requests (already queued on the transport,
+     * or from a misbehaving client): their handlers would never receive stream messages or an abort.
+     * No cancel is sent back, matching how close() treats in-flight requests;
+     * the client learns about it by closing its own peer when the transport closes.
+     */
+    if (this.closed) {
+      return
+    }
+
     const id = message.id
 
     if (message.kind === 'cancel') {
@@ -176,12 +188,24 @@ export class ServerPeer {
     }
   }
 
+  /**
+   * Abort all in-flight requests and ignore every message received afterwards.
+   * Call it when the underlying transport closes.
+   *
+   * Idempotent: later calls ignore `reason` and wait for the first call's cleanup.
+   */
   async close(reason?: unknown): Promise<void> {
-    reason ??= new AbortError('Peer was closed')
+    if (!this.closed) {
+      // mark closed before aborting, since abort listeners may call back into the peer
+      this.closed = true
+      reason ??= new AbortError('Peer was closed')
 
-    await Promise.all(
-      Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
-    )
+      this.closing = Promise.all(
+        Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
+      )
+    }
+
+    await this.closing
   }
 
   private async closeById(id: string, reason?: unknown): Promise<void> {

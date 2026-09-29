@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { PeerCancelMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
-import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
+import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, promiseWithResolvers, sleep } from '@standard-server/shared'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { ServerPeer } from './server'
 
@@ -676,6 +676,68 @@ describe('serverPeer', () => {
     it('is safe to call multiple times', async () => {
       await peer.close()
       await peer.close()
+    })
+
+    it('makes concurrent calls wait for the same cleanup', async () => {
+      const { promise: cleanupGate, resolve: finishCleanup } = promiseWithResolvers<void>()
+      let resolveNext!: (result: IteratorResult<unknown>) => void
+      const next = vi.fn(() => new Promise<IteratorResult<unknown>>(r => resolveNext = r))
+      const cleanup = vi.fn(async () => {
+        resolveNext({ done: true, value: undefined })
+        await cleanupGate
+      })
+
+      const promise = peer.message(makeRequestMessage(), async () => eventStreamResponse(new AsyncIteratorClass(next, cleanup)))
+      await vi.waitFor(() => expect(next).toHaveBeenCalled())
+
+      const settled = vi.fn()
+      const first = peer.close().then(settled)
+      const second = peer.close().then(settled)
+
+      await sleep(10)
+      expect(cleanup).toHaveBeenCalledOnce()
+      expect(settled).not.toHaveBeenCalled()
+
+      finishCleanup()
+      await Promise.all([first, second])
+      expect(settled).toHaveBeenCalledTimes(2)
+      await promise
+    })
+
+    it('ignores messages received after close', async () => {
+      await peer.close()
+
+      const handler = vi.fn<HandlerFn>()
+      await peer.message(makeRequestMessage(), handler)
+      await peer.message({ ...makeRequestMessage({ headers: { 'standard-server': 'event-stream' } }), id: '2' }, handler)
+      await peer.message({ ...makeRequestMessage({ headers: { 'content-type': 'application/octet-stream' } }), id: '3' }, handler)
+      await peer.message(makeEventStreamMessage('2', 'late'), handler)
+      await peer.message(makeOctetStreamMessage('3', true, new Uint8Array([1])), handler)
+      await peer.message(makeCancelMessage('1'), handler)
+
+      expect(handler).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('ignores a request message delivered while close is aborting in-flight requests', async () => {
+      const { handler, box, signals } = deferredHandler()
+      const promise = peer.message(makeRequestMessage(), handler)
+      await vi.waitFor(() => expect(signals.length).toBe(1))
+
+      const lateHandler = vi.fn<HandlerFn>()
+      let late: Promise<void> | undefined
+      signals[0]!.addEventListener('abort', () => {
+        late = peer.message({ ...makeRequestMessage({ headers: { 'standard-server': 'event-stream' } }), id: '2' }, lateHandler)
+      })
+
+      await peer.close()
+      await late
+
+      expect(lateHandler).not.toHaveBeenCalled()
+
+      box.resolve(jsonResponse())
+      await promise
+      expect(send).not.toHaveBeenCalled()
     })
 
     it('closes event-stream message queues', async () => {

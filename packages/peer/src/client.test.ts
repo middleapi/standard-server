@@ -1009,6 +1009,93 @@ describe('clientPeer', () => {
       await expect(promise).rejects.toThrow('custom')
     })
 
+    it('rejects requests made after close without sending them', async () => {
+      await peer.close()
+
+      await expect(peer.request(makeRequest())).rejects.toThrow(AbortError)
+      await expect(peer.request(makeRequest())).rejects.toThrow('Peer was closed')
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('rejects requests made after close with the first close reason', async () => {
+      const reason = new Error('transport closed')
+      await peer.close(reason)
+      await peer.close(new Error('ignored'))
+
+      await expect(peer.request(makeRequest())).rejects.toBe(reason)
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('releases the body of a request made after close', async () => {
+      const reason = new Error('transport closed')
+      await peer.close(reason)
+
+      const cancel = vi.fn()
+      const cleanup = vi.fn()
+      await expect(peer.request(makeRequest({ body: new ReadableStream({ cancel }) }))).rejects.toBe(reason)
+      await expect(peer.request(makeRequest({ body: new AsyncIteratorClass<unknown>(() => new Promise(() => {}), cleanup) }))).rejects.toBe(reason)
+
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(reason)
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('rejects a request made while close is cleaning up', async () => {
+      let late: Promise<StandardLazyResponse> | undefined
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const body = new AsyncIteratorClass<unknown>(next, async () => {
+        late = peer.request(makeRequest())
+      })
+      const promise = peer.request(makeRequest({ body }))
+      await vi.waitFor(() => expect(next).toHaveBeenCalled())
+
+      const reason = new Error('transport closed')
+      await peer.close(reason)
+
+      await expect(promise).rejects.toBe(reason)
+      await expect(late).rejects.toBe(reason)
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+
+    it('makes concurrent calls wait for the same cleanup', async () => {
+      const { promise: cleanupGate, resolve: finishCleanup } = promiseWithResolvers<void>()
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const cleanup = vi.fn(() => cleanupGate)
+      const promise = peer.request(makeRequest({ body: new AsyncIteratorClass<unknown>(next, cleanup) }))
+      const rejection = expect(promise).rejects.toThrow(AbortError)
+      await vi.waitFor(() => expect(next).toHaveBeenCalled())
+
+      const settled = vi.fn()
+      const first = peer.close().then(settled)
+      const second = peer.close().then(settled)
+
+      await sleep(10)
+      expect(cleanup).toHaveBeenCalledOnce()
+      expect(settled).not.toHaveBeenCalled()
+
+      finishCleanup()
+      await Promise.all([first, second])
+      expect(settled).toHaveBeenCalledTimes(2)
+      await rejection
+    })
+
+    it('ignores messages received after close', async () => {
+      const { id, promise } = await requestAndGetId()
+      const rejection = expect(promise).rejects.toThrow(AbortError)
+      await peer.close()
+      await rejection
+
+      toStandardBodySpy.mockClear()
+      await peer.message(makeResponseMessage(id, 'late'))
+      await peer.message(makeStreamCancelMessage(id))
+      await peer.message(makeCancelMessage(id))
+
+      expect(toStandardBodySpy).not.toHaveBeenCalled()
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+
     it('terminates active event-stream response iteration', async () => {
       const { id, promise } = await requestAndGetId()
       await peer.message(makeStreamingResponse(id, 'event-stream'))

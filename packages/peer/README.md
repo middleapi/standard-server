@@ -108,6 +108,10 @@ port2.addEventListener('message', async (event) => {
   }
 })
 
+// Close each peer when its port closes, see "Closing peers" below
+port1.addEventListener('close', () => clientPeer.close())
+port2.addEventListener('close', () => serverPeer.close())
+
 port1.start()
 port2.start()
 
@@ -123,6 +127,73 @@ const payload = await response.resolveBody()
 
 > [!TIP]
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.
+
+## Closing peers
+
+A peer cannot tell on its own that its transport is gone, so you **must call `close()` when the underlying transport closes**: a WebSocket or `MessagePort` `close` event, a destroyed Electron window, and so on. Otherwise in-flight requests never settle. A server handler waiting on an event-stream or octet-stream request body waits forever, along with anything it holds, such as database transactions, subscriptions, or timers. A client request never resolves or rejects.
+
+```ts
+import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
+import {
+  ClientPeer,
+  decodePeerMessage,
+  encodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+import { WebSocketServer } from 'ws'
+
+declare function handle(request: StandardLazyRequest): Promise<StandardResponse>
+
+// Server: one ServerPeer per connection
+const wss = new WebSocketServer({ port: 3000 })
+
+wss.on('connection', (ws) => {
+  ws.binaryType = 'arraybuffer'
+
+  const serverPeer = new ServerPeer(async (message) => {
+    ws.send(await encodePeerMessage(message))
+  })
+
+  ws.addEventListener('message', async (event) => {
+    const data = typeof event.data === 'string' ? event.data : new Uint8Array(event.data)
+    const decoded = decodePeerMessage(data)
+
+    if (decoded.matched && isClientPeerSendMessage(decoded.message)) {
+      await serverPeer.message(decoded.message, handle)
+    }
+  })
+
+  ws.addEventListener('close', () => serverPeer.close())
+})
+
+// Client
+const ws = new WebSocket('ws://localhost:3000')
+ws.binaryType = 'arraybuffer'
+
+const clientPeer = new ClientPeer(async (message) => {
+  ws.send(await encodePeerMessage(message))
+})
+
+ws.addEventListener('message', async (event) => {
+  const data = typeof event.data === 'string' ? event.data : new Uint8Array(event.data)
+  const decoded = decodePeerMessage(data)
+
+  if (decoded.matched && isServerPeerSendMessage(decoded.message)) {
+    await clientPeer.message(decoded.message)
+  }
+})
+
+ws.addEventListener('close', () => clientPeer.close())
+```
+
+What `close(reason?)` does:
+
+- `ServerPeer.close()` aborts the `signal` of every in-flight request, errors their request body streams, and stops transmitting their response bodies. It then ignores every message it receives. A request that arrives after close, such as one still queued on the transport, never reaches your handler. The server does not reply to it: like the in-flight requests, it settles on the client when the client peer closes.
+- `ClientPeer.close()` rejects every pending request, errors response body streams, and stops uploading request bodies. After that, `request()` rejects right away with the close reason and releases the request body, and incoming messages are ignored.
+- The default reason is an `AbortError`. A closed peer stays closed, so create new peers for a new connection.
+- `close()` is idempotent. Later calls ignore their `reason` and resolve once the first call's cleanup has finished.
 
 ## Body resolution
 

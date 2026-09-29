@@ -26,6 +26,8 @@ interface ClientPeerRequestStateInternal {
 export class ClientPeer {
   private readonly idGenerator = new SequentialIdGenerator()
   private readonly requests = new Map<string, ClientPeerRequestStateInternal>()
+  private closed: undefined | { reason: unknown }
+  private closing: Promise<unknown> | undefined
 
   constructor(
     private readonly send: (message: ClientPeerSendMessage) => Promise<void>,
@@ -34,8 +36,17 @@ export class ClientPeer {
 
   /**
    * Send a request to the server peer
+   *
+   * Rejects with the close reason if the peer is closed.
    */
   request(request: StandardRequest): Promise<StandardLazyResponse> {
+    if (this.closed) {
+      const reason = this.closed.reason
+      // the body is never sent, so release it like a request that fails before sending
+      void cancelStandardBody(request.body, reason).catch(() => {})
+      return Promise.reject(reason)
+    }
+
     return new Promise<StandardLazyResponse>((resolve, reject) => {
       const signal = request.signal
       const id = this.idGenerator.generate()
@@ -147,6 +158,10 @@ export class ClientPeer {
   async message(
     message: ServerPeerSendMessage,
   ): Promise<void> {
+    if (this.closed) {
+      return
+    }
+
     const id = message.id
     const state = this.requests.get(id)
 
@@ -218,12 +233,24 @@ export class ClientPeer {
     }
   }
 
+  /**
+   * Reject all in-flight requests, and make later requests reject and messages be ignored.
+   * Call it when the underlying transport closes.
+   *
+   * Idempotent: later calls ignore `reason` and wait for the first call's cleanup.
+   */
   async close(reason?: unknown): Promise<void> {
-    reason ??= new AbortError('Peer was closed')
+    if (!this.closed) {
+      reason ??= new AbortError('Peer was closed')
+      // mark closed before cleanup, since cancelling request bodies runs user code that may call back into the peer
+      this.closed = { reason }
 
-    await Promise.all(
-      Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
-    )
+      this.closing = Promise.all(
+        Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
+      )
+    }
+
+    await this.closing
   }
 
   private async closeById(id: string, reason?: unknown): Promise<void> {

@@ -2,7 +2,7 @@ import type { StandardLazyRequest, StandardResponse } from '@standard-server/cor
 import type { ClientPeer, ServerPeer } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
 
 /**
@@ -384,6 +384,30 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     releaseEncode.resolve()
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
+  })
+
+  it('drops requests reaching a closed server, and rejects them once the client closes too', async () => {
+    const handler = vi.fn(async () => ({ status: 200, headers: {}, body: 'unreachable' }))
+    const { client, server } = connect(handler)
+
+    // the transport closed while a client message was still queued on it
+    await server.close()
+
+    // a handler started for an event-stream body would wait forever for its stream messages
+    async function* events() {
+      yield 'hello'
+    }
+    const pending = client.request({ url: '/late', method: 'POST', headers: {}, body: events() })
+    const rejection = expect(pending).rejects.toThrow('Peer was closed')
+
+    await sleep(10)
+    expect(handler).not.toHaveBeenCalled()
+
+    // the transport close reaches the client side as well
+    await client.close()
+    await rejection
+    await expect(client.request({ url: '/after', method: 'GET', headers: {} })).rejects.toThrow('Peer was closed')
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {
