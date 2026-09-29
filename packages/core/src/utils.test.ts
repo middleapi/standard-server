@@ -108,6 +108,10 @@ it('getFilenameFromContentDisposition', () => {
   expect(getFilenameFromContentDisposition('inline; x="; filename*=utf-8\'\'evil.exe')).toEqual(undefined)
   expect(getFilenameFromContentDisposition('inline; filename="a\\"')).toEqual(undefined)
 
+  // malformed escapes in filename* are kept as-is, the valid ones are still decoded
+  expect(getFilenameFromContentDisposition('attachment; filename*=utf-8\'\'%E4%B8%AD%ZZ.txt')).toEqual('中%ZZ.txt')
+  expect(getFilenameFromContentDisposition('inline; filename*=%E2%82%AC%.txt')).toEqual('€%.txt')
+
   // quoted filename* is tolerated
   expect(getFilenameFromContentDisposition('attachment; filename*="utf-8\'\'%E2%82%AC.txt"')).toEqual('€.txt')
 
