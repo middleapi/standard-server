@@ -2,7 +2,7 @@ import type { ClientServerTest } from './client-server'
 import type { PeerClientServerTestOptions } from './client-server.peer'
 import { ClientPeer, decodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 import { WebSocket, WebSocketServer } from 'ws'
-import { expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler, wsMessageDataToEncoded } from './client-server.peer'
+import { expectNoPeerMessageErrorAfterEach, expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler, wsMessageDataToEncoded } from './client-server.peer'
 
 export function createNodeWsClientServerTest(options: PeerClientServerTestOptions = {}): ClientServerTest {
   const wss = new WebSocketServer({ port: 0 })
@@ -25,6 +25,12 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
     })
   })
 
+  /**
+   * `message()` can reject (e.g. the handler throws), and a rejection
+   * inside an event listener is unhandled, so always attach a catch.
+   */
+  const onPeerMessageError: NonNullable<ClientServerTest['onPeerMessageError']> = vi.fn()
+
   const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(async (message) => {
     await untilReady
     wsc.send(await randomEncodePeerMessage(message))
@@ -37,7 +43,7 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
       return
     }
 
-    await clientPeer.message(message)
+    await clientPeer.message(message).catch(onPeerMessageError)
   })
 
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -63,7 +69,7 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
 
       await serverPeer.message(message, async (request) => {
         return serverHandler(request)
-      })
+      }).catch(onPeerMessageError)
     })
   })
 
@@ -77,9 +83,10 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
   })
 
   expectPeerRequestsCleanedUpAfterEach(clientPeer, serverPeer)
+  expectNoPeerMessageErrorAfterEach(onPeerMessageError)
 
   if (options.fetchStreamed) {
-    return { handler, request }
+    return { handler, request, onPeerMessageError }
   }
 
   return {
@@ -87,5 +94,6 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
     request,
     sendClientPeerMessage,
     sendServerPeerMessage,
+    onPeerMessageError,
   }
 }

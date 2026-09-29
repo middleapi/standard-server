@@ -26,6 +26,14 @@ export class ServerPeer {
 
   /**
    * Handle a message from client
+   *
+   * Rejects when handling the request fails: the handler throws, the response body cannot be
+   * encoded, or `send` fails (a `cancel` is sent to the client first), or a response body fails
+   * to release. Attach a `.catch` when calling this from an event listener, otherwise the
+   * rejection is unhandled.
+   *
+   * Does not reject when the request ends because the client cancelled it or the peer was closed,
+   * even if the handler then rejects with `request.signal.reason`.
    */
   async message(
     message: ClientPeerSendMessage,
@@ -166,6 +174,15 @@ export class ServerPeer {
       await this.closeById(id)
     }
     catch (reason) {
+      /**
+       * The request was already cancelled or closed (client `cancel`, `close()`),
+       * and the error is the abort reason itself (e.g. from a signal-aware `fetch`).
+       * That is the expected outcome of the cancellation, not a failure.
+       */
+      if (signal.aborted && reason === signal.reason) {
+        return
+      }
+
       await this.cancelById(id, reason)
       throw reason
     }

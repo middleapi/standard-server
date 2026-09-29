@@ -92,19 +92,20 @@ const serverPeer = new ServerPeer(async (message) => {
   port2.postMessage(await encodePeerMessage(message, { /** options */ }))
 })
 
-port1.addEventListener('message', async (event) => {
+port1.addEventListener('message', (event) => {
   const decoded = decodePeerMessage(event.data, { /** options */ })
 
   if (decoded.matched && isServerPeerSendMessage(decoded.message)) {
-    await clientPeer.message(decoded.message)
+    clientPeer.message(decoded.message).catch(console.error)
   }
 })
 
-port2.addEventListener('message', async (event) => {
+port2.addEventListener('message', (event) => {
   const decoded = decodePeerMessage(event.data, { /** options */ })
 
   if (decoded.matched && isClientPeerSendMessage(decoded.message)) {
-    await serverPeer.message(decoded.message, handle)
+    // rejects when `handle` throws, the client has already been sent a `cancel`
+    serverPeer.message(decoded.message, handle).catch(console.error)
   }
 })
 
@@ -120,6 +121,12 @@ const response = await clientPeer.request({
 
 const payload = await response.resolveBody()
 ```
+
+> [!IMPORTANT]
+> Always attach a `.catch` to `message()`. A rejection inside an event listener is unhandled, and Node.js exits the process on unhandled rejections by default.
+>
+> - `serverPeer.message()` rejects when handling a request fails: the handler throws, the response body cannot be encoded, or `send` fails. `ServerPeer` sends `cancel` to the client before rejecting, so the client sees the request fail as well. It also rejects when a response body fails to release. It does not reject when the client cancels the request or `serverPeer.close()` is called, even if the handler then rejects with `request.signal.reason`.
+> - `clientPeer.message()` only rejects when a request body fails to release. Request failures reach the caller through `clientPeer.request()` or the response body.
 
 > [!TIP]
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.

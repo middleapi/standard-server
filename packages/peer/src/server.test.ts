@@ -151,6 +151,21 @@ describe('serverPeer', () => {
       expect(send).toHaveBeenCalledTimes(0)
     })
 
+    it('re-throws and sends abort when resolving the request body throws', async () => {
+      const handler = vi.fn<HandlerFn>().mockImplementation(async (request) => {
+        await request.resolveBody()
+        return jsonResponse()
+      })
+
+      await expect(peer.message(
+        makeRequestMessage({ headers: { 'standard-server': 'url-search-params' }, body: { not: 'a string' } }),
+        handler,
+      )).rejects.toThrow(TypeError)
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenNthCalledWith(1, { id: '1', kind: 'cancel' })
+    })
+
     it('sends abort and re-throws when send fails', async () => {
       const error = new Error('send failed')
       send.mockRejectedValueOnce(error)
@@ -174,6 +189,42 @@ describe('serverPeer', () => {
 
       box.resolve(jsonResponse())
       await promise
+    })
+
+    it('does not reject when a signal-aware handler rejects with the abort reason after cancel', async () => {
+      const signals: AbortSignal[] = []
+      const handler = vi.fn<HandlerFn>().mockImplementation(({ signal }) => {
+        signals.push(signal!)
+        // like fetch(url, { signal }): rejects with signal.reason once aborted
+        return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason)))
+      })
+
+      const promise = peer.message(makeRequestMessage(), handler)
+      await vi.waitFor(() => expect(signals.length).toBe(1))
+
+      await peer.message(makeCancelMessage('1'), vi.fn())
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(signals[0]!.reason).toEqual(new AbortError('Client aborted the request'))
+      expect(send).toHaveBeenCalledTimes(0)
+    })
+
+    it('does not reject when a signal-aware handler rejects with the abort reason after close', async () => {
+      const signals: AbortSignal[] = []
+      const handler = vi.fn<HandlerFn>().mockImplementation(({ signal }) => {
+        signals.push(signal!)
+        return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason)))
+      })
+
+      const promise = peer.message(makeRequestMessage(), handler)
+      await vi.waitFor(() => expect(signals.length).toBe(1))
+
+      const reason = new Error('connection lost')
+      await peer.close(reason)
+
+      await expect(promise).resolves.toBeUndefined()
+      expect(signals[0]!.reason).toBe(reason)
+      expect(send).toHaveBeenCalledTimes(0)
     })
 
     it('ignores abort for non-existing request', async () => {

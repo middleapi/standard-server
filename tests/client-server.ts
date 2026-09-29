@@ -9,6 +9,8 @@ export interface ClientServerTest {
   /** Only available in peer adapter */
   sendClientPeerMessage?: Mock<(message: ClientPeerSendMessage) => Promise<void>>
   sendServerPeerMessage?: Mock<(message: ServerPeerSendMessage) => Promise<void>>
+  /** Only available in peer adapter, receives rejections of `clientPeer.message()` and `serverPeer.message()` */
+  onPeerMessageError?: Mock<(error: unknown) => void>
 }
 
 /**

@@ -1,9 +1,25 @@
 import type { ClientServerHandler, ClientServerTest } from './client-server'
 import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
+import { expect } from '@std/expect'
+import { afterEach } from '@std/testing/bdd'
 import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 
 export function createDenoWsClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER
+
+  /**
+   * `message()` can reject (e.g. the handler throws), and a rejection
+   * inside an event listener is unhandled, so always attach a catch.
+   * Fail the test instead of silently ignoring the error.
+   */
+  const peerMessageErrors: unknown[] = []
+  const onPeerMessageError = (error: unknown) => {
+    peerMessageErrors.push(error)
+  }
+
+  afterEach(() => {
+    expect(peerMessageErrors.splice(0)).toEqual([])
+  })
 
   const server = Deno.serve({ port: 0, onListen: () => {} }, (request) => {
     if (request.headers.get('upgrade') !== 'websocket') {
@@ -24,7 +40,7 @@ export function createDenoWsClientServerTest(): ClientServerTest {
         return
       }
 
-      await serverPeer.message(message, async request => handler(request))
+      await serverPeer.message(message, async request => handler(request)).catch(onPeerMessageError)
     })
 
     return response
@@ -50,7 +66,7 @@ export function createDenoWsClientServerTest(): ClientServerTest {
       return
     }
 
-    await clientPeer.message(message)
+    await clientPeer.message(message).catch(onPeerMessageError)
   })
 
   return {

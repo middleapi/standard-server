@@ -1,9 +1,24 @@
 import type { ClientServerHandler, ClientServerTest } from './client-server'
 import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
+import { afterEach, expect } from 'bun:test'
 import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 
 export function createBunWsClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER
+
+  /**
+   * `message()` can reject (e.g. the handler throws), and a rejection
+   * inside an event listener is unhandled, so always attach a catch.
+   * Fail the test instead of silently ignoring the error.
+   */
+  const peerMessageErrors: unknown[] = []
+  const onPeerMessageError = (error: unknown) => {
+    peerMessageErrors.push(error)
+  }
+
+  afterEach(() => {
+    expect(peerMessageErrors.splice(0)).toEqual([])
+  })
 
   /**
    * Tests open a single client connection, so a single server peer is enough.
@@ -32,7 +47,7 @@ export function createBunWsClientServerTest(): ClientServerTest {
           return
         }
 
-        await serverPeer!.message(message, async request => handler(request))
+        await serverPeer!.message(message, async request => handler(request)).catch(onPeerMessageError)
       },
     },
   })
@@ -57,7 +72,7 @@ export function createBunWsClientServerTest(): ClientServerTest {
       return
     }
 
-    await clientPeer.message(message)
+    await clientPeer.message(message).catch(onPeerMessageError)
   })
 
   return {
