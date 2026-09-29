@@ -1,12 +1,16 @@
+import type { EventStreamDecoderOptions } from '@standard-server/core'
 import { encodeEventStreamMessage, ErrorEvent, EventStreamDecoderStream, getEventMeta, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { AsyncIteratorClass, isTypescriptObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 
+export interface ToAsyncIteratorObjectOptions extends EventStreamDecoderOptions {}
+
 export function toAsyncIteratorObject(
   stream: ReadableStream<Uint8Array<ArrayBuffer>> | null,
+  options: ToAsyncIteratorObjectOptions = {},
 ): AsyncIteratorClass<unknown> {
   const eventStream = stream
     ?.pipeThrough(new TextDecoderStream())
-    .pipeThrough(new EventStreamDecoderStream())
+    .pipeThrough(new EventStreamDecoderStream(options))
 
   const reader = eventStream?.getReader()
 

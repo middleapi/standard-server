@@ -1,12 +1,19 @@
 import type { StandardLazyRequest } from '@standard-server/core'
+import type { ToStandardBodyOptions } from './body'
 import { toStandardBody } from './body'
 import { toStandardHeaders } from './headers'
 import { toStandardUrl } from './url'
 
+export interface ToStandardLazyRequestOptions extends Omit<ToStandardBodyOptions, 'hint'> {
+}
+
 /**
  * Convert a fetch request to a standard request.
  */
-export function toStandardLazyRequest(request: Request): StandardLazyRequest {
+export function toStandardLazyRequest(
+  request: Request,
+  options: ToStandardLazyRequestOptions = {},
+): StandardLazyRequest {
   const url = new URL(request.url)
 
   return {
@@ -21,7 +28,7 @@ export function toStandardLazyRequest(request: Request): StandardLazyRequest {
     set headers(value) {
       Object.defineProperty(this, 'headers', { value, writable: true })
     },
-    resolveBody: hint => toStandardBody(request, { hint }),
+    resolveBody: hint => toStandardBody(request, { ...options, hint }),
     signal: request.signal,
   }
 }

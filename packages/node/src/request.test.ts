@@ -42,4 +42,18 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.method).toBe('POST')
     expect(standardRequest.signal?.aborted).toBe(false)
   })
+
+  it('passes body options to toStandardBody', async () => {
+    const options = { eventStream: { maxMessageSize: 10 } }
+    let req: IncomingMessage | undefined
+
+    await request(async (_req: IncomingMessage, res: ServerResponse) => {
+      req = _req
+      await toStandardLazyRequest(_req, res, options).resolveBody('event-stream')
+      res.end()
+    }).post('/').send('data: 1\n\n')
+
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'event-stream', eventStream: options.eventStream })
+  })
 })

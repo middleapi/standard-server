@@ -1,4 +1,4 @@
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { ErrorEvent, EventStreamDecoderError, getEventMeta, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
@@ -249,6 +249,32 @@ describe('toAsyncIteratorObject', () => {
     const errorPromise = expect(generator.next()).rejects.toThrow('Test error')
     await vi.advanceTimersByTimeAsync(10)
     await errorPromise
+  })
+
+  it('throws and cancels the stream when a message exceeds a limit', async () => {
+    const cancel = vi.fn()
+    let pulls = 0
+
+    // a sender that never ends its second message
+    const stream = new ReadableStream<string>({
+      pull(controller) {
+        controller.enqueue(pulls++ === 0 ? 'data: {"order": 1}\n\ndata: ' : 'x'.repeat(40))
+      },
+      cancel,
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream, { maxMessageSize: 100 })
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 1 } })
+
+    const error = await generator.next().catch(error => error)
+    expect(error).toBeInstanceOf(EventStreamDecoderError)
+    expect(error.message).toBe('Event Stream message exceeded the maximum size of 100 characters')
+
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(error))
+    expect(pulls).toBeLessThan(10)
+
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 })
 

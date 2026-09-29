@@ -90,6 +90,22 @@ describe('toStandardLazyResponse', () => {
     expect(toStandardBodySpy).toBeCalledWith(response, { hint: 'json' })
   })
 
+  it('passes body options to toStandardBody', async () => {
+    const response = new Response('data: 1\n\n', {
+      headers: {
+        'content-type': 'text/event-stream',
+      },
+    })
+
+    const options = { eventStream: { maxMessageSize: 10 } }
+    const lazyResponse = toStandardLazyResponse(response, options)
+
+    await lazyResponse.resolveBody('event-stream')
+
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(response, { hint: 'event-stream', eventStream: options.eventStream })
+  })
+
   it('headers is lazy and can override', async () => {
     const response = new Response(null, {
       headers: {

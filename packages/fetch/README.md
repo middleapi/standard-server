@@ -118,6 +118,27 @@ const payload = await standardResponse.resolveBody()
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
 
+### Limiting event-stream messages
+
+An event-stream body is decoded one message at a time, and by default a message can be any size, so a sender that never ends a message would make the receiver buffer it without bound. When the other side is untrusted, cap it with the `eventStream` option on either side of the connection:
+
+```ts
+import { toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
+
+const eventStream = {
+  maxMessageSize: 1024 * 1024, // characters
+  maxMessageLines: 10_000,
+}
+
+// server: parsing an incoming request
+const standardRequest = toStandardLazyRequest(request, { eventStream })
+
+// client: parsing a received response
+const standardResponse = toStandardLazyResponse(response, { eventStream })
+```
+
+A message over either limit makes the iterator throw an `EventStreamDecoderError` and cancels the body. `toStandardBody()` accepts the same `eventStream` option, and `toAsyncIteratorObject()` takes the limits as its second argument. See [limiting message size](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#limiting-message-size) in the core README for how they are counted.
+
 ## Learn more
 
 For the project overview and the shared contract this adapter implements, see the [core documentation](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md).

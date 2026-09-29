@@ -1,9 +1,11 @@
+import type { EventStreamDecoderOptions } from './decoder'
 import type { EventStreamMessage } from './types'
 import { decodeEventStreamMessage, EventStreamDecoder, EventStreamDecoderStream } from './decoder'
+import { EventStreamDecoderError } from './error'
 
-function feedAll(chunks: string[]): EventStreamMessage[] {
+function feedAll(chunks: string[], options?: EventStreamDecoderOptions): EventStreamMessage[] {
   const events: EventStreamMessage[] = []
-  const decoder = new EventStreamDecoder(event => events.push(event))
+  const decoder = new EventStreamDecoder(event => events.push(event), options)
 
   for (const chunk of chunks) {
     decoder.feed(chunk)
@@ -12,6 +14,37 @@ function feedAll(chunks: string[]): EventStreamMessage[] {
   decoder.end()
 
   return events
+}
+
+/**
+ * Like feedAll, but also returns the error the decoder threw, if any.
+ */
+function feedUntilError(chunks: string[], options?: EventStreamDecoderOptions): { events: EventStreamMessage[], error: unknown } {
+  const events: EventStreamMessage[] = []
+  const decoder = new EventStreamDecoder(event => events.push(event), options)
+
+  try {
+    for (const chunk of chunks) {
+      decoder.feed(chunk)
+    }
+
+    decoder.end()
+  }
+  catch (error) {
+    return { events, error }
+  }
+
+  return { events, error: undefined }
+}
+
+function splitEvery(text: string, size: number): string[] {
+  const chunks: string[] = []
+
+  for (let i = 0; i < text.length; i += size) {
+    chunks.push(text.slice(i, i + size))
+  }
+
+  return chunks
 }
 
 describe('decodeEventStreamMessage', () => {
@@ -233,12 +266,16 @@ describe('eventStreamDecoder', () => {
   describe('delimiters across chunk boundaries', () => {
     // Per spec, a blank line with nothing buffered dispatches nothing, so
     // leading and extra blank lines are ignored.
-    it('handles every delimiter split at every position', () => {
+    it.each([
+      ['without limits', undefined],
+      // 'data: second' is the largest message: 12 characters on 1 line
+      ['with limits the messages just fit', { maxMessageSize: 12, maxMessageLines: 1 }],
+    ])('handles every delimiter split at every position %s', (_, options) => {
       for (const delimiter of ['\n\n', '\r\r', '\n\r', '\n\r\n', '\r\n\n', '\r\n\r\n', '\n\n\n', '\r\r\r', '\r\n\r\n\r\n', '\n\r\n\r\n']) {
         const stream = `${delimiter}data: first${delimiter}data: second${delimiter}`
 
         for (let split = 1; split < stream.length; split++) {
-          const events = feedAll([stream.slice(0, split), stream.slice(split)])
+          const events = feedAll([stream.slice(0, split), stream.slice(split)], options)
 
           expect(events, `delimiter ${JSON.stringify(delimiter)} split at ${split}`).toEqual([
             { event: 'message', data: 'first' },
@@ -310,6 +347,142 @@ describe('eventStreamDecoder', () => {
 
         expect(events, `line ending ${JSON.stringify(eol)}`).toEqual([
           { event: 'message', data: 'a\nb' },
+        ])
+      }
+    })
+  })
+
+  describe('limits', () => {
+    it('throws once an unterminated message grows past maxMessageSize', () => {
+      const events: EventStreamMessage[] = []
+      const decoder = new EventStreamDecoder(event => events.push(event), { maxMessageSize: 100 })
+
+      decoder.feed('data: ok\n\n')
+      decoder.feed('data: ')
+
+      for (let i = 0; i < 94; i++) {
+        decoder.feed('x')
+      }
+
+      // a trailing line ending may start the delimiter, so it is not counted yet
+      decoder.feed('\r\n')
+
+      expect(() => decoder.feed('x')).toThrow(EventStreamDecoderError)
+      expect(() => decoder.feed('x')).toThrow('Event Stream message exceeded the maximum size of 100 characters')
+
+      expect(events).toEqual([{ event: 'message', data: 'ok' }])
+    })
+
+    it('throws once an unterminated message has more lines than maxMessageLines', () => {
+      const events: EventStreamMessage[] = []
+      const decoder = new EventStreamDecoder(event => events.push(event), { maxMessageLines: 3 })
+
+      decoder.feed(':\n')
+      decoder.feed('data: a\r')
+      decoder.feed('\ndata: b\n') // CRLF split across chunks is a single line ending
+
+      expect(() => decoder.feed('d')).toThrow(EventStreamDecoderError)
+      expect(() => decoder.feed('d')).toThrow('Event Stream message exceeded the maximum line count of 3')
+
+      expect(events).toEqual([])
+    })
+
+    it('stops buffering and rejects further input once a limit is exceeded', () => {
+      const events: EventStreamMessage[] = []
+      const decoder = new EventStreamDecoder(event => events.push(event), { maxMessageSize: 10 })
+
+      let error: unknown
+
+      try {
+        decoder.feed(`data: ${'x'.repeat(10)}`)
+      }
+      catch (e) {
+        error = e
+      }
+
+      expect(error).toBeInstanceOf(EventStreamDecoderError)
+
+      // does not resume parsing mid-message, which would decode the rest of it as a new message
+      expect(() => decoder.feed('\n\ndata: next\n\n')).toThrow(error as Error)
+      expect(() => decoder.end()).toThrow(error as Error)
+
+      expect(events).toEqual([])
+    })
+
+    it('throws on a complete message over the limit and delivers the messages before it', () => {
+      expect(feedUntilError(['data: a\n\ndata: too long\n\ndata: b\n\n'], { maxMessageSize: 7 })).toEqual({
+        events: [{ event: 'message', data: 'a' }],
+        error: new EventStreamDecoderError('Event Stream message exceeded the maximum size of 7 characters'),
+      })
+
+      expect(feedUntilError(['data: a\n\ndata: b\ndata: c\n\ndata: d\n\n'], { maxMessageLines: 1 })).toEqual({
+        events: [{ event: 'message', data: 'a' }],
+        error: new EventStreamDecoderError('Event Stream message exceeded the maximum line count of 1'),
+      })
+    })
+
+    it('throws on an incomplete message over the limit after a complete one in the same chunk', () => {
+      expect(feedUntilError(['data: a\n\ndata: too long'], { maxMessageSize: 7 })).toEqual({
+        events: [{ event: 'message', data: 'a' }],
+        error: new EventStreamDecoderError('Event Stream message exceeded the maximum size of 7 characters'),
+      })
+
+      expect(feedUntilError(['data: a\n\ndata: b\nd'], { maxMessageLines: 1 })).toEqual({
+        events: [{ event: 'message', data: 'a' }],
+        error: new EventStreamDecoderError('Event Stream message exceeded the maximum line count of 1'),
+      })
+    })
+
+    it('applies the limits the same wherever chunks split', () => {
+      const first = 'data: 1'
+      const large = 'data: 1234567890' // 16 characters, 1 line
+      const long = ':\r:\r\n:\n:' // 8 characters, 4 lines
+      const stream = `\n${first}\r\n\r\n${large}\r\n\r\n${long}\n\n\n${first}\r\r`
+
+      const chunkings: string[][] = [[stream]]
+
+      for (let split = 1; split < stream.length; split++) {
+        chunkings.push([stream.slice(0, split), stream.slice(split)])
+      }
+
+      for (const size of [1, 2, 3, 5, 7]) {
+        chunkings.push(splitEvery(stream, size))
+      }
+
+      for (const chunks of chunkings) {
+        const label = JSON.stringify(chunks)
+
+        expect(feedAll(chunks, { maxMessageSize: 16, maxMessageLines: 4 }), label).toEqual([
+          { event: 'message', data: '1' },
+          { event: 'message', data: '1234567890' },
+          { comments: ['', '', '', ''] },
+          { event: 'message', data: '1' },
+        ])
+
+        expect(feedUntilError(chunks, { maxMessageSize: 15, maxMessageLines: 4 }), label).toEqual({
+          events: [{ event: 'message', data: '1' }],
+          error: new EventStreamDecoderError('Event Stream message exceeded the maximum size of 15 characters'),
+        })
+
+        expect(feedUntilError(chunks, { maxMessageSize: 16, maxMessageLines: 3 }), label).toEqual({
+          events: [
+            { event: 'message', data: '1' },
+            { event: 'message', data: '1234567890' },
+          ],
+          error: new EventStreamDecoderError('Event Stream message exceeded the maximum line count of 3'),
+        })
+      }
+    })
+
+    it('decodes messages under the limit split across many chunks', () => {
+      const value = 'x'.repeat(64 * 1024)
+      const message = `event: big\ndata: ${value}\ndata: ${value}`
+      const stream = `${message}\r\n\r\n${message}\n\n`
+
+      for (const size of [1, 251, 4096]) {
+        expect(feedAll(splitEvery(stream, size), { maxMessageSize: message.length, maxMessageLines: 3 }), `chunk size ${size}`).toEqual([
+          { event: 'big', data: `${value}\n${value}` },
+          { event: 'big', data: `${value}\n${value}` },
         ])
       }
     })
@@ -421,6 +594,27 @@ describe('eventStreamDecoderStream', () => {
 
     expect(module.EventStreamDecoderStream).toBeDefined()
     expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({ event: 'message', data: 'hello' })
+  })
+
+  it('errors the stream when a message exceeds a limit', async () => {
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue('data: hello\n\n')
+        controller.enqueue(`data: ${'x'.repeat(50)}`)
+        controller.enqueue('x'.repeat(50))
+        controller.close()
+      },
+    }).pipeThrough(new EventStreamDecoderStream({ maxMessageSize: 100 }))
+
+    const messages: EventStreamMessage[] = []
+
+    await expect(async () => {
+      for await (const message of stream) {
+        messages.push(message)
+      }
+    }).rejects.toThrow(new EventStreamDecoderError('Event Stream message exceeded the maximum size of 100 characters'))
+
+    expect(messages).toEqual([{ event: 'message', data: 'hello' }])
   })
 
   it('on incomplete message', async () => {

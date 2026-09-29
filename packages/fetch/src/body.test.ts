@@ -7,6 +7,7 @@ import { toFetchHeaders } from './headers'
 const generateContentDispositionSpy = vi.spyOn(StandardServerModule, 'generateContentDisposition')
 const getFilenameFromContentDispositionSpy = vi.spyOn(StandardServerModule, 'getFilenameFromContentDisposition')
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
+const toAsyncIteratorObjectSpy = vi.spyOn(EventStreamModule, 'toAsyncIteratorObject')
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -96,6 +97,22 @@ describe('toStandardBody', () => {
 
       expect(await standardBody.next()).toEqual({ done: false, value: 123 })
       expect(await standardBody.next()).toEqual({ done: true, value: 456 })
+    })
+
+    it('async iterator object with event-stream options', async () => {
+      const response = new Response(`data: ${'x'.repeat(100)}\n\n`, {
+        headers: {
+          'standard-server': 'event-stream',
+        },
+      })
+
+      const eventStream = { maxMessageSize: 10 }
+      const standardBody = await toStandardBody(response, { eventStream }) as any
+
+      expect(toAsyncIteratorObjectSpy).toBeCalledTimes(1)
+      expect(toAsyncIteratorObjectSpy).toBeCalledWith(response.body, eventStream)
+
+      await expect(standardBody.next()).rejects.toThrow('Event Stream message exceeded the maximum size of 10 characters')
     })
 
     it('form-data', async () => {

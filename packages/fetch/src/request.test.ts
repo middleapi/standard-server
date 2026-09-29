@@ -41,6 +41,24 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json' })
   })
 
+  it('passes body options to toStandardBody', async () => {
+    const request = new Request('https://example.com', {
+      method: 'POST',
+      body: 'data: 1\n\n',
+      headers: {
+        'content-type': 'text/event-stream',
+      },
+    })
+
+    const options = { eventStream: { maxMessageSize: 10 } }
+    const standardRequest = toStandardLazyRequest(request, options)
+
+    await standardRequest.resolveBody('event-stream')
+
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'event-stream', eventStream: options.eventStream })
+  })
+
   it('headers is lazy and can override', async () => {
     const response = new Request('https://example.com', {
       headers: {

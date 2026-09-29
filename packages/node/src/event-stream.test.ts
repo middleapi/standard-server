@@ -32,7 +32,17 @@ it('toAsyncIteratorObject', async () => {
 
   expect(toWebReadableStreamSpy).toBeCalledTimes(1)
   expect(toAsyncIteratorObjectFetch).toBeCalledTimes(1)
-  expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(toWebReadableStreamSpy.mock.results[0]!.value)
+  expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(toWebReadableStreamSpy.mock.results[0]!.value, {})
+})
+
+it('toAsyncIteratorObject with options', async () => {
+  const options = { maxMessageSize: 10 }
+  const generator = toAsyncIteratorObject(Readable.from([`data: ${'x'.repeat(100)}\n\n`]), options)
+
+  await expect(generator.next()).rejects.toThrow('Event Stream message exceeded the maximum size of 10 characters')
+
+  expect(toAsyncIteratorObjectFetch).toBeCalledTimes(1)
+  expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(toWebReadableStreamSpy.mock.results[0]!.value, options)
 })
 
 it('toEventStream', async () => {

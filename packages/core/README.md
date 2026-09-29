@@ -418,6 +418,26 @@ const messages = response.body!
   .pipeThrough(new EventStreamDecoderStream())
 ```
 
+### Limiting message size
+
+The decoder buffers each message until the blank line that ends it, and by default a message can be any size. A sender that never ends a message would make the decoder buffer it without bound, so when the stream comes from an untrusted source, cap it with `maxMessageSize` and, optionally, `maxMessageLines`:
+
+```ts
+import { EventStreamDecoderStream } from '@standard-server/core'
+
+const messages = response.body!
+  .pipeThrough(new TextDecoderStream())
+  .pipeThrough(new EventStreamDecoderStream({
+    maxMessageSize: 1024 * 1024, // characters
+    maxMessageLines: 10_000,
+  }))
+```
+
+- `maxMessageSize` counts the characters (UTF-16 code units) of a message, not including the line breaks that end it.
+- `maxMessageLines` counts its lines, that is, its fields and comments. Each line decodes into its own string, so a message made of many short lines can take far more memory than its size suggests.
+
+A message over either limit fails the decoder with an `EventStreamDecoderError`, which errors the stream. The messages before it are still delivered; the decoder then drops what it buffered and rejects any further input. `EventStreamDecoder` takes the same options as its second argument, and the Fetch and Node.js adapters expose them as the `eventStream` option when parsing a body.
+
 ### Iterator metadata helpers
 
 `StandardBody` uses async iterators for event-stream bodies. To attach SSE metadata to a yielded value without changing its visible shape, use `withEventMeta()`.
@@ -455,7 +475,7 @@ const response: StandardResponse = {
 The package also exports:
 
 - `EventStreamEncoderError` for invalid outbound SSE messages
-- `EventStreamDecoderError` for incomplete or invalid inbound stream decoding
+- `EventStreamDecoderError` for incomplete or invalid inbound stream decoding, including messages over a [decoder limit](#limiting-message-size)
 - `ErrorEvent` for wrapping structured event-stream error payloads in an `Error`
 - `assertEventStreamMessageId()`, `assertEventStreamMessageName()`, `assertEventStreamMessageRetry()`, and `assertEventStreamMessageComment()` for low-level validation when building custom SSE tooling
 

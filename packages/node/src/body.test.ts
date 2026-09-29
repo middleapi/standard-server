@@ -6,6 +6,7 @@ import http2 from 'node:http2'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 import * as StandardServerModule from '@standard-server/core'
+import { EventStreamDecoderError } from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import request from 'supertest'
@@ -14,6 +15,7 @@ import * as EventStreamModule from './event-stream'
 import * as UtilsModule from './utils'
 
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
+const toAsyncIteratorObjectSpy = vi.spyOn(EventStreamModule, 'toAsyncIteratorObject')
 const toWebReadableStreamSpy = vi.spyOn(UtilsModule, 'toWebReadableStream')
 const generateContentDispositionSpy = vi.spyOn(StandardServerModule, 'generateContentDisposition')
 const getFilenameFromContentDispositionSpy = vi.spyOn(StandardServerModule, 'getFilenameFromContentDisposition')
@@ -100,6 +102,28 @@ describe('toStandardBody', () => {
       expect(standardBody).toSatisfy(isAsyncIteratorObject)
       expect(await standardBody.next()).toEqual({ done: false, value: 123 })
       expect(await standardBody.next()).toEqual({ done: true, value: 456 })
+    })
+
+    it('async iterator object with event-stream options', async () => {
+      const eventStream = { maxMessageSize: 10 }
+      let req: IncomingMessage | undefined
+      let error: unknown
+
+      await request(async (_req: IncomingMessage, res: ServerResponse) => {
+        req = _req
+        const standardBody = await toStandardBody(_req, { eventStream }) as any
+        error = await standardBody.next().catch((error: unknown) => error)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'event-stream')
+        .send(`data: ${'x'.repeat(100)}\n\n`)
+
+      expect(toAsyncIteratorObjectSpy).toBeCalledTimes(1)
+      expect(toAsyncIteratorObjectSpy).toBeCalledWith(req, eventStream)
+
+      expect(error).toBeInstanceOf(EventStreamDecoderError)
+      expect(error).toHaveProperty('message', 'Event Stream message exceeded the maximum size of 10 characters')
     })
 
     it('form-data', async () => {

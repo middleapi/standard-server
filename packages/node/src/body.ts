@@ -1,5 +1,5 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
-import type { ToEventStreamOptions } from './event-stream'
+import type { ToAsyncIteratorObjectOptions, ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
 import { Readable } from 'node:stream'
 import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
@@ -12,6 +12,11 @@ export interface ToStandardBodyOptions {
    * Hints on how the body should be parsed.
    */
   hint?: StandardBodyHint | undefined
+
+  /**
+   * Options for parsing an event-stream body, like the maximum message size.
+   */
+  eventStream?: ToAsyncIteratorObjectOptions | undefined
 }
 
 /**
@@ -59,7 +64,7 @@ export async function toStandardBody(
   }
 
   if (hint === 'event-stream') {
-    return toAsyncIteratorObject(req)
+    return toAsyncIteratorObject(req, options.eventStream)
   }
 
   if (hint === 'file') {
