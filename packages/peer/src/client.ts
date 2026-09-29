@@ -15,6 +15,11 @@ interface ClientPeerRequestStateInternal {
   eventStreamTransmitter?: EventStreamTransmitter | undefined
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
   removeAbortListener?: (() => void) | undefined
+  /**
+   * A cancel must not overtake the request message (the server ignores cancels for unknown ids),
+   * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
+   */
+  requestSent?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -88,9 +93,14 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
+      state.requestSent = true
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
+        if (request.signal?.aborted) {
+          await this.send({ id, kind: 'cancel' })
+        }
+
         return
       }
 
@@ -266,7 +276,7 @@ export class ClientPeer {
     state.octetStreamMessageQueue = undefined
 
     const promises = [
-      this.send({ id, kind: 'cancel' }),
+      state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
       state.eventStreamTransmitter?.cancel(),
       state.octetStreamTransmitter?.cancel(),
     ]

@@ -2,6 +2,7 @@ import type { StandardLazyRequest, StandardResponse } from '@standard-server/cor
 import type { ClientPeer, ServerPeer } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { promiseWithResolvers } from '@standard-server/shared'
 import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
 
 /**
@@ -287,6 +288,36 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     await expect(promise).rejects.toThrow('user navigated away')
     await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+  })
+
+  it('propagates a client abort fired while the request message is still being sent', async () => {
+    const encodeStarted = promiseWithResolvers<void>()
+    const releaseEncode = promiseWithResolvers<void>()
+    let serverSignal: AbortSignal | undefined
+
+    const { client } = connect(async (request) => {
+      serverSignal = request.signal
+      return new Promise(() => {}) // handler never resolves
+    })
+
+    // encoding the request message awaits `file.arrayBuffer()`, so the cancel message could overtake it
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
+    const arrayBuffer = file.arrayBuffer.bind(file)
+    vi.spyOn(file, 'arrayBuffer').mockImplementation(async () => {
+      encodeStarted.resolve()
+      await releaseEncode.promise
+      return arrayBuffer()
+    })
+
+    const controller = new AbortController()
+    const promise = client.request({ url: '/upload', method: 'POST', headers: {}, body: file, signal: controller.signal })
+
+    await encodeStarted.promise
+    controller.abort(new Error('user navigated away'))
+    await expect(promise).rejects.toThrow('user navigated away')
+
+    releaseEncode.resolve()
+    await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
   })
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {
