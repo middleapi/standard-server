@@ -42,13 +42,7 @@ export async function sendStandardResponse(
     }
 
     responseStream.once('error', reject)
-    responseStream.once('close', () => {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.destroy(getNodeResponseError(responseStream) ?? undefined)
-      }
-
-      resolve()
-    })
+    responseStream.once('close', resolve)
 
     try {
       const [headers, setCookies] = toLambdaHeaders(resHeaders)
@@ -73,6 +67,12 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
+        res.once('close', () => {
+          if (!resBody.closed) {
+            resBody.destroy(getNodeResponseError(res) ?? undefined)
+          }
+        })
+
         resBody.once('error', error => res.destroy(error))
 
         resBody.pipe(res)
