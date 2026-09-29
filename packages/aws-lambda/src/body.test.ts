@@ -68,14 +68,14 @@ describe('toStandardBody', () => {
 
     it('strips a leading BOM from json', async () => {
       await expect(toStandardBody(event({
-        body: '﻿{"foo":"bar"}',
+        body: '\uFEFF{"foo":"bar"}',
         multiValueHeaders: { 'Content-Type': ['application/json'] },
       }))).resolves.toEqual({ foo: 'bar' })
     })
 
     it('strips a leading BOM from base64-encoded json', async () => {
       await expect(toStandardBody(event({
-        body: Buffer.from('﻿{"foo":"bar"}').toString('base64'),
+        body: Buffer.from('\uFEFF{"foo":"bar"}').toString('base64'),
         isBase64Encoded: true,
         multiValueHeaders: { 'Content-Type': ['application/json'] },
       }))).resolves.toEqual({ foo: 'bar' })
@@ -83,9 +83,9 @@ describe('toStandardBody', () => {
 
     it('replaces lone surrogates in json with U+FFFD', async () => {
       await expect(toStandardBody(event({
-        body: '{"foo":"\uD800","bar":"\uDC00😀"}',
+        body: '{"foo":"\uD800","bar":"\uDC00\uD83D\uDE00"}',
         multiValueHeaders: { 'Content-Type': ['application/json'] },
-      }))).resolves.toEqual({ foo: '�', bar: '�😀' })
+      }))).resolves.toEqual({ foo: '\uFFFD', bar: '\uFFFD\uD83D\uDE00' })
     })
 
     it('parses empty json as undefined', async () => {
@@ -106,7 +106,7 @@ describe('toStandardBody', () => {
 
     it('strips a leading BOM from url-encoded forms', async () => {
       await expect(toStandardBody(event({
-        body: '﻿foo=bar',
+        body: '\uFEFFfoo=bar',
         multiValueHeaders: { 'Content-Type': ['application/x-www-form-urlencoded'] },
       }))).resolves.toEqual(new URLSearchParams('foo=bar'))
     })
