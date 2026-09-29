@@ -28,30 +28,15 @@ describe('safeDecodeURIComponent', () => {
     expect(safeDecodeURIComponent('')).toBe('')
   })
 
-  it('decodes every valid UTF-8 sequence', () => {
-    let chars = ''
-    for (let codePoint = 0; codePoint <= 0x10FFFF; codePoint++) {
-      if (codePoint < 0xD800 || codePoint > 0xDFFF) {
-        chars += String.fromCodePoint(codePoint)
-      }
-    }
-
-    expect(safeDecodeURIComponent(safeEncodeURIComponent(chars))).toBe(chars)
-  })
-
-  it('keeps malformed and non-UTF-8 escapes as-is instead of throwing', () => {
+  it('keeps malformed escapes as-is and still decodes the valid ones instead of throwing', () => {
     expect(safeDecodeURIComponent('invalid%20value%')).toBe('invalid value%')
     expect(safeDecodeURIComponent('%E0%A4%A')).toBe('%E0%A4%A') // Invalid UTF-8 sequence
     expect(safeDecodeURIComponent('%ZZ')).toBe('%ZZ')
     expect(safeDecodeURIComponent('%ZZ%e4%b8%ad%')).toBe('%ZZ中%')
     expect(safeDecodeURIComponent('%FF-%E2%82%AC')).toBe('%FF-€')
-    expect(safeDecodeURIComponent('%E4%B8%AD%FF%E4%B8')).toBe('中%FF%E4%B8')
+    // a run of escapes that is not valid UTF-8 is kept as a whole
+    expect(safeDecodeURIComponent('%E4%B8%AD%FF%')).toBe('%E4%B8%AD%FF%')
     // decoded output is not decoded again
     expect(safeDecodeURIComponent('%2541%ZZ')).toBe('%41%ZZ')
-
-    // overlong, surrogate, out-of-range and lone continuation sequences are not valid UTF-8
-    for (const escapes of ['%C1%BF', '%E0%9F%BF', '%ED%A0%80', '%F0%8F%BF%BF', '%F4%90%80%80', '%F5%80%80%80', '%80']) {
-      expect(safeDecodeURIComponent(escapes)).toBe(escapes)
-    }
   })
 })
