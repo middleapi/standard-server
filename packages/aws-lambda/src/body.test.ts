@@ -1,5 +1,5 @@
 import type { AsyncIteratorClass } from '@standard-server/shared'
-import type { APIGatewayProxyEvent } from './types'
+import type { AnyAPIGatewayProxyEvent, APIGatewayProxyEvent } from './types'
 import { Buffer } from 'node:buffer'
 import { toStandardBody } from './body'
 
@@ -171,6 +171,26 @@ describe('toStandardBody', () => {
       expect(standardBody.name).toBe('hello.txt')
       expect(standardBody.type).toBe('text/plain')
       await expect(standardBody.text()).resolves.toBe('hello')
+    })
+
+    it.each<[string, AnyAPIGatewayProxyEvent]>([
+      ['v1 headers fallback', event({
+        body: 'hello',
+        multiValueHeaders: { 'X-Other': ['ignored'] },
+        headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'inline; filename="hello.txt"' },
+      })],
+      ['v2', {
+        rawPath: '/',
+        requestContext: { http: { method: 'POST' } },
+        body: 'hello',
+        isBase64Encoded: false,
+        headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'inline; filename="hello.txt"' },
+      }],
+    ])('reads content headers from single-value headers (%s)', async (_, e) => {
+      const standardBody = await toStandardBody(e) as File
+
+      expect(standardBody.name).toBe('hello.txt')
+      expect(standardBody.type).toBe('text/plain')
     })
 
     it('respects the file hint over the content-type', async () => {
