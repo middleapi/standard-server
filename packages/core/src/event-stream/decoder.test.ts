@@ -303,6 +303,16 @@ describe('eventStreamDecoder', () => {
         { event: 'message', data: 'second' },
       ])
     })
+
+    it('does not join line endings across a chunk without any', () => {
+      for (const eol of ['\n', '\r', '\r\n']) {
+        const events = feedAll([`data: a${eol}`, 'data: b', `${eol}${eol}`])
+
+        expect(events, `line ending ${JSON.stringify(eol)}`).toEqual([
+          { event: 'message', data: 'a\nb' },
+        ])
+      }
+    })
   })
 
   describe('end', () => {
