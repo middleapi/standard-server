@@ -23,7 +23,10 @@ export function toStandardBody(
   const bodyHint = flattenStandardHeader(message.json.headers?.['standard-server'])
 
   if (message.json.body === undefined && message.binary === undefined) {
-    if (contentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
+    // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
+    const hasContentType = message.json.headers?.['content-type'] !== undefined
+
+    if (!hasContentType && bodyHint === 'event-stream' satisfies StandardBodyHint) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
@@ -31,7 +34,7 @@ export function toStandardBody(
       }
     }
 
-    if (contentType !== undefined || bodyHint === 'octet-stream' satisfies StandardBodyHint) {
+    if (hasContentType) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
@@ -116,13 +119,8 @@ export async function encodeAtomicStandardBody(
   headers = { ...headers }
 
   if (body instanceof ReadableStream) {
+    // content-type marks an octet stream, even when removed with an empty array
     headers['content-type'] ??= 'application/octet-stream'
-
-    // content-type marks an octet stream, so it needs a standard-server marker once removed (empty array)
-    if (flattenStandardHeader(headers['content-type']) === undefined) {
-      headers['standard-server'] = 'octet-stream' satisfies StandardBodyHint
-    }
-
     return { jsonBody: undefined, headers, binary: undefined }
   }
 
