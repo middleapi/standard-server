@@ -189,11 +189,14 @@ describe('toLambdaHeaders', () => {
       'content-type': 'application/json',
       'x-custom': ['one', 'two'],
       'x-skipped': undefined,
+      'x-empty': [],
+      'x-empty-string': '',
       'set-cookie': ['foo=bar', 'bar=baz'],
     })).toEqual([
       {
         'content-type': 'application/json',
         'x-custom': 'one, two',
+        'x-empty-string': '',
       },
       ['foo=bar', 'bar=baz'],
     ])
