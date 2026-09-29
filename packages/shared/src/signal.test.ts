@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { anyAbortSignal } from './signal'
+import { anyAbortSignal, throwIfAborted } from './signal'
 
 /**
  * Helper to temporarily disable AbortSignal.any to force fallback implementation.
@@ -103,5 +103,20 @@ describe('anyAbortSignal', () => {
         expect(combined.reason).toBe('once')
       })
     })
+  })
+})
+
+describe('throwIfAborted', () => {
+  it('works on a signal without throwIfAborted (React Native polyfill)', () => {
+    const controller = new AbortController()
+    Object.defineProperty(controller.signal, 'throwIfAborted', { value: undefined })
+
+    expect(() => throwIfAborted(undefined)).not.toThrow()
+    expect(() => throwIfAborted(controller.signal)).not.toThrow()
+
+    const reason = new Error('aborted')
+    controller.abort(reason)
+
+    expect(() => throwIfAborted(controller.signal)).toThrow(reason)
   })
 })

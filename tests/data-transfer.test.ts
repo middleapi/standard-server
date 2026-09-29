@@ -56,6 +56,7 @@ describe.each([
     ['/test', 'POST', {}, 200],
     ['/test?query=true', 'GET', { h1: 'v1', h2: 'v2' }, 201],
     ['/hi%2F', 'DELETE', { h3: 'v3' }, 500],
+    ['/test', 'HEAD', { h4: 'v4' }, 201],
   ])('url=$0, method=$1, headers=$2, status=$3', async (url, method, headers, status) => {
     clientServer.handler.mockResolvedValueOnce({
       headers: {

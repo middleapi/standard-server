@@ -179,7 +179,7 @@ describe('canWriteToNodeResponse', () => {
     await handled
   })
 
-  it('on http2 HEAD request, whose stream node ends for writing up front', async ({ onTestFinished }) => {
+  it('on http2 HEAD response, whose stream Node already ended', async ({ onTestFinished }) => {
     const server = http2.createServer()
     onTestFinished(() => new Promise<any>(r => server.close(r)))
 
@@ -205,9 +205,9 @@ describe('canWriteToNodeResponse', () => {
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
-    const reqStream = client.request({ ':method': 'HEAD', ':path': '/' })
-    reqStream.on('data', () => {})
-    reqStream.once('end', () => client.close())
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    reqStream.resume()
+    reqStream.once('close', () => client.close())
 
     await handled
   })

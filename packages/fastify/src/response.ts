@@ -32,8 +32,16 @@ export async function sendStandardResponse(
       return
     }
 
-    reply.raw.once('error', reject)
-    reply.raw.once('close', resolve)
+    const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
+
+    connection.once('error', reject)
+    connection.once('close', () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy()
+      }
+
+      resolve()
+    })
 
     try {
       reply.status(standardResponse.status)
@@ -46,7 +54,7 @@ export async function sendStandardResponse(
         }
       }
 
-      // fastify pipes and cleans up the stream body itself, no manual piping needed
+      // fastify pipes the stream body itself, no manual piping needed
       reply.send(resBody)
     }
     catch (error) {
