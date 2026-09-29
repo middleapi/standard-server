@@ -67,22 +67,12 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
 }
 
 /**
- * Check both the response itself and its underlying stream (http2) are still writable.
+ * Check the response can still be sent.
  */
 export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
-  if ('headersSent' in res && res.headersSent) {
-    return false
-  }
-
-  if ('stream' in res && !_canWriteToStream(res.stream)) {
-    return false
-  }
-
-  return _canWriteToStream(res)
-}
-
-function _canWriteToStream(stream: Stream.Writable): boolean {
-  return !stream.closed && !stream.destroyed && !stream.writableFinished && !stream.writableEnded
+  return !('headersSent' in res && res.headersSent)
+    && !res.writableEnded
+    && !('stream' in res ? res.stream : res).destroyed
 }
 
 /**

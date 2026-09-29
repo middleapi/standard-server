@@ -2,7 +2,7 @@ import type { StandardBody, StandardLazyResponse, StandardRequest } from '@stand
 import type { Queue } from '@standard-server/shared'
 import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
-import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator } from '@standard-server/shared'
+import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator, throwIfAborted } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
 import { OctetStreamTransmitter } from './octet-stream'
@@ -15,6 +15,11 @@ interface ClientPeerRequestStateInternal {
   eventStreamTransmitter?: EventStreamTransmitter | undefined
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
   removeAbortListener?: (() => void) | undefined
+  /**
+   * A cancel must not overtake the request message (the server ignores cancels for unknown ids),
+   * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
+   */
+  requestSent?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -32,7 +37,7 @@ export class ClientPeer {
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
       const signal = request.signal
-      signal?.throwIfAborted()
+      throwIfAborted(signal)
 
       const id = this.idGenerator.generate()
       const state: ClientPeerRequestStateInternal = { resolve, reject }
@@ -69,7 +74,7 @@ export class ClientPeer {
       const encodedAtomicBody = await encodeAtomicStandardBody(request.body, request.headers)
 
       // signal can be aborted during encode
-      request.signal?.throwIfAborted()
+      throwIfAborted(request.signal)
 
       // the peer can be closed during encode
       if (this.requests.get(id) !== state) {
@@ -88,9 +93,14 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
+      state.requestSent = true
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
+        if (request.signal?.aborted) {
+          await this.send({ id, kind: 'cancel' })
+        }
+
         return
       }
 
@@ -266,7 +276,7 @@ export class ClientPeer {
     state.octetStreamMessageQueue = undefined
 
     const promises = [
-      this.send({ id, kind: 'cancel' }),
+      state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
       state.eventStreamTransmitter?.cancel(),
       state.octetStreamTransmitter?.cancel(),
     ]

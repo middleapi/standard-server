@@ -5,6 +5,7 @@ import * as http2 from 'node:http2'
 import { Readable } from 'node:stream'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
+import { throwIfAborted } from '@standard-server/shared'
 import { generateTlsCert } from './tls'
 
 export interface NodeHttp2ClientServerTestOptions {
@@ -57,7 +58,7 @@ export function createNodeHttp2ClientServerTest(options: NodeHttp2ClientServerTe
   })
 
   const request: ClientServerTest['request'] = vi.fn(async (standardRequest) => {
-    standardRequest.signal?.throwIfAborted()
+    throwIfAborted(standardRequest.signal)
 
     const { session, port } = await serverReady
 
