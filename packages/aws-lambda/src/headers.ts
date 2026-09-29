@@ -104,7 +104,7 @@ export function toLambdaHeaders(standardHeaders: StandardHeaders): [
 
   for (const key of Object.keys(standardHeaders)) {
     const value = standardHeaders[key]
-    if (value === undefined) {
+    if (value === undefined || (Array.isArray(value) && value.length === 0)) {
       continue
     }
 
