@@ -73,17 +73,13 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
-        // WARNING: errors that occur here are silently ignored and not reported to the Promise
         resBody.once('error', error => res.destroy(error))
 
         resBody.pipe(res)
       }
     }
     catch (error) {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error as any)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       // Destroy instead of leaving the response half-open:
       // the metadata prelude may be partially applied
