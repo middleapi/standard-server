@@ -119,7 +119,6 @@ export async function encodeAtomicStandardBody(
   headers = { ...headers }
 
   if (body instanceof ReadableStream) {
-    // content-type marks an octet stream, even when removed with an empty array
     headers['content-type'] ??= 'application/octet-stream'
     return { jsonBody: undefined, headers, binary: undefined }
   }
