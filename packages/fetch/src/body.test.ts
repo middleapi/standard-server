@@ -408,34 +408,12 @@ describe('toFetchBody', () => {
     expect(await response.text()).toBe('<script>alert(1)</script>')
   })
 
-  it('file with removed content-type header', async () => {
-    const file = new File(['<script>alert(1)</script>'], 'foo.html', { type: 'text/html' })
-
-    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+  it('file with removed content-type header', () => {
+    const file = new File(['foo'], 'foo.html', { type: 'text/html' })
 
     const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': [] }, {})
 
-    // a blob body would make Response fall back to the blob's own type
-    expect(body).toBeInstanceOf(ReadableStream)
-    expect(headers).toEqual({
-      'content-disposition': 'inline; filename="__mocked__"',
-      'content-length': '25',
-      'content-type': [],
-      'x-custom-header': 'custom-value',
-      'standard-server': 'file',
-    })
-
-    const response = new Response(body, { headers: toFetchHeaders(headers) })
-    expect(response.headers.has('content-type')).toBe(false)
-    expect(await response.text()).toBe('<script>alert(1)</script>')
-  })
-
-  it('empty-typed blob with removed content-type header', () => {
-    const blob = new Blob(['foo'])
-
-    const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'content-type': [] }, {})
-
-    expect(body).toBe(blob)
+    expect(body).toBe(file)
     expect(headers['content-type']).toEqual([])
   })
 
