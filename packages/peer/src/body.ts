@@ -123,7 +123,8 @@ export async function encodeAtomicStandardBody(
   }
 
   if (body instanceof Blob) {
-    headers['content-type'] ??= body.type
+    // An empty content-type makes browsers sniff the body, which can serve an upload as HTML
+    headers['content-type'] ??= body.type || 'application/octet-stream'
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(
       body instanceof File ? body.name ?? '' : 'blob',

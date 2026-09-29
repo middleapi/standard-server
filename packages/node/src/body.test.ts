@@ -599,10 +599,41 @@ describe('toNodeHttpBody', () => {
     expect(headers).toEqual({
       'content-disposition': 'inline; filename="__mocked__"',
       'content-length': '0',
-      'content-type': '',
+      'content-type': 'application/octet-stream',
       'x-custom-header': 'custom-value',
       'standard-server': 'file',
     })
+  })
+
+  it('file whose type the File constructor normalized to empty', async () => {
+    // a declared type with a byte outside 0x20-0x7E is dropped, like an untrusted upload's could be
+    const file = new File(['<script>alert(1)</script>'], 'a.png', { type: 'image/png\xFF' })
+    expect(file.type).toBe('')
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toNodeHttpBody(file, baseHeaders, {})
+
+    expect(body).toBeInstanceOf(Readable)
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="__mocked__"',
+      'content-length': '25',
+      'content-type': 'application/octet-stream',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
+
+    const response = new Response(body, { headers: toFetchHeaders(headers) })
+    expect(response.headers.get('content-type')).toBe('application/octet-stream')
+    expect(await response.text()).toBe('<script>alert(1)</script>')
+  })
+
+  it('file without type keeps an explicit content-type', async () => {
+    const file = new File(['foo'], 'foo.txt')
+
+    const [, headers] = toNodeHttpBody(file, { ...baseHeaders, 'content-type': 'text/plain' }, {})
+
+    expect(headers['content-type']).toBe('text/plain')
   })
 
   it('file with size=nan', async () => {
@@ -755,6 +786,20 @@ describe('toNodeHttpBody', () => {
         'x-custom-header': 'custom-value',
         'standard-server': 'file',
       })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.has('content-type')).toBe(false)
+    })
+
+    it('file without type: unset content-type', async () => {
+      const file = new File(['foo'], 'foo.bin')
+      const [body, headers] = toNodeHttpBody(file, {
+        ...baseHeaders,
+        'content-type': [],
+      })
+
+      expect(body).toBeInstanceOf(Readable)
+      expect(headers['content-type']).toEqual([])
 
       const fetchHeaders = toFetchHeaders(headers)
       expect(fetchHeaders.has('content-type')).toBe(false)

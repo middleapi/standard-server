@@ -137,7 +137,8 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           assertBody: async (body: any) => {
             expect(body).toBeInstanceOf(File)
             expect(body.name ?? '').toEqual('')
-            expect(body.type).toEqual('')
+            // an untyped file is sent as application/octet-stream, the same type FormData gives it
+            expect(body.type).toEqual('application/octet-stream')
             expect(body.size).toEqual(0)
             expect(await body.text()).toEqual('')
           },

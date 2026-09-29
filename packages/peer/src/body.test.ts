@@ -340,6 +340,33 @@ describe('encodeAtomicStandardBody', () => {
     expect(removedHeaders['content-type']).toEqual([])
   })
 
+  it('encodes File body without type as application/octet-stream', async () => {
+    // a declared type with a byte outside 0x20-0x7E is dropped, like an untrusted upload's could be
+    const file = new File(['<script>alert(1)</script>'], 'a.png', { type: 'image/png\xFF' })
+    expect(file.type).toBe('')
+
+    const { jsonBody, headers, binary } = await encodeAtomicStandardBody(file, {})
+
+    expect(jsonBody).toBe(undefined)
+    expect(headers['content-type']).toBe('application/octet-stream')
+    expect(headers['content-disposition']).toBe(generateContentDisposition('a.png'))
+    expect(headers['content-length']).toBe('25')
+    expect(binary).toBe(file)
+
+    const { headers: emptyHeaders } = await encodeAtomicStandardBody(new Blob([]), {})
+    expect(emptyHeaders['content-type']).toBe('application/octet-stream')
+  })
+
+  it('encodes File body without type and preserves existing content-type header', async () => {
+    const file = new File(['foo'], 'foo.txt')
+
+    const { headers } = await encodeAtomicStandardBody(file, { 'content-type': 'text/plain' })
+    expect(headers['content-type']).toBe('text/plain')
+
+    const { headers: removedHeaders } = await encodeAtomicStandardBody(file, { 'content-type': [] })
+    expect(removedHeaders['content-type']).toEqual([])
+  })
+
   it('encodes URLSearchParams body', async () => {
     const params = new URLSearchParams('a=1&b=2')
     const { jsonBody, headers, binary } = await encodeAtomicStandardBody(params, {})
@@ -438,6 +465,25 @@ describe('encodeAtomicStandardBody', () => {
     expect(received).toBeInstanceOf(File)
     expect(received.name).toBe('résumé "final" 🌍.pdf')
     expect(received.type).toBe('application/pdf')
+    expect(await received.text()).toBe('file content')
+  })
+
+  it('round-trips a File without type as application/octet-stream', async () => {
+    const file = new File(['file content'], 'data.bin')
+    const encoded = await encodeAtomicStandardBody(file, {})
+
+    const { resolveBody } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { url: '/upload', headers: encoded.headers, body: encoded.jsonBody },
+      binary: encoded.binary,
+    }, vi.fn())
+
+    const received = await resolveBody() as File
+    expect(received).toBeInstanceOf(File)
+    expect(received.name).toBe('data.bin')
+    // the same type FormData gives an untyped File
+    expect(received.type).toBe('application/octet-stream')
     expect(await received.text()).toBe('file content')
   })
 })

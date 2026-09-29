@@ -120,14 +120,15 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         },
       },
       {
-        // Bun drops empty headers like content-type, so only the body hint identifies this one
+        // Bun drops empty headers, so an empty file must not rely on one to be identified
         name: 'empty-file',
         createBody: () => new File([], '', { type: '' }),
         assertBody: async (body: any) => {
           expect(body).toBeInstanceOf(File)
           // Bun returns `undefined` instead of '' for an empty File name
           expect(body.name ?? '').toEqual('')
-          expect(body.type).toEqual('')
+          // an untyped file is sent as application/octet-stream, the same type FormData gives it
+          expect(body.type).toEqual('application/octet-stream')
           expect(body.size).toEqual(0)
           expect(await body.text()).toEqual('')
         },

@@ -45,7 +45,7 @@ describe.each([
   ['message-port-fetch-streamed', () => createMessagePortClientServerTest({ fetchStreamed: true })],
   ['node-ws', () => createNodeWsClientServerTest()],
   ['node-ws-fetch-streamed', () => createNodeWsClientServerTest({ fetchStreamed: true })],
-])('data transfer: $0', (_, createClientServer) => {
+])('data transfer: $0', (transport, createClientServer) => {
   const clientServer = createClientServer()
 
   beforeEach(() => {
@@ -135,7 +135,9 @@ describe.each([
       assertBody: async (body: any) => {
         expect(body).toBeInstanceOf(File)
         expect(body.name).toEqual('')
-        expect(body.type).toEqual('')
+        // an untyped file is sent as application/octet-stream, the same type FormData gives it,
+        // except in process, where the File is handed over untouched
+        expect(body.type).toEqual(transport === 'inprogress' ? '' : 'application/octet-stream')
         expect(body.size).toEqual(0)
         expect(await body.text()).toEqual('')
       },
