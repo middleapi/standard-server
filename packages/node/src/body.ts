@@ -1,12 +1,11 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
-import type { Buffer } from 'node:buffer'
 import type { ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
 import { Readable } from 'node:stream'
 import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
-import { toWebReadableStream } from './utils'
+import { readableChunkToBytes, toWebReadableStream } from './utils'
 
 export interface ToStandardBodyOptions {
   /**
@@ -169,7 +168,7 @@ async function _streamToString(stream: Readable): Promise<string> {
   let string = ''
 
   for await (const chunk of stream) {
-    string += decoder.decode(chunk, { stream: true })
+    string += decoder.decode(readableChunkToBytes(stream, chunk), { stream: true })
   }
 
   // Flush any remaining bytes (e.g. incomplete multi-byte sequences)
@@ -179,10 +178,10 @@ async function _streamToString(stream: Readable): Promise<string> {
 }
 
 async function _streamToFile(stream: Readable, fileName: string, contentType: string): Promise<File> {
-  const chunks: Buffer<ArrayBuffer>[] = []
+  const chunks: Uint8Array<ArrayBuffer>[] = []
 
   for await (const chunk of stream) {
-    chunks.push(chunk)
+    chunks.push(readableChunkToBytes(stream, chunk))
   }
 
   return new File(chunks, fileName, { type: contentType })

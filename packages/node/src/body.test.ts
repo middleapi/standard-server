@@ -235,6 +235,29 @@ describe('toStandardBody', () => {
     })
   })
 
+  describe.each(['utf8', 'base64'] as const)('request with %s encoding set', (encoding) => {
+    let standardBody: any
+
+    async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+      req.setEncoding(encoding)
+      standardBody = await toStandardBody(req)
+      res.end()
+    }
+
+    it('json', async () => {
+      await request(handler).post('/').set('standard-server', 'json').send('{"emoji":"😀"}')
+
+      expect(standardBody).toEqual({ emoji: '😀' })
+    })
+
+    it('file', async () => {
+      await request(handler).post('/').set('standard-server', 'file').send('emoji=😀')
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(await standardBody.text()).toBe('emoji=😀')
+    })
+  })
+
   describe('http2', () => {
     /**
      * Runs a request through a real http2 server, so `toStandardBody` receives an

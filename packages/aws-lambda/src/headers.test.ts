@@ -1,84 +1,4 @@
-import { getEventHeader, toLambdaHeaders, toStandardHeaders } from './headers'
-
-describe('getEventHeader', () => {
-  it('reads case-insensitively from multiValueHeaders (v1)', () => {
-    const event = {
-      httpMethod: 'GET',
-      path: '/',
-      headers: { 'content-type': 'ignored' },
-      multiValueHeaders: {
-        'Content-Type': ['application/json'],
-        'X-Multi': ['one', 'two'],
-        'X-Empty': [],
-        'X-Skipped': undefined,
-      },
-    }
-
-    expect(getEventHeader(event, 'Content-Type')).toEqual(['application/json'])
-    expect(getEventHeader(event, 'x-multi')).toEqual(['one', 'two'])
-    expect(getEventHeader(event, 'x-empty')).toBeUndefined()
-    expect(getEventHeader(event, 'x-skipped')).toBeUndefined()
-    expect(getEventHeader(event, 'x-missing')).toBeUndefined()
-  })
-
-  it('falls through to headers for keys multiValueHeaders does not carry (v1)', () => {
-    expect(getEventHeader({
-      httpMethod: 'GET',
-      path: '/',
-      headers: { 'X-Only-In-Headers': 'kept' },
-      multiValueHeaders: { 'Content-Type': ['application/json'] },
-    }, 'x-only-in-headers')).toBe('kept')
-  })
-
-  it('reads case-insensitively from headers (v1 fallback and v2)', () => {
-    const event = {
-      rawPath: '/',
-      requestContext: { http: { method: 'GET' } },
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Skipped': undefined,
-      },
-    }
-
-    expect(getEventHeader(event, 'Content-Type')).toBe('application/json')
-    expect(getEventHeader(event, 'x-skipped')).toBeUndefined()
-    expect(getEventHeader(event, 'x-missing')).toBeUndefined()
-
-    expect(getEventHeader({
-      httpMethod: 'GET',
-      path: '/',
-      multiValueHeaders: null,
-      headers: { 'X-Custom': 'value' },
-    }, 'x-custom')).toBe('value')
-  })
-
-  it('returns undefined when no headers are present', () => {
-    expect(getEventHeader({ httpMethod: 'GET', path: '/' }, 'content-type')).toBeUndefined()
-    expect(getEventHeader({ rawPath: '/', requestContext: { http: { method: 'GET' } } }, 'content-type')).toBeUndefined()
-  })
-
-  it('restores the cookie header from cookies (v2)', () => {
-    expect(getEventHeader({
-      rawPath: '/',
-      requestContext: { http: { method: 'GET' } },
-      cookies: ['foo=bar', 'bar=baz'],
-    }, 'Cookie')).toBe('foo=bar; bar=baz')
-
-    // a cookie header present in headers wins over the cookies field
-    expect(getEventHeader({
-      rawPath: '/',
-      requestContext: { http: { method: 'GET' } },
-      headers: { Cookie: 'a=b' },
-      cookies: ['foo=bar'],
-    }, 'cookie')).toBe('a=b')
-
-    expect(getEventHeader({
-      rawPath: '/',
-      requestContext: { http: { method: 'GET' } },
-      cookies: [],
-    }, 'cookie')).toBeUndefined()
-  })
-})
+import { toLambdaHeaders, toStandardHeaders } from './headers'
 
 describe('toStandardHeaders (v2)', () => {
   it('lowercases keys and restores the cookie header', () => {
@@ -95,6 +15,17 @@ describe('toStandardHeaders (v2)', () => {
       'content-type': 'application/json',
       'x-custom': 'one, two',
       'cookie': 'foo=bar; bar=baz',
+    })
+  })
+
+  it('prefers a cookie header over the cookies field', () => {
+    expect(toStandardHeaders({
+      rawPath: '/',
+      requestContext: { http: { method: 'GET' } },
+      headers: { Cookie: 'a=b' },
+      cookies: ['foo=bar'],
+    })).toEqual({
+      cookie: 'a=b',
     })
   })
 
@@ -189,11 +120,14 @@ describe('toLambdaHeaders', () => {
       'content-type': 'application/json',
       'x-custom': ['one', 'two'],
       'x-skipped': undefined,
+      'x-empty': [],
+      'x-empty-string': '',
       'set-cookie': ['foo=bar', 'bar=baz'],
     })).toEqual([
       {
         'content-type': 'application/json',
         'x-custom': 'one, two',
+        'x-empty-string': '',
       },
       ['foo=bar', 'bar=baz'],
     ])
