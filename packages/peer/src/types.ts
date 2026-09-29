@@ -220,3 +220,31 @@ export type ServerPeerSendMessage
     | PeerOctetStreamMessage
     | PeerEventStreamMessage
     | PeerStreamCancelMessage
+
+/**
+ * Limits on incoming stream messages buffered for a single request or response body.
+ *
+ * The peer protocol has no flow control: the remote peer sends stream messages as fast as it can,
+ * and they are buffered until the body is read. These limits bound that buffer.
+ * When a message would exceed them, the request is cancelled on both sides,
+ * and reading the body throws a `QueueOverflowError`.
+ *
+ * Messages handed straight to a pending read are never buffered, so a body that is read
+ * as fast as it arrives is not affected.
+ */
+export interface PeerStreamBufferOptions {
+  /**
+   * Maximum number of event-stream or octet-stream messages buffered for a single body.
+   *
+   * @default Infinity
+   */
+  maxBufferedStreamMessages?: number | undefined
+
+  /**
+   * Maximum total byte size of octet-stream chunks buffered for a single body.
+   * Event-stream messages are not measured; use `maxBufferedStreamMessages` to bound them.
+   *
+   * @default Infinity
+   */
+  maxBufferedStreamBytes?: number | undefined
+}

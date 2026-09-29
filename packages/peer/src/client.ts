@@ -1,6 +1,6 @@
 import type { StandardBody, StandardLazyResponse, StandardRequest } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
-import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, ServerPeerSendMessage } from './types'
+import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerStreamBufferOptions, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator, throwIfAborted } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
@@ -23,12 +23,15 @@ interface ClientPeerRequestStateInternal {
   streamCancelled?: boolean | undefined
 }
 
+export interface ClientPeerOptions extends PeerStreamBufferOptions {}
+
 export class ClientPeer {
   private readonly idGenerator = new SequentialIdGenerator()
   private readonly requests = new Map<string, ClientPeerRequestStateInternal>()
 
   constructor(
     private readonly send: (message: ClientPeerSendMessage) => Promise<void>,
+    private readonly options: ClientPeerOptions = {},
   ) {
   }
 
@@ -173,12 +176,12 @@ export class ClientPeer {
     }
 
     if (message.kind === 'event-stream') {
-      state.eventStreamMessageQueue?.push(message)
+      await this.bufferStreamMessage(id, state.eventStreamMessageQueue, message)
       return
     }
 
     if (message.kind === 'octet-stream') {
-      state.octetStreamMessageQueue?.push(message)
+      await this.bufferStreamMessage(id, state.octetStreamMessageQueue, message)
       return
     }
 
@@ -197,7 +200,7 @@ export class ClientPeer {
         else if (state.eventStreamMessageQueue || state.octetStreamMessageQueue) {
           await this.closeById(id, cleanupState.error)
         }
-      })
+      }, this.options)
       state.eventStreamMessageQueue = decoded.eventStreamMessageQueue
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
@@ -260,6 +263,19 @@ export class ClientPeer {
     state.removeAbortListener = undefined
 
     await Promise.all(promises)
+  }
+
+  /**
+   * Buffers a response stream message until the body is read.
+   * A message beyond the buffer limits aborts the request, discarding what is already buffered.
+   */
+  private async bufferStreamMessage<T>(id: string, queue: Queue<T> | undefined, message: T): Promise<void> {
+    try {
+      queue?.push(message)
+    }
+    catch (reason) {
+      await this.abortById(id, reason)
+    }
   }
 
   private async abortById(id: string, reason: unknown): Promise<void> {

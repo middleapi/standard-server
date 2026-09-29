@@ -1,8 +1,8 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
-import type { ClientPeer, ServerPeer } from '../src'
+import type { ClientPeer, ClientPeerOptions, ServerPeer, ServerPeerOptions } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, QueueOverflowError, sleep } from '@standard-server/shared'
 import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
 
 /**
@@ -15,7 +15,11 @@ import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, Se
  */
 function connect(
   handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
-  { waitForRemote = false } = {},
+  { waitForRemote = false, clientOptions, serverOptions }: {
+    waitForRemote?: boolean
+    clientOptions?: ClientPeerOptions
+    serverOptions?: ServerPeerOptions
+  } = {},
 ): { client: ClientPeer, server: ServerPeer } {
   const prefix = 'peer:'
   const wire = {} as { client: ClientPeer, server: ServerPeer }
@@ -32,7 +36,7 @@ function connect(
     else {
       void handled.catch(() => {})
     }
-  })
+  }, clientOptions)
 
   wire.server = new ServerPeerClass(async (message) => {
     const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
@@ -43,7 +47,7 @@ function connect(
     if (waitForRemote) {
       await handled
     }
-  })
+  }, serverOptions)
 
   return wire
 }
@@ -384,6 +388,85 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     releaseEncode.resolve()
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
+  })
+
+  it('cancels an upload the server buffers beyond its limit while the handler is not reading', async () => {
+    let serverSignal: AbortSignal | undefined
+
+    const { client, server } = connect(async (request) => {
+      serverSignal = request.signal
+      return new Promise(() => {}) // stuck before reading the body, e.g. on auth or a database call
+    }, { serverOptions: { maxBufferedStreamBytes: 16 * 1024 } })
+
+    let pulls = 0
+    const cancel = vi.fn()
+    const promise = client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: {},
+      body: new ReadableStream<Uint8Array>({
+        pull: (controller) => {
+          pulls++
+          controller.enqueue(new Uint8Array(1024))
+        },
+        cancel,
+      }),
+    })
+
+    await expect(promise).rejects.toThrow('Server canceled the request')
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+    expect(serverSignal!.reason).toBeInstanceOf(QueueOverflowError)
+    expect((server as any).requests.size).toBe(0)
+    expect((client as any).requests.size).toBe(0)
+    expect(pulls).toBeLessThan(64)
+  })
+
+  it('streams far more than the buffer limits when both sides read as data arrives', async () => {
+    const limits = { maxBufferedStreamMessages: 4, maxBufferedStreamBytes: 4 * 1024 }
+    let uploaded = 0
+
+    const { client } = connect(async (request) => {
+      for await (const chunk of await request.resolveBody() as ReadableStream<Uint8Array>) {
+        uploaded += chunk.byteLength
+      }
+
+      return {
+        status: 200,
+        headers: {},
+        body: (async function* () {
+          for (let i = 0; i < 64; i++) {
+            await sleep(0) // the protocol has no flow control, so pace the sender to the reader
+            yield i
+          }
+        })(),
+      }
+    }, { clientOptions: limits, serverOptions: limits })
+
+    let chunks = 0
+    const response = await client.request({
+      url: '/sync',
+      method: 'POST',
+      headers: {},
+      body: new ReadableStream<Uint8Array>({
+        pull: async (controller) => {
+          await sleep(0)
+          if (chunks++ === 64) {
+            controller.close()
+          }
+          else {
+            controller.enqueue(new Uint8Array(1024))
+          }
+        },
+      }),
+    })
+
+    const events: unknown[] = []
+    for await (const event of await response.resolveBody() as AsyncIterable<unknown>) {
+      events.push(event)
+    }
+
+    expect(uploaded).toBe(64 * 1024)
+    expect(events).toEqual(Array.from({ length: 64 }, (_, i) => i))
   })
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {

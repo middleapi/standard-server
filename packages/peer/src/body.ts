@@ -1,6 +1,6 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { AsyncCleanupFn } from '@standard-server/shared'
-import type { PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage } from './types'
+import type { PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamBufferOptions } from './types'
 import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition } from '@standard-server/core'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 import { toAsyncIteratorObject } from './event-stream'
@@ -18,6 +18,7 @@ export interface ToStandardBodyResult {
 export function toStandardBody(
   message: PeerRequestMessage | PeerResponseMessage,
   cleanup: AsyncCleanupFn,
+  options: PeerStreamBufferOptions = {},
 ): ToStandardBodyResult {
   const rawContentType = message.json.headers?.['content-type']
   const contentType = flattenStandardHeader(rawContentType)
@@ -26,7 +27,9 @@ export function toStandardBody(
   if (message.json.body === undefined && message.binary === undefined) {
     // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
     if (rawContentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
-      const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
+      const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>({
+        maxItems: options.maxBufferedStreamMessages,
+      })
       return {
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
         eventStreamMessageQueue,
@@ -34,7 +37,11 @@ export function toStandardBody(
     }
 
     if (rawContentType !== undefined) {
-      const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
+      const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>({
+        maxItems: options.maxBufferedStreamMessages,
+        maxSize: options.maxBufferedStreamBytes,
+        sizeOf: getOctetStreamMessageByteSize,
+      })
       return {
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
         octetStreamMessageQueue,
@@ -94,6 +101,16 @@ export function toStandardBody(
   }
 
   return { resolveBody }
+}
+
+function getOctetStreamMessageByteSize(message: PeerOctetStreamMessage): number {
+  const binary = message.binary
+
+  if (binary instanceof Blob) {
+    return binary.size
+  }
+
+  return binary?.byteLength ?? 0
 }
 
 export interface EncodedAtomicStandardBody {

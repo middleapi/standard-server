@@ -45,7 +45,7 @@ The package exposes four groups of helpers:
 
 | Group                | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Purpose                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Peer runtime         | `ClientPeer`, `ServerPeer`                                                                                                                                                                                                                                                                                                                                                                                                                                             | Send Standard Server requests and responses over a peer transport |
+| Peer runtime         | `ClientPeer`, `ServerPeer`, `ClientPeerOptions`, `ServerPeerOptions`, `PeerStreamBufferOptions`                                                                                                                                                                                                                                                                                                                                                                        | Send Standard Server requests and responses over a peer transport |
 | Message codec        | `encodePeerMessage()`, `decodePeerMessage()`                                                                                                                                                                                                                                                                                                                                                                                                                           | Encode peer messages as strings or bytes for transport            |
 | Stream utilities     | `toAsyncIteratorObject()`, `EventStreamTransmitter`, `HibernationAsyncIteratorClass`                                                                                                                                                                                                                                                                                                                                                                                   | Bridge peer messages with Standard Server event-stream semantics  |
 | Types and validators | `PeerMessage`, `PeerRequestMessage`, `PeerResponseMessage`, `PeerCancelMessage`, `PeerEventStreamMessage`, `PeerOctetStreamMessage`, `PeerStreamCancelMessage`, `ClientPeerSendMessage`, `ServerPeerSendMessage`, `isPeerMessage()`, `isPeerRequestMessage()`, `isPeerResponseMessage()`, `isPeerCancelMessage()`, `isPeerEventStreamMessage()`, `isPeerOctetStreamMessage()`, `isPeerStreamCancelMessage()`, `isClientPeerSendMessage()`, `isServerPeerSendMessage()` | Describe and validate the peer protocol payloads                  |
@@ -127,6 +127,41 @@ const payload = await response.resolveBody()
 ## Body resolution
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.
+
+## Limiting buffered stream data
+
+Event-stream and octet-stream messages are buffered until the body they belong to is read. The peer protocol has no flow control, so when the remote peer sends faster than the body is read, the buffer grows without bound. A handler that awaits authentication or a database call before reading the body, reads it slowly, or never reads it lets a single request buffer any amount of data.
+
+When the remote peer is not trusted, bound what each peer may buffer:
+
+```ts
+const serverPeer = new ServerPeer(send, {
+  maxBufferedStreamMessages: 1_000,
+  maxBufferedStreamBytes: 10 * 1024 * 1024, // 10 MiB
+  maxConcurrentRequests: 100,
+})
+
+const clientPeer = new ClientPeer(send, {
+  maxBufferedStreamMessages: 1_000,
+  maxBufferedStreamBytes: 10 * 1024 * 1024, // 10 MiB
+})
+```
+
+| Option                      | Peers                      | Default    | Description                                                                                                       |
+| --------------------------- | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------- |
+| `maxBufferedStreamMessages` | `ServerPeer`, `ClientPeer` | `Infinity` | Maximum number of event-stream or octet-stream messages buffered for a single body                                |
+| `maxBufferedStreamBytes`    | `ServerPeer`, `ClientPeer` | `Infinity` | Maximum total byte size of octet-stream chunks buffered for a single body. Event-stream messages are not measured |
+| `maxConcurrentRequests`     | `ServerPeer`               | `Infinity` | Maximum number of requests handled at the same time, including requests whose response is still streaming         |
+
+How the limits behave:
+
+1. Only messages waiting to be read count. A message that arrives while the body is being read goes straight to the reader, so a body that is read as fast as it arrives can stream any amount of data.
+2. When a message would exceed `maxBufferedStreamMessages` or `maxBufferedStreamBytes`, the buffered messages are discarded and the request is cancelled on both sides. The peer sends a `cancel` message, and reading the body throws a `QueueOverflowError` (exported from `@standard-server/shared`). On `ServerPeer`, the handler's `request.signal` is also aborted with that error.
+3. A request beyond `maxConcurrentRequests` is cancelled without calling the handler, so `ClientPeer#request()` rejects on the other side.
+4. The stream limits apply to each body, so the most a `ServerPeer` buffers is about `maxConcurrentRequests` times the stream limits. Each message is decoded in full before it reaches the peer, so also cap the message size of your transport, for example with the `maxPayload` option of [`ws`](https://github.com/websockets/ws).
+
+> [!NOTE]
+> Choose limits that fit how quickly your handlers start reading. A legitimate sender that runs ahead of a slow reader is cancelled the same way as a flood.
 
 ## Codec helpers
 

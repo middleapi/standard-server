@@ -1,6 +1,6 @@
 import type { StandardLazyResponse, StandardRequest } from '@standard-server/core'
 import type { ClientPeerSendMessage, PeerCancelMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage } from './types'
-import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, promiseWithResolvers, sleep } from '@standard-server/shared'
+import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, promiseWithResolvers, QueueOverflowError, sleep } from '@standard-server/shared'
 import * as Body from './body'
 import { ClientPeer } from './client'
 
@@ -988,6 +988,77 @@ describe('clientPeer', () => {
 
         await expect(reader.read()).rejects.toThrow('Server canceled the request')
       })
+    })
+  })
+
+  describe('buffer limits', () => {
+    it('aborts a request whose event-stream response is flooded while nobody reads it', async () => {
+      peer = new ClientPeer(send, { maxBufferedStreamMessages: 2 })
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      const response = await promise
+
+      for (let i = 0; i < 100; i++) {
+        await peer.message(makeEventStreamMessage(id, `event-${i}`))
+      }
+
+      // cancelled once on the first message beyond the limit, later messages are ignored
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+      expect(send).toHaveBeenLastCalledWith({ id, kind: 'cancel' })
+
+      // the buffered events are discarded, so the body errors right away
+      const iter = await response.resolveBody() as AsyncIterator<unknown>
+      await expect(iter.next()).rejects.toThrow(QueueOverflowError)
+    })
+
+    it('aborts a request whose buffered octet-stream response exceeds maxBufferedStreamBytes', async () => {
+      peer = new ClientPeer(send, { maxBufferedStreamBytes: 8 })
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const response = await promise
+
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array(4)))
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array(4)))
+      expect(send).toHaveBeenCalledTimes(1)
+
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array(1)))
+
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+
+      const reader = (await response.resolveBody() as ReadableStream).getReader()
+      await expect(reader.read()).rejects.toThrow(QueueOverflowError)
+    })
+
+    it('stops uploading the request body when the response stream overflows', async () => {
+      peer = new ClientPeer(send, { maxBufferedStreamMessages: 1 })
+      const cleanup = vi.fn(async () => {})
+      const body = new AsyncIteratorClass<unknown>(() => new Promise(() => {}), cleanup)
+      const { id, promise } = await requestAndGetId(makeRequest({ body }))
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      await promise
+
+      await peer.message(makeEventStreamMessage(id, 1))
+      await peer.message(makeEventStreamMessage(id, 2))
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    })
+
+    it('does not limit a response body that is read as it arrives', async () => {
+      peer = new ClientPeer(send, { maxBufferedStreamMessages: 1, maxBufferedStreamBytes: 4 })
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const reader = (await (await promise).resolveBody() as ReadableStream<Uint8Array>).getReader()
+
+      for (let i = 0; i < 50; i++) {
+        const read = reader.read()
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([i, i, i, i])))
+        await expect(read).resolves.toEqual({ done: false, value: new Uint8Array([i, i, i, i]) })
+      }
+
+      await peer.message(makeOctetStreamMessage(id, true))
+      await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+      expect(send).toHaveBeenCalledTimes(1)
     })
   })
 

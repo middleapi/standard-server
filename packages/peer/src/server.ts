@@ -1,6 +1,6 @@
 import type { StandardBody, StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
-import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerResponseMessage, ServerPeerSendMessage } from './types'
+import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerResponseMessage, PeerStreamBufferOptions, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard-server/shared'
 import { encodeAtomicStandardBody, toStandardBody } from './body'
@@ -16,11 +16,22 @@ interface ServerPeerRequestStateInternal {
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
 }
 
+export interface ServerPeerOptions extends PeerStreamBufferOptions {
+  /**
+   * Maximum number of requests handled at the same time, including requests whose response is still streaming.
+   * A request beyond it is cancelled without calling the handler.
+   *
+   * @default Infinity
+   */
+  maxConcurrentRequests?: number | undefined
+}
+
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
 
   constructor(
     private readonly send: (message: ServerPeerSendMessage) => Promise<void>,
+    private readonly options: ServerPeerOptions = {},
   ) {
   }
 
@@ -39,16 +50,21 @@ export class ServerPeer {
     }
 
     if (message.kind === 'event-stream') {
-      this.requests.get(id)?.eventStreamMessageQueue?.push(message)
+      await this.bufferStreamMessage(id, this.requests.get(id)?.eventStreamMessageQueue, message)
       return
     }
 
     if (message.kind === 'octet-stream') {
-      this.requests.get(id)?.octetStreamMessageQueue?.push(message)
+      await this.bufferStreamMessage(id, this.requests.get(id)?.octetStreamMessageQueue, message)
       return
     }
 
     if (this.requests.has(id)) { // duplicate request message
+      return
+    }
+
+    if (this.requests.size >= (this.options.maxConcurrentRequests ?? Infinity)) {
+      await this.send({ id, kind: 'cancel' })
       return
     }
 
@@ -80,7 +96,7 @@ export class ServerPeer {
           // only need cancel stream if streams is still active
           await this.send({ id, kind: 'stream/cancel' })
         }
-      })
+      }, this.options)
       state.eventStreamMessageQueue = decoded.eventStreamMessageQueue
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
@@ -213,6 +229,24 @@ export class ServerPeer {
     state.octetStreamTransmitter = undefined
 
     await Promise.all(promises)
+  }
+
+  /**
+   * Buffers a request stream message until the handler reads it.
+   * A message beyond the buffer limits cancels the request, discarding what is already buffered.
+   */
+  private async bufferStreamMessage<T>(id: string, queue: Queue<T> | undefined, message: T): Promise<void> {
+    if (!queue) { // request already closed, non-existing, or its body is finished
+      return
+    }
+
+    try {
+      queue.push(message)
+    }
+    catch (reason) {
+      queue.abort(reason)
+      await this.cancelById(id, reason)
+    }
   }
 
   private async cancelById(id: string, reason?: unknown): Promise<void> {

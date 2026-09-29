@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import type { PeerCancelMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
-import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
+import { AbortError, AsyncIteratorClass, isAsyncIteratorObject, promiseWithResolvers, QueueOverflowError, sleep } from '@standard-server/shared'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { ServerPeer } from './server'
 
@@ -637,6 +637,187 @@ describe('serverPeer', () => {
 
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response', 'octet-stream'])
       })
+    })
+  })
+
+  describe('buffer limits', () => {
+    const octetStreamRequest = makeRequestMessage({ headers: { 'standard-server': 'octet-stream', 'content-type': 'application/octet-stream' } })
+    const eventStreamRequest = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
+
+    it('cancels a request whose handler never reads a flooded octet-stream body', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 3 })
+      const { handler, box, signals } = deferredHandler()
+      const promise = peer.message(octetStreamRequest, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      for (let i = 0; i < 3; i++) {
+        await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([i])), vi.fn())
+      }
+      expect(send).not.toHaveBeenCalled()
+
+      for (let i = 0; i < 1000; i++) {
+        await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array(1024)), vi.fn())
+      }
+
+      // cancelled once on the first message beyond the limit, later messages are ignored
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith({ id: '1', kind: 'cancel' })
+      expect(getPeerSize(peer)).toBe(0)
+      expect(signals[0]!.aborted).toBe(true)
+      expect(signals[0]!.reason).toBeInstanceOf(QueueOverflowError)
+
+      // the buffered chunks are discarded, so the body errors right away
+      const body = await handler.mock.calls[0]![0].resolveBody() as ReadableStream<Uint8Array>
+      await expect(body.getReader().read()).rejects.toThrow(QueueOverflowError)
+
+      box.resolve(jsonResponse())
+      await promise
+      expect(send).toHaveBeenCalledTimes(1) // no response for the cancelled request
+    })
+
+    it('cancels a request whose handler never reads a flooded event-stream body', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 2 })
+      const { handler, box, signals } = deferredHandler()
+      const promise = peer.message(eventStreamRequest, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      for (let i = 0; i < 100; i++) {
+        await peer.message(makeEventStreamMessage('1', `event-${i}`), vi.fn())
+      }
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith({ id: '1', kind: 'cancel' })
+      expect(getPeerSize(peer)).toBe(0)
+      expect(signals[0]!.reason).toBeInstanceOf(QueueOverflowError)
+
+      const iter = await handler.mock.calls[0]![0].resolveBody() as AsyncIterator<unknown>
+      await expect(iter.next()).rejects.toThrow(QueueOverflowError)
+
+      box.resolve(jsonResponse())
+      await promise
+      expect(send).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels a request when buffered octet-stream bytes exceed maxBufferedStreamBytes', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamBytes: 10 })
+      const { handler, box, signals } = deferredHandler()
+      const promise = peer.message(octetStreamRequest, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array(4)), vi.fn())
+      await peer.message({ ...makeOctetStreamMessage('1'), binary: new Blob([new Uint8Array(4)]) }, vi.fn())
+      await peer.message(makeOctetStreamMessage('1'), vi.fn()) // chunks without binary count as 0 bytes
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array(2)), vi.fn())
+      expect(send).not.toHaveBeenCalled()
+
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array(1)), vi.fn())
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith({ id: '1', kind: 'cancel' })
+      expect(signals[0]!.reason).toBeInstanceOf(QueueOverflowError)
+
+      box.resolve(jsonResponse())
+      await promise
+    })
+
+    it('cancels a request whose body overflows while its response is streaming', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 1 })
+      let resolveNext!: (v: IteratorResult<unknown>) => void
+      const nextFn = vi.fn().mockImplementation(() => new Promise((r) => {
+        resolveNext = r
+      }))
+      const returnFn = vi.fn().mockImplementation(async () => {
+        resolveNext({ value: undefined, done: true })
+        return { value: undefined, done: true }
+      })
+      const responseBody = new AsyncIteratorClass<unknown>(nextFn, returnFn)
+      const promise = peer.message(eventStreamRequest, async () => eventStreamResponse(responseBody))
+      await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'response' })))
+
+      await peer.message(makeEventStreamMessage('1', 'a'), vi.fn())
+      await peer.message(makeEventStreamMessage('1', 'b'), vi.fn())
+
+      expect(returnFn).toHaveBeenCalled()
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response', 'cancel'])
+      await promise
+    })
+
+    it('does not limit a body that is read as it arrives', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 1, maxBufferedStreamBytes: 4 })
+      const received: number[] = []
+      let read = promiseWithResolvers<void>()
+      const promise = peer.message(octetStreamRequest, async (request) => {
+        const body = await request.resolveBody() as ReadableStream<Uint8Array>
+        for await (const chunk of body) {
+          received.push(...chunk)
+          read.resolve()
+        }
+        return jsonResponse(received.length)
+      })
+      await vi.waitFor(() => expect(getPeerSize(peer)).toBe(1))
+
+      for (let i = 0; i < 50; i++) {
+        read = promiseWithResolvers<void>()
+        await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([i, i, i, i])), vi.fn())
+        await read.promise
+      }
+      await peer.message(makeOctetStreamMessage('1', true), vi.fn())
+      await promise
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'response', json: { body: 200 } }))
+    })
+
+    it('does not limit an event-stream body that is read as it arrives', async () => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 1 })
+      const received: unknown[] = []
+      let read = promiseWithResolvers<void>()
+      const promise = peer.message(eventStreamRequest, async (request) => {
+        for await (const event of await request.resolveBody() as AsyncIterable<unknown>) {
+          received.push(event)
+          read.resolve()
+        }
+        return jsonResponse(received.length)
+      })
+      await vi.waitFor(() => expect(getPeerSize(peer)).toBe(1))
+
+      for (let i = 0; i < 50; i++) {
+        read = promiseWithResolvers<void>()
+        await peer.message(makeEventStreamMessage('1', i), vi.fn())
+        await read.promise
+      }
+      await peer.message(makeEventStreamMessage('1', undefined, 'close'), vi.fn())
+      await promise
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'response', json: { body: 50 } }))
+    })
+
+    it('cancels requests beyond maxConcurrentRequests without calling the handler', async () => {
+      peer = new ServerPeer(send, { maxConcurrentRequests: 1 })
+      const { handler, box } = deferredHandler()
+      const promise = peer.message(makeRequestMessage(), handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      const rejectedHandler = vi.fn<HandlerFn>()
+      await peer.message({ ...makeRequestMessage(), id: '2' }, rejectedHandler)
+
+      expect(rejectedHandler).not.toHaveBeenCalled()
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledWith({ id: '2', kind: 'cancel' })
+      expect(getPeerSize(peer)).toBe(1)
+
+      // a duplicate of an in-flight request is still ignored rather than cancelled
+      await peer.message(makeRequestMessage(), handler)
+      expect(send).toHaveBeenCalledTimes(1)
+
+      box.resolve(jsonResponse())
+      await promise
+
+      // the slot is free again once the request finishes
+      const acceptedHandler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+      await peer.message({ ...makeRequestMessage(), id: '3' }, acceptedHandler)
+      expect(acceptedHandler).toHaveBeenCalledOnce()
     })
   })
 
