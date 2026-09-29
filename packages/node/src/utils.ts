@@ -1,6 +1,7 @@
 import type { Readable } from 'node:stream'
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
+import { Buffer } from 'node:buffer'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
 
@@ -40,7 +41,7 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
         controller.close()
       }
       else {
-        controller.enqueue(new Uint8Array(value))
+        controller.enqueue(new Uint8Array(readableChunkToBytes(stream, value)))
       }
     },
     cancel(reason) {
@@ -58,6 +59,12 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
       }
     },
   })
+}
+
+export function readableChunkToBytes(stream: Readable, chunk: Uint8Array<ArrayBuffer> | string): Uint8Array<ArrayBuffer> {
+  return typeof chunk === 'string'
+    ? Buffer.from(chunk, stream.readableEncoding ?? 'utf8')
+    : chunk
 }
 
 async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
