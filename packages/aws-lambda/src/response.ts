@@ -44,6 +44,9 @@ export async function sendStandardResponse(
       return
     }
 
+    responseStream.once('error', reject)
+    responseStream.once('close', resolve)
+
     try {
       const [headers, setCookies] = toLambdaHeaders(resHeaders)
 
@@ -54,9 +57,6 @@ export async function sendStandardResponse(
         headers,
         cookies: setCookies,
       })
-
-      res.once('error', reject)
-      res.once('close', resolve)
 
       // The runtime only sends the armed prelude ahead of the first `write` call:
       // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
@@ -88,10 +88,8 @@ export async function sendStandardResponse(
         resBody.destroy(error as any)
       }
 
-      // Destroy instead of leaving the response half-open: the metadata prelude may be
-      // partially applied. `from` may throw before the listeners above are attached,
-      // so listen here too to keep the `error` event from going unhandled.
-      responseStream.once('error', reject)
+      // Destroy instead of leaving the response half-open:
+      // the metadata prelude may be partially applied
       responseStream.destroy(error as any)
       reject(error)
     }
