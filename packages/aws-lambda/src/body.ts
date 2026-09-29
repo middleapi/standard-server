@@ -4,7 +4,7 @@ import { Buffer } from 'node:buffer'
 import { flattenStandardHeader, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
 import { toAsyncIteratorObject } from '@standard-server/fetch'
 import { parseEmptyableJSON } from '@standard-server/shared'
-import { getEventHeader } from './headers'
+import { toStandardHeaders } from './headers'
 
 export interface ToStandardBodyOptions {
   /**
@@ -20,12 +20,8 @@ export async function toStandardBody(
   event: AnyAPIGatewayProxyEvent,
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
-  const hint = options?.hint ?? resolveStandardBodyHint({
-    'standard-server': getEventHeader(event, 'standard-server'),
-    'content-type': getEventHeader(event, 'content-type'),
-    'content-length': getEventHeader(event, 'content-length'),
-    'content-disposition': getEventHeader(event, 'content-disposition'),
-  })
+  const headers = toStandardHeaders(event)
+  const hint = options.hint ?? resolveStandardBodyHint(headers)
 
   if (hint === 'none') {
     return undefined
@@ -41,7 +37,7 @@ export async function toStandardBody(
     return parseEmptyableJSON(new TextDecoder().decode(bytes))
   }
 
-  const contentType = flattenStandardHeader(getEventHeader(event, 'content-type'))
+  const contentType = flattenStandardHeader(headers['content-type'])
 
   if (hint === 'form-data') {
     return _bytesToFormData(bytes, contentType)
@@ -56,7 +52,7 @@ export async function toStandardBody(
   }
 
   if (hint === 'file') {
-    const contentDisposition = flattenStandardHeader(getEventHeader(event, 'content-disposition'))
+    const contentDisposition = flattenStandardHeader(headers['content-disposition'])
     const fileName = contentDisposition !== undefined
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined

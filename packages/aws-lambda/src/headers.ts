@@ -61,37 +61,6 @@ export function toStandardHeaders(event: AnyAPIGatewayProxyEvent): StandardHeade
 }
 
 /**
- * Read a single header from an API Gateway proxy event, case-insensitively.
- */
-export function getEventHeader(event: AnyAPIGatewayProxyEvent, key: string): string | string[] | undefined {
-  key = key.toLowerCase()
-
-  if ('httpMethod' in event && event.multiValueHeaders) {
-    for (const k of Object.keys(event.multiValueHeaders)) {
-      const headerValues = event.multiValueHeaders[k]
-      if (headerValues !== undefined && headerValues.length !== 0 && k.toLowerCase() === key) {
-        return headerValues
-      }
-    }
-  }
-
-  if (event.headers) {
-    for (const k of Object.keys(event.headers)) {
-      const headerValue = event.headers[k]
-      if (headerValue !== undefined && k.toLowerCase() === key) {
-        return headerValue
-      }
-    }
-  }
-
-  if (key === 'cookie' && !('httpMethod' in event) && event.cookies?.length) {
-    return event.cookies.join('; ')
-  }
-
-  return undefined
-}
-
-/**
  * Split standard headers into the `headers` and `cookies` metadata fields.
  * `set-cookie` values are kept separate because joining them would corrupt them.
  */
