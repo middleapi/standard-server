@@ -33,8 +33,10 @@ export async function sendStandardResponse(
       return
     }
 
-    res.once('error', reject)
-    res.once('close', resolve)
+    const connection = 'stream' in res ? res.stream : res
+
+    connection.once('error', reject)
+    connection.once('close', resolve)
 
     try {
       // DON'T use `res.writeHead` because it send response immediately in chunked mode
@@ -55,7 +57,7 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
-        res.once('close', () => {
+        connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)
           }

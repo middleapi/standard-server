@@ -32,8 +32,16 @@ export async function sendStandardResponse(
       return
     }
 
-    reply.raw.once('error', reject)
-    reply.raw.once('close', resolve)
+    const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
+
+    connection.once('error', reject)
+    connection.once('close', () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy()
+      }
+
+      resolve()
+    })
 
     if (typeof resBody === 'object') {
       // fastify only cleans up a stream body it pipes itself: the auto HEAD route, or an

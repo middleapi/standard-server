@@ -1,3 +1,5 @@
+import { throwIfAborted } from './signal'
+
 export interface SleepOptions {
   signal?: AbortSignal | undefined
 }
@@ -7,10 +9,7 @@ export interface SleepOptions {
  */
 export function sleep(ms: number, { signal }: SleepOptions = {}): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason)
-      return
-    }
+    throwIfAborted(signal)
 
     let abortListener: (() => void) | null = null
 

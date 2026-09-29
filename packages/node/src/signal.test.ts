@@ -171,4 +171,80 @@ describe('toAbortSignal', async () => {
 
     await handled
   })
+
+  describe('on http2 HEAD response, whose stream Node already ended', () => {
+    it('without abort', async ({ onTestFinished }) => {
+      const server = http2.createServer()
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      const handled = new Promise<void>((resolve, reject) => {
+        server.on('request', async (req, res) => {
+          try {
+            const signal = toAbortSignal(res)
+
+            expect(signal.aborted).toBe(false)
+
+            res.end()
+            await new Promise<void>(r => res.stream.once('close', () => r()))
+
+            expect(signal.aborted).toBe(false)
+
+            resolve()
+          }
+          catch (error) {
+            reject(error)
+          }
+        })
+      })
+
+      await new Promise<void>(r => server.listen(0, r))
+      const port = (server.address() as any).port
+
+      const client = http2.connect(`http://localhost:${port}`)
+      const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+      reqStream.resume()
+      reqStream.once('close', () => client.close())
+
+      await handled
+    })
+
+    it('aborted by client before the response ends', async ({ onTestFinished }) => {
+      const server = http2.createServer()
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      const handled = new Promise<void>((resolve, reject) => {
+        server.on('request', async (req, res) => {
+          try {
+            const signal = toAbortSignal(res)
+
+            expect(signal.aborted).toBe(false)
+
+            await new Promise<void>(r => res.stream.once('close', () => r()))
+
+            expect(signal.aborted).toBe(true)
+            expect(signal.reason).toEqual(new AbortError('Writable stream closed before it finished writing'))
+
+            resolve()
+          }
+          catch (error) {
+            reject(error)
+          }
+        })
+      })
+
+      await new Promise<void>(r => server.listen(0, r))
+      const port = (server.address() as any).port
+
+      const client = http2.connect(`http://localhost:${port}`)
+      const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+      reqStream.once('error', () => {})
+
+      setTimeout(() => {
+        reqStream.close(http2.constants.NGHTTP2_CANCEL)
+        client.close()
+      }, 50)
+
+      await handled
+    })
+  })
 })

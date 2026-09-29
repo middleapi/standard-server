@@ -1,43 +1,64 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
 import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
-export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
-  const encodedFilename = filename.replace(/[^\x20-\x7E]/g, '_').replace(/[\\"]/g, '\\$&')
+const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
+const QUOTED_STRING_SPECIAL_CHAR_REGEX = /[\\"]/g
+const QUOTED_PAIR_REGEX = /\\(.)/g
 
-  // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/encodeURIComponent#encoding_for_content-disposition_and_link_headers
+const EXT_VALUE_RESERVED_CHAR_REGEX = /['()*]/g
+const EXT_VALUE_ALLOWED_ESCAPE_REGEX = /%(7C|60|5E)/g
+
+// RFC 8187 ext-value: charset "'" [ language ] "'" value-chars
+const EXT_VALUE_REGEX = /^([^']*)'[^']*'(.*)$/
+const EXT_VALUE_SUPPORTED_CHARSET_REGEX = /^(?:utf-8|us-ascii)$/i
+
+const CONTENT_DISPOSITION_PARAM_REGEX = /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
+
+export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
+  const encodedFilename = filename
+    .replace(FALLBACK_FILENAME_UNSAFE_CHAR_REGEX, '_')
+    .replace(QUOTED_STRING_SPECIAL_CHAR_REGEX, '\\$&')
+
   const encodedFilenameStar = safeEncodeURIComponent(filename)
-    .replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%(7C|60|5E)/g, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(EXT_VALUE_RESERVED_CHAR_REGEX, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(EXT_VALUE_ALLOWED_ESCAPE_REGEX, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
 
   return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
 }
 
-export function getFilenameFromContentDisposition(contentDisposition: string): string | undefined {
-  const extValue = contentDisposition.match(/(?:^|;)\s*filename\*=([^;]*)/i)?.[1]?.trim()
+function getContentDispositionParam(contentDisposition: string, name: string): string | undefined {
+  CONTENT_DISPOSITION_PARAM_REGEX.lastIndex = 0
 
-  // RFC 8187 ext-value: charset "'" [ language ] "'" value-chars
-  const extValueMatch = extValue?.match(/^([^']*)'[^']*'(.*)$/)
+  while (CONTENT_DISPOSITION_PARAM_REGEX.lastIndex < contentDisposition.length) {
+    const [, paramName = '', quoted, token] = CONTENT_DISPOSITION_PARAM_REGEX.exec(contentDisposition)!
+
+    if (paramName.trimEnd().toLowerCase() === name) {
+      return quoted !== undefined
+        ? quoted.replace(QUOTED_PAIR_REGEX, '$1')
+        : token?.trim() || undefined
+    }
+  }
+
+  return undefined
+}
+
+export function getFilenameFromContentDisposition(contentDisposition: string): string | undefined {
+  const extValue = getContentDispositionParam(contentDisposition, 'filename*')
+  const extValueMatch = extValue?.match(EXT_VALUE_REGEX)
 
   if (extValueMatch) {
     const [, charset = '', encodedFilename = ''] = extValueMatch
 
-    if (/^(?:utf-8|us-ascii)$/i.test(charset)) {
+    if (EXT_VALUE_SUPPORTED_CHARSET_REGEX.test(charset)) {
       return safeDecodeURIComponent(encodedFilename)
     }
-    // unsupported charset: fall through to the plain filename param
   }
   else if (extValue) {
-    // lenient: some senders omit the charset prefix entirely
     return safeDecodeURIComponent(extValue)
   }
 
-  const filenameMatch = contentDisposition.match(/(?:^|;)\s*filename=(?:"((?:\\.|[^"\\])*)"|([^";]*))/i)
-
-  if (filenameMatch?.[1] !== undefined) {
-    return filenameMatch[1].replace(/\\(.)/g, '$1')
-  }
-
-  return filenameMatch?.[2]?.trim() || undefined
+  return getContentDispositionParam(contentDisposition, 'filename')
 }
 
 export function flattenStandardHeader(header: string | readonly string[] | undefined): string | undefined {
