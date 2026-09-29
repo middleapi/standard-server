@@ -3,10 +3,11 @@ import { isEventStreamMessageId, isEventStreamMessageRetry } from './encoder'
 import { EventStreamDecoderError } from './error'
 
 // A line ending is CR, LF or CRLF.
-const LINE_ENDING_REGEX = /\r\n|\r(?!\n)|\n/
+const LINE_ENDING_REGEX = /\r\n?|\n/
 // A message ends at a blank line; any extra blank lines after it are part of
-// the same delimiter, since the spec treats them as no-ops.
-const MESSAGE_DELIMITER_REGEX = /(?:\r\n|\r(?!\n)|\n){2,}/g
+// the same delimiter, since the spec treats them as no-ops. No quantified group,
+// which JavaScriptCore runs ~100x slower; {3,} goes first to consume the run.
+const MESSAGE_DELIMITER_REGEX = /[\r\n]{3,}|\r\r|\n[\r\n]/g
 const LEADING_LINE_ENDINGS_REGEX = /^[\r\n]+/
 
 // JS `\d` matches ASCII digits only, as the spec requires for retry.
@@ -18,9 +19,11 @@ const ASCII_DIGITS_REGEX = /^\d+$/
 const MAX_DELIMITER_OVERLAP = 2
 
 const SPACE = 0x20
+const LF = 0x0A
+const CR = 0x0D
 
 export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
-  const message: EventStreamMessage & { comments?: string[] } = {}
+  const message: EventStreamMessage = {}
 
   for (const line of encoded.split(LINE_ENDING_REGEX)) {
     if (line === '') {
@@ -104,7 +107,11 @@ export class EventStreamDecoder {
     // Line endings between messages are extra blank lines (or the '\n' of a
     // CRLF split after a delimiter), so they carry no content.
     if (this.pending.length === 0) {
-      chunk = chunk.replace(LEADING_LINE_ENDINGS_REGEX, '')
+      const first = chunk.charCodeAt(0)
+
+      if (first === LF || first === CR) {
+        chunk = chunk.replace(LEADING_LINE_ENDINGS_REGEX, '')
+      }
     }
 
     // empty chunk has no meaningful content to process
@@ -123,7 +130,7 @@ export class EventStreamDecoder {
       return
     }
 
-    const buffered = this.pending.join('')
+    const buffered = this.pending.length === 1 ? chunk : this.pending.join('')
     const offset = buffered.length - scan.length
     const parts: string[] = []
     let start = 0
