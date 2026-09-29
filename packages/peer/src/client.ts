@@ -98,8 +98,7 @@ export class ClientPeer {
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
         if (request.signal?.aborted) {
-          // a failed cancel delivery must not replace the abort reason
-          await this.send({ id, kind: 'cancel' }).catch(() => {})
+          await this.send({ id, kind: 'cancel' })
         }
 
         return

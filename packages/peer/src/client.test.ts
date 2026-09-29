@@ -348,10 +348,6 @@ describe('clientPeer', () => {
         if (message.kind === 'request') {
           controller.abort(error)
         }
-        else {
-          // a failed cancel delivery must not replace the abort reason
-          throw new Error('transport down')
-        }
       })
       const cancel = vi.fn()
 
