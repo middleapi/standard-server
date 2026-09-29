@@ -1,6 +1,7 @@
 import type { AsyncIteratorClass } from '@standard-server/shared'
 import type { AnyAPIGatewayProxyEvent, APIGatewayProxyEvent } from './types'
 import { Buffer } from 'node:buffer'
+import { StandardBodyTooLargeError } from '@standard-server/core'
 import { toStandardBody } from './body'
 
 function event(override: Partial<APIGatewayProxyEvent>): APIGatewayProxyEvent {
@@ -214,6 +215,81 @@ describe('toStandardBody', () => {
           'standard-server': ['file'],
         },
       }), { hint: 'json' })).resolves.toEqual({ foo: 'bar' })
+    })
+  })
+
+  describe('maxBodySize', () => {
+    it('parses a body up to the limit', async () => {
+      const body = '{"emoji":"😀"}' // 16 bytes, 14 utf-16 code units
+
+      await expect(toStandardBody(event({
+        body,
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }), { maxBodySize: 16 })).resolves.toEqual({ emoji: '😀' })
+
+      await expect(toStandardBody(event({
+        body,
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }), { maxBodySize: 15 })).rejects.toThrow(StandardBodyTooLargeError)
+    })
+
+    it('measures the decoded size of a base64-encoded body', async () => {
+      const body = Buffer.from('{"foo":"bar"}').toString('base64') // 13 bytes, 20 base64 characters
+
+      await expect(toStandardBody(event({
+        body,
+        isBase64Encoded: true,
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }), { maxBodySize: 13 })).resolves.toEqual({ foo: 'bar' })
+
+      await expect(toStandardBody(event({
+        body,
+        isBase64Encoded: true,
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }), { maxBodySize: 12 })).rejects.toThrow(StandardBodyTooLargeError)
+    })
+
+    it.each([
+      ['json', '{"foo":"bar"}'],
+      ['url-search-params', 'foo=bar&bar=baz'],
+      ['form-data', '--boundary\r\nContent-Disposition: form-data; name="foo"\r\n\r\nbar\r\n--boundary--\r\n'],
+      ['file', 'hello world'],
+    ])('rejects %s over the limit', async (hint, body) => {
+      const promise = toStandardBody(event({
+        body,
+        multiValueHeaders: {
+          'Content-Type': ['multipart/form-data; boundary=boundary'],
+          'standard-server': [hint],
+        },
+      }), { maxBodySize: 10 })
+
+      await expect(promise).rejects.toThrow(StandardBodyTooLargeError)
+      await expect(promise).rejects.toThrow('Body exceeds the maximum size of 10 bytes')
+    })
+
+    it('does not limit streamed bodies', async () => {
+      const eventStream = await toStandardBody(event({
+        body: 'event: message\ndata: 123\n\n',
+        multiValueHeaders: { 'standard-server': ['event-stream'] },
+      }), { maxBodySize: 1 }) as AsyncIteratorClass<unknown>
+      await expect(eventStream.next()).resolves.toEqual({ done: false, value: 123 })
+
+      const octetStream = await toStandardBody(event({
+        body: 'hello',
+        multiValueHeaders: { 'standard-server': ['octet-stream'] },
+      }), { maxBodySize: 1 }) as ReadableStream
+      await expect(new Response(octetStream).text()).resolves.toBe('hello')
+    })
+
+    it('has no limit by default', async () => {
+      const body = 'a'.repeat(1024 * 1024)
+
+      const standardBody = await toStandardBody(event({
+        body,
+        multiValueHeaders: { 'standard-server': ['file'] },
+      })) as File
+
+      expect(standardBody.size).toBe(body.length)
     })
   })
 })

@@ -273,6 +273,25 @@ resolveStandardBodyHint({})
 
 Use it when building a custom adapter, or when you need to know how a body will parse without consuming it.
 
+### Body size limits
+
+Bodies are parsed without a size limit by default. Since the client chooses the hint, a limit that an upstream body parser only enforces for some content types does not cover every body the adapters parse. The HTTP adapters accept a `maxBodySize` option (in bytes) on `toStandardLazyRequest()` and `toStandardBody()` that caps the `json`, `form-data`, `url-search-params`, and `file` bodies they read into memory, rejecting larger ones with a `StandardBodyTooLargeError` you can answer with a `413` status:
+
+```ts
+import { StandardBodyTooLargeError } from '@standard-server/core'
+
+try {
+  const body = await request.resolveBody()
+}
+catch (error) {
+  if (error instanceof StandardBodyTooLargeError) {
+    error.maxBodySize // the limit that was exceeded, in bytes
+  }
+}
+```
+
+`event-stream` and `octet-stream` bodies are streamed rather than buffered, so they are not limited: the application controls how much of them it reads. See each adapter's documentation for how the limit is enforced.
+
 ## Utilities
 
 The package also exports a small set of helpers for common header, URL, and body operations.

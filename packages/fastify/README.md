@@ -45,10 +45,10 @@ This package is the Fastify adapter for that model. It builds on [`@standard-ser
 
 The package exposes two helpers and their option shapes:
 
-| Group                   | Exports                                                                                                 | Purpose                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                     | Adapt Fastify request and reply objects to Standard Server |
-| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `SendStandardResponseOptions` | Type handler inputs and serializer options                 |
+| Group                   | Exports                                                                                                                                 | Purpose                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                                     | Adapt Fastify request and reply objects to Standard Server |
+| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `ToStandardLazyRequestOptions`, `SendStandardResponseOptions` | Type handler inputs and serializer options                 |
 
 Both helpers accept `AnyFastifyRequest` and `AnyFastifyReply`, which are `FastifyRequest` and `FastifyReply` widened over every raw server. That is what lets the same call site work for `Fastify()`, `Fastify({ http2: true })`, typed route generics, hooks, and encapsulated plugins alike.
 
@@ -112,8 +112,38 @@ fastify.addContentTypeParser('*', (req, payload, done) => {
 
 Register it inside an encapsulated plugin if you only want it to apply to the routes that serve Standard Server handlers.
 
+> [!WARNING]
+> Fastify never reads a payload the catch-all parser leaves untouched, so its `bodyLimit` no longer applies to those requests. Set `maxBodySize` as described in [Limiting body size](#limiting-body-size).
+
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
+
+## Limiting body size
+
+Fastify's `bodyLimit` only covers the bodies Fastify parses itself. A body the adapter parses, such as every body under the catch-all parser above, has **no limit by default**: `json`, `form-data`, `url-search-params`, and `file` bodies are read fully into memory. The client chooses how its body is parsed, through the `standard-server` header or a bare `content-length`, so pass `maxBodySize` (in bytes), for example the route's own `bodyLimit`:
+
+```ts
+import { StandardBodyTooLargeError } from '@standard-server/core'
+
+fastify.all('/*', async (req, reply) => {
+  const standardRequest = toStandardLazyRequest(req, reply, { maxBodySize: req.routeOptions.bodyLimit })
+
+  try {
+    await sendStandardResponse(reply, await handle(standardRequest))
+  }
+  catch (error) {
+    if (!(error instanceof StandardBodyTooLargeError)) {
+      throw error
+    }
+
+    await sendStandardResponse(reply, { status: 413, headers: {}, body: undefined })
+  }
+})
+```
+
+`resolveBody()` rejects with a `StandardBodyTooLargeError` as soon as the body is known to be too large: before reading it when its `content-length` is larger than the limit, otherwise once the bytes read cross the limit (chunked bodies included). The rest of the request body is then read and discarded, so your `413` response still reaches the client.
+
+`event-stream` and `octet-stream` bodies are streamed rather than buffered, so they are not limited: your handler controls how much of them it reads.
 
 ## Fastify behavior to be aware of
 

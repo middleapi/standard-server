@@ -1,11 +1,15 @@
 import type { StandardBody } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import type { NodeHttpRequest } from './types'
 import { Buffer } from 'node:buffer'
+import { createServer } from 'node:http'
 import http2 from 'node:http2'
+import net from 'node:net'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 import * as StandardServerModule from '@standard-server/core'
+import { StandardBodyTooLargeError } from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import request from 'supertest'
@@ -419,6 +423,223 @@ describe('toStandardBody', () => {
 
       // superagent sends a string body as url-encoded
       expect(standardBody).toEqual(new URLSearchParams('raw data'))
+    })
+  })
+
+  describe('maxBodySize', () => {
+    function createRequest(headers: Record<string, string>, chunks: Buffer[]): IncomingMessage {
+      const request = Readable.from(chunks) as IncomingMessage
+      request.headers = headers
+      return request
+    }
+
+    it.each([
+      ['json', 'application/json', '{"foo":"bar"}', { foo: 'bar' }],
+      ['url-search-params', 'application/x-www-form-urlencoded', 'foo=bar&bar=baz', new URLSearchParams('foo=bar&bar=baz')],
+    ] as const)('parses %s up to the limit', async (_, contentType, body, expected) => {
+      let standardBody: StandardBody
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req, { maxBodySize: Buffer.byteLength(body) })
+        res.end()
+      }).post('/').set('content-type', contentType).send(body)
+
+      expect(standardBody).toEqual(expected)
+    })
+
+    it('parses form-data under the limit', async () => {
+      let standardBody: any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req, { maxBodySize: 1024 })
+        res.end()
+      }).post('/').field('foo', 'bar')
+
+      expect(standardBody).toBeInstanceOf(FormData)
+      expect(standardBody.get('foo')).toBe('bar')
+    })
+
+    it('parses file up to the limit, without content-length', async () => {
+      const standardBody: any = await toStandardBody(
+        createRequest({ 'standard-server': 'file' }, [Buffer.from('foo'), Buffer.from('bar')]),
+        { maxBodySize: 6 },
+      )
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(await standardBody.text()).toBe('foobar')
+    })
+
+    it.each(['json', 'url-search-params', 'form-data', 'file'])('rejects %s by content-length before reading it', async (hint) => {
+      const req = createRequest({ 'standard-server': hint, 'content-length': '11' }, [Buffer.from('{}')])
+      const readSpy = vi.spyOn(req, 'read')
+
+      const promise = toStandardBody(req, { maxBodySize: 10 })
+
+      await expect(promise).rejects.toThrow(StandardBodyTooLargeError)
+      await expect(promise).rejects.toThrow('Body exceeds the maximum size of 10 bytes')
+      expect(readSpy).not.toHaveBeenCalled()
+      expect(req.destroyed).toBe(true)
+    })
+
+    it.each(['json', 'url-search-params', 'form-data', 'file'])('rejects %s once the bytes read exceed the limit', async (hint) => {
+      const req = createRequest({ 'standard-server': hint }, [Buffer.from('{"a":'), Buffer.from('12345}'), Buffer.from('never read')])
+
+      await expect(toStandardBody(req, { maxBodySize: 10 })).rejects.toSatisfy(
+        error => error instanceof StandardBodyTooLargeError && error.maxBodySize === 10,
+      )
+      expect(req.destroyed).toBe(true)
+    })
+
+    it('does not limit streamed bodies', async () => {
+      const eventStream: any = await toStandardBody(
+        createRequest({ 'standard-server': 'event-stream', 'content-length': '26' }, [Buffer.from('event: message\ndata: 123\n\n')]),
+        { maxBodySize: 1 },
+      )
+      expect(await eventStream.next()).toEqual({ done: false, value: 123 })
+
+      const octetStream: any = await toStandardBody(
+        createRequest({ 'standard-server': 'octet-stream', 'content-length': '5' }, [Buffer.from('hello')]),
+        { maxBodySize: 1 },
+      )
+      expect(await new Response(octetStream).text()).toBe('hello')
+    })
+
+    it('has no limit by default', async () => {
+      const body = Buffer.alloc(1024 * 1024, 0x61)
+      let standardBody: any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req)
+        res.end()
+      }).post('/').set('standard-server', 'file').send(body)
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(standardBody.size).toBe(body.byteLength)
+    })
+
+    /** Beyond socket buffers and the HTTP/2 flow-control window, so an unread body stalls. */
+    const UPLOAD = Buffer.alloc(1024 * 1024, 0x61)
+
+    function encodeChunked(body: Buffer, chunkSize: number): Buffer {
+      const parts: Buffer[] = []
+      for (let i = 0; i < body.byteLength; i += chunkSize) {
+        const chunk = body.subarray(i, i + chunkSize)
+        parts.push(Buffer.from(`${chunk.byteLength.toString(16)}\r\n`), chunk, Buffer.from('\r\n'))
+      }
+      parts.push(Buffer.from('0\r\n\r\n'))
+      return Buffer.concat(parts)
+    }
+
+    it.for([
+      ['json', 'content-length'],
+      ['json', 'chunked'],
+      ['form-data', 'content-length'],
+      ['form-data', 'chunked'],
+      ['url-search-params', 'chunked'],
+      ['file', 'chunked'],
+    ] as const)('lets an HTTP/1 server answer an oversized %s body (%s) and reuse the connection', async ([hint, framing], { onTestFinished }) => {
+      const errors: unknown[] = []
+
+      const server = createServer(async (req, res) => {
+        if (req.method === 'GET') {
+          res.end('ok')
+          return
+        }
+
+        try {
+          await toStandardBody(req, { maxBodySize: 1024 })
+          res.end('parsed')
+        }
+        catch (error) {
+          errors.push(error)
+          res.statusCode = 413
+          res.end('too large')
+        }
+      })
+      onTestFinished(() => new Promise<any>((r) => {
+        server.closeAllConnections()
+        server.close(r)
+      }))
+
+      await new Promise<void>(resolve => server.listen(0, resolve))
+      const { port } = server.address() as AddressInfo
+
+      const socket = net.connect(port, '127.0.0.1')
+      socket.on('error', () => {})
+      if (framing === 'content-length') {
+        socket.write(`POST / HTTP/1.1\r\nHost: x\r\nstandard-server: ${hint}\r\nContent-Length: ${UPLOAD.byteLength}\r\n\r\n`)
+        socket.write(UPLOAD)
+      }
+      else {
+        socket.write(`POST / HTTP/1.1\r\nHost: x\r\nstandard-server: ${hint}\r\nTransfer-Encoding: chunked\r\n\r\n`)
+        socket.write(encodeChunked(UPLOAD, 64 * 1024))
+      }
+      // Queued behind the rejected body, so it's only answered once that body is off the wire
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n')
+
+      const received = await text(socket)
+
+      expect(received).toMatch(/^HTTP\/1\.1 413 [\s\S]*too large/)
+      expect(received).toMatch(/HTTP\/1\.1 200 [\s\S]*ok$/)
+      expect(errors).toEqual([new StandardBodyTooLargeError(1024)])
+      expect(errors[0]).toBeInstanceOf(StandardBodyTooLargeError)
+    })
+
+    it.for([
+      'content-length',
+      'no content-length',
+    ] as const)('lets an HTTP/2 server answer an oversized body (%s) and close the stream', async (framing, { onTestFinished }) => {
+      const errors: unknown[] = []
+      const server = http2.createServer()
+
+      const responseClosed = new Promise<void>((resolve) => {
+        server.on('request', async (req, res) => {
+          try {
+            await toStandardBody(req, { hint: 'json', maxBodySize: 1024 })
+            res.end('parsed')
+          }
+          catch (error) {
+            errors.push(error)
+            res.once('close', () => resolve()) // what `sendStandardResponse` settles on
+            res.statusCode = 413
+            res.end('too large')
+          }
+        })
+      })
+
+      await new Promise<void>(resolve => server.listen(0, resolve))
+      const { port } = server.address() as AddressInfo
+
+      const client = http2.connect(`http://127.0.0.1:${port}`)
+      onTestFinished(() => new Promise<any>((r) => {
+        client.destroy()
+        server.close(r)
+      }))
+
+      const request = client.request({
+        ':method': 'POST',
+        ':path': '/',
+        ...framing === 'content-length' ? { 'content-length': String(UPLOAD.byteLength) } : {},
+      })
+      request.end(UPLOAD)
+      request.setEncoding('utf8')
+
+      let status: unknown
+      let received = ''
+      request.on('response', (headers) => {
+        status = headers[':status']
+      })
+      request.on('data', (chunk) => {
+        received += chunk
+      })
+
+      await new Promise(resolve => request.once('close', resolve))
+      await responseClosed
+
+      expect(status).toBe(413)
+      expect(received).toBe('too large')
+      expect(request.rstCode).toBe(http2.constants.NGHTTP2_NO_ERROR)
+      expect(errors[0]).toBeInstanceOf(StandardBodyTooLargeError)
     })
   })
 })

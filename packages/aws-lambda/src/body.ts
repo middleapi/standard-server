@@ -1,7 +1,7 @@
 import type { StandardBody, StandardBodyHint } from '@standard-server/core'
 import type { AnyAPIGatewayProxyEvent } from './types'
 import { Buffer } from 'node:buffer'
-import { flattenStandardHeader, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import { flattenStandardHeader, getFilenameFromContentDisposition, resolveStandardBodyHint, StandardBodyTooLargeError } from '@standard-server/core'
 import { toAsyncIteratorObject } from '@standard-server/fetch'
 import { parseEmptyableJSON } from '@standard-server/shared'
 import { toStandardHeaders } from './headers'
@@ -11,6 +11,20 @@ export interface ToStandardBodyOptions {
    * Hints on how the body should be parsed.
    */
   hint?: StandardBodyHint | undefined
+
+  /**
+   * The maximum size, in bytes, of a body parsed as `json`, `form-data`,
+   * `url-search-params` or `file`. A larger body is rejected with a
+   * `StandardBodyTooLargeError` before it is parsed. Lambda has already
+   * buffered the whole body, so this bounds the parsing, not the payload
+   * Lambda accepts.
+   *
+   * `event-stream` and `octet-stream` bodies are not limited,
+   * like in the other adapters.
+   *
+   * @default undefined (no limit)
+   */
+  maxBodySize?: number | undefined
 }
 
 /**
@@ -32,6 +46,15 @@ export async function toStandardBody(
     : event.isBase64Encoded
       ? new Uint8Array(Buffer.from(event.body, 'base64'))
       : new TextEncoder().encode(event.body)
+
+  if (
+    options.maxBodySize !== undefined
+    && bytes.byteLength > options.maxBodySize
+    && hint !== 'event-stream'
+    && hint !== 'octet-stream'
+  ) {
+    throw new StandardBodyTooLargeError(options.maxBodySize)
+  }
 
   if (hint === 'json') {
     return parseEmptyableJSON(new TextDecoder().decode(bytes))

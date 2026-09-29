@@ -1,4 +1,5 @@
 import * as StandardServerModule from '@standard-server/core'
+import { StandardBodyTooLargeError } from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import { toFetchBody, toStandardBody } from './body'
 import * as EventStreamModule from './event-stream'
@@ -261,6 +262,149 @@ describe('toStandardBody', () => {
       expect(standardBody).toBeInstanceOf(ReadableStream)
       const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'raw data' })
+    })
+  })
+
+  describe('maxBodySize', () => {
+    /** An endless body of 8-byte chunks, never pulled before it is read. */
+    function createEndlessBody() {
+      const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
+        controller.enqueue(new TextEncoder().encode('{"a":1,}'))
+      })
+      const cancel = vi.fn()
+      const body = new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 })
+
+      return { body, pull, cancel }
+    }
+
+    it.each([
+      ['json', 'application/json', '{"foo":"bar"}', { foo: 'bar' }],
+      ['url-search-params', 'application/x-www-form-urlencoded', 'foo=bar&bar=baz', new URLSearchParams('foo=bar&bar=baz')],
+    ] as const)('parses %s up to the limit', async (_, contentType, body, expected) => {
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body,
+        headers: { 'content-type': contentType },
+      })
+
+      expect(await toStandardBody(request, { maxBodySize: body.length })).toEqual(expected)
+      expect(request.bodyUsed).toBe(true)
+    })
+
+    it('parses form-data under the limit', async () => {
+      const form = new FormData()
+      form.append('foo', 'bar')
+      form.append('file', new File(['hello'], 'hello.txt', { type: 'text/plain' }))
+
+      const result: any = await toStandardBody(new Request('https://example.com', { method: 'POST', body: form }), { maxBodySize: 1024 })
+
+      expect(result).toBeInstanceOf(FormData)
+      expect(result.get('foo')).toBe('bar')
+      expect(result.get('file')).toBeInstanceOf(File)
+      expect(result.get('file').name).toBe('hello.txt')
+      expect(await result.get('file').text()).toBe('hello')
+    })
+
+    it('parses file up to the limit, like without a limit', async () => {
+      const createRequest = () => new Request('https://example.com', {
+        method: 'POST',
+        body: new TextEncoder().encode('foobar'),
+        headers: {
+          'content-type': 'Text/Plain; Charset=UTF-8',
+          'content-disposition': 'attachment; filename="foo.txt"',
+        },
+      })
+
+      const limited = await toStandardBody(createRequest(), { maxBodySize: 6 }) as File
+      const unlimited = await toStandardBody(createRequest()) as File
+
+      expect(limited).toBeInstanceOf(File)
+      expect(limited.name).toBe('foo.txt')
+      expect(limited.type).toBe(unlimited.type)
+      expect(await limited.text()).toBe('foobar')
+    })
+
+    it.each(['json', 'url-search-params', 'form-data', 'file'])('rejects %s by content-length before reading it', async (hint) => {
+      const { body, pull, cancel } = createEndlessBody()
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body,
+        headers: { 'standard-server': hint, 'content-length': '11' },
+        duplex: 'half',
+      })
+
+      const promise = toStandardBody(request, { maxBodySize: 10 })
+
+      await expect(promise).rejects.toThrow(StandardBodyTooLargeError)
+      await expect(promise).rejects.toThrow('Body exceeds the maximum size of 10 bytes')
+      expect(pull).not.toHaveBeenCalled()
+      // left untouched for the server to discard, like any unread request body
+      expect(cancel).not.toHaveBeenCalled()
+      expect(request.bodyUsed).toBe(false)
+    })
+
+    it('cancels a response body rejected by content-length, releasing its connection', async () => {
+      const { body, pull, cancel } = createEndlessBody()
+      const response = new Response(body, { headers: { 'content-type': 'application/json', 'content-length': '11' } })
+
+      await expect(toStandardBody(response, { maxBodySize: 10 })).rejects.toThrow(StandardBodyTooLargeError)
+      expect(pull).not.toHaveBeenCalled()
+      expect(cancel).toHaveBeenCalledWith(expect.any(StandardBodyTooLargeError))
+    })
+
+    it.each(['json', 'url-search-params', 'form-data', 'file'])('rejects %s once the bytes read exceed the limit', async (hint) => {
+      const { body, cancel } = createEndlessBody()
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body,
+        headers: { 'standard-server': hint },
+        duplex: 'half',
+      })
+
+      await expect(toStandardBody(request, { maxBodySize: 20 })).rejects.toSatisfy(
+        error => error instanceof StandardBodyTooLargeError && error.maxBodySize === 20,
+      )
+
+      // the body is endless, so resolving at all proves the read stopped
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(expect.any(StandardBodyTooLargeError)))
+      expect(request.bodyUsed).toBe(true)
+    })
+
+    it('rejects a response body once the bytes read exceed the limit', async () => {
+      const { body, cancel } = createEndlessBody()
+      const response = new Response(body, { headers: { 'content-type': 'application/json' } })
+
+      await expect(toStandardBody(response, { maxBodySize: 20 })).rejects.toThrow(StandardBodyTooLargeError)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+    })
+
+    it('does not limit streamed bodies', async () => {
+      const eventStream: any = await toStandardBody(new Request('https://example.com', {
+        method: 'POST',
+        body: 'event: message\ndata: 123\n\n',
+        headers: { 'standard-server': 'event-stream' },
+      }), { maxBodySize: 1 })
+      expect(await eventStream.next()).toEqual({ done: false, value: 123 })
+
+      const octetStream: any = await toStandardBody(new Request('https://example.com', {
+        method: 'POST',
+        body: 'hello',
+        headers: { 'standard-server': 'octet-stream' },
+      }), { maxBodySize: 1 })
+      expect(await new Response(octetStream).text()).toBe('hello')
+    })
+
+    it('has no limit by default', async () => {
+      const body = new Uint8Array(1024 * 1024)
+
+      const standardBody = await toStandardBody(new Request('https://example.com', {
+        method: 'POST',
+        body,
+        headers: { 'standard-server': 'file' },
+      })) as File
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(standardBody.size).toBe(body.byteLength)
     })
   })
 })

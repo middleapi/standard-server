@@ -2,16 +2,30 @@ import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-
 import type { ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
 import { Readable } from 'node:stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint, StandardBodyTooLargeError } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
-import { readableChunkToBytes, toWebReadableStream } from './utils'
+import { cancelNodeReadable, readableChunkToBytes, toWebReadableStream } from './utils'
 
 export interface ToStandardBodyOptions {
   /**
    * Hints on how the body should be parsed.
    */
   hint?: StandardBodyHint | undefined
+
+  /**
+   * The maximum size, in bytes, of a body read into memory (`json`, `form-data`,
+   * `url-search-params` and `file`). A larger body is rejected with a
+   * `StandardBodyTooLargeError`: up front when its `content-length` is already
+   * larger, otherwise as soon as the bytes read exceed it. The rest of the body
+   * is discarded, so a response can still be sent.
+   *
+   * Streamed bodies (`event-stream` and `octet-stream`) are not limited,
+   * since the application controls how much of them it reads.
+   *
+   * @default undefined (no limit)
+   */
+  maxBodySize?: number | undefined
 }
 
 /**
@@ -43,18 +57,18 @@ export async function toStandardBody(
   }
 
   if (hint === 'json') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(_readBody(req, options.maxBodySize))
     return parseEmptyableJSON(text)
   }
 
   const contentType = req.headers['content-type']
 
   if (hint === 'form-data') {
-    return _streamToFormData(req, contentType)
+    return _streamToFormData(_readBody(req, options.maxBodySize), contentType)
   }
 
   if (hint === 'url-search-params') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(_readBody(req, options.maxBodySize))
     return new URLSearchParams(text)
   }
 
@@ -68,7 +82,7 @@ export async function toStandardBody(
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined
 
-    return _streamToFile(req, fileName ?? 'blob', contentType ?? '')
+    return _streamToFile(_readBody(req, options.maxBodySize), fileName ?? 'blob', contentType ?? '')
   }
 
   return toWebReadableStream(req)
@@ -153,8 +167,46 @@ export function toNodeHttpBody(
   return [stringifyJSON(body), headers]
 }
 
-function _streamToFormData(stream: Readable, contentType: string | undefined): Promise<FormData> {
-  const response = new Response(stream, {
+/**
+ * Reads the chunks of a request body, rejecting with `StandardBodyTooLargeError`
+ * once it is known to exceed `maxBodySize`.
+ */
+async function* _readBody(
+  req: NodeHttpRequest,
+  maxBodySize: number | undefined,
+): AsyncGenerator<Uint8Array<ArrayBuffer>, void, undefined> {
+  if (maxBodySize !== undefined && Number(req.headers['content-length']) > maxBodySize) {
+    // no reason: nothing listens to the request yet, so its error event would be unhandled
+    cancelNodeReadable(req)
+    throw new StandardBodyTooLargeError(maxBodySize)
+  }
+
+  // Iterate by hand: breaking out of a `for await` would destroy the request
+  const iterator = req[Symbol.asyncIterator]()
+  let size = 0
+
+  while (true) {
+    const { done, value } = await iterator.next()
+
+    if (done) {
+      return
+    }
+
+    const chunk = readableChunkToBytes(req, value)
+    size += chunk.byteLength
+
+    if (maxBodySize !== undefined && size > maxBodySize) {
+      const error = new StandardBodyTooLargeError(maxBodySize)
+      cancelNodeReadable(req, error, iterator)
+      throw error
+    }
+
+    yield chunk
+  }
+}
+
+function _streamToFormData(body: AsyncIterable<Uint8Array<ArrayBuffer>>, contentType: string | undefined): Promise<FormData> {
+  const response = new Response(body, {
     headers: {
       'content-type': contentType,
     },
@@ -163,12 +215,12 @@ function _streamToFormData(stream: Readable, contentType: string | undefined): P
   return response.formData()
 }
 
-async function _streamToString(stream: Readable): Promise<string> {
+async function _streamToString(body: AsyncIterable<Uint8Array<ArrayBuffer>>): Promise<string> {
   const decoder = new TextDecoder()
   let string = ''
 
-  for await (const chunk of stream) {
-    string += decoder.decode(readableChunkToBytes(stream, chunk), { stream: true })
+  for await (const chunk of body) {
+    string += decoder.decode(chunk, { stream: true })
   }
 
   // Flush any remaining bytes (e.g. incomplete multi-byte sequences)
@@ -177,11 +229,11 @@ async function _streamToString(stream: Readable): Promise<string> {
   return string
 }
 
-async function _streamToFile(stream: Readable, fileName: string, contentType: string): Promise<File> {
+async function _streamToFile(body: AsyncIterable<Uint8Array<ArrayBuffer>>, fileName: string, contentType: string): Promise<File> {
   const chunks: Uint8Array<ArrayBuffer>[] = []
 
-  for await (const chunk of stream) {
-    chunks.push(readableChunkToBytes(stream, chunk))
+  for await (const chunk of body) {
+    chunks.push(chunk)
   }
 
   return new File(chunks, fileName, { type: contentType })

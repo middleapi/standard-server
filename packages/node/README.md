@@ -43,12 +43,12 @@ This package is the Node.js adapter for that model. It converts between native N
 
 The package exposes four groups of helpers:
 
-| Group                   | Exports                                                                                                                | Purpose                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                    | Adapt Node request and response objects to Standard Server         |
-| Body and event streams  | `toStandardBody()`, `toNodeHttpBody()`, `toAsyncIteratorObject()`, `toEventStream()`                                   | Parse incoming bodies and serialize outgoing bodies, including SSE |
-| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                             | Normalize Node request metadata and connection lifecycle state     |
-| Types and option shapes | `NodeHttpRequest`, `NodeHttpResponse`, `ToStandardBodyOptions`, `ToNodeHttpBodyOptions`, `SendStandardResponseOptions` | Type request/response inputs and serializer options                |
+| Group                   | Exports                                                                                                                                                | Purpose                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                                                    | Adapt Node request and response objects to Standard Server         |
+| Body and event streams  | `toStandardBody()`, `toNodeHttpBody()`, `toAsyncIteratorObject()`, `toEventStream()`                                                                   | Parse incoming bodies and serialize outgoing bodies, including SSE |
+| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                                                             | Normalize Node request metadata and connection lifecycle state     |
+| Types and option shapes | `NodeHttpRequest`, `NodeHttpResponse`, `ToStandardLazyRequestOptions`, `ToStandardBodyOptions`, `ToNodeHttpBodyOptions`, `SendStandardResponseOptions` | Type request/response inputs and serializer options                |
 
 Use these helpers when you want Standard Server handlers to run in Node runtimes such as `node:http`, `node:http2`, Express-style middleware, or frameworks that expose Node-compatible request and response objects.
 
@@ -93,6 +93,34 @@ createServer(async (req, res) => {
 
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
+
+## Limiting body size
+
+There is **no limit by default**: `json`, `form-data`, `url-search-params`, and `file` bodies are read fully into memory. The client chooses how its body is parsed, through the `standard-server` header or a bare `content-length`, so a limit that an upstream body parser only enforces for the content types it handles can be sidestepped. Set `maxBodySize` (in bytes), or make sure an upstream limit, such as your reverse proxy's, covers every request:
+
+```ts
+import { StandardBodyTooLargeError } from '@standard-server/core'
+import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
+
+createServer(async (req, res) => {
+  const standardRequest = toStandardLazyRequest(req, res, { maxBodySize: 1024 * 1024 }) // 1 MiB
+
+  try {
+    await sendStandardResponse(res, await handle(standardRequest))
+  }
+  catch (error) {
+    if (!(error instanceof StandardBodyTooLargeError)) {
+      throw error
+    }
+
+    await sendStandardResponse(res, { status: 413, headers: {}, body: undefined })
+  }
+}).listen(3000)
+```
+
+`resolveBody()` rejects with a `StandardBodyTooLargeError` as soon as the body is known to be too large: before reading it when its `content-length` is larger than the limit, otherwise once the bytes read cross the limit (chunked bodies included). The rest of the request body is then read and discarded rather than the request being destroyed, so your `413` response still reaches the client, HTTP/1 keep-alive connections stay usable, and HTTP/2 streams close cleanly. Node's `server.requestTimeout` still bounds how long a client can keep sending.
+
+`event-stream` and `octet-stream` bodies are streamed rather than buffered, so they are not limited: your handler controls how much of them it reads. The same option is available on `toStandardBody(req, { maxBodySize })`.
 
 ## Learn more
 

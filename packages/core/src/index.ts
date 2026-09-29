@@ -1,3 +1,4 @@
+export * from './error'
 export * from './event-stream'
 export * from './types'
 export * from './utils'

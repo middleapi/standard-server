@@ -1,6 +1,6 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { ToEventStreamOptions } from './event-stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint, StandardBodyTooLargeError } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
@@ -9,6 +9,19 @@ export interface ToStandardBodyOptions {
    * Hints on how the body should be parsed.
    */
   hint?: StandardBodyHint | undefined
+
+  /**
+   * The maximum size, in bytes, of a body read into memory (`json`, `form-data`,
+   * `url-search-params` and `file`). A larger body is rejected with a
+   * `StandardBodyTooLargeError`: up front when its `content-length` is already
+   * larger, otherwise as soon as the bytes read exceed it, cancelling the rest.
+   *
+   * Streamed bodies (`event-stream` and `octet-stream`) are not limited,
+   * since the application controls how much of them it reads.
+   *
+   * @default undefined (no limit)
+   */
+  maxBodySize?: number | undefined
 }
 
 /**
@@ -32,16 +45,16 @@ export async function toStandardBody(re: Request | Response, options?: ToStandar
   }
 
   if (hint === 'json') {
-    const text = await re.text()
+    const text = await _limitBody(re, options?.maxBodySize).text()
     return parseEmptyableJSON(text)
   }
 
   if (hint === 'form-data') {
-    return await re.formData()
+    return await _limitBody(re, options?.maxBodySize).formData()
   }
 
   if (hint === 'url-search-params') {
-    const text = await re.text()
+    const text = await _limitBody(re, options?.maxBodySize).text()
     return new URLSearchParams(text)
   }
 
@@ -55,7 +68,7 @@ export async function toStandardBody(re: Request | Response, options?: ToStandar
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined
 
-    const blob = await re.blob()
+    const blob = await _limitBody(re, options?.maxBodySize).blob()
     return new File([blob], fileName ?? 'blob', {
       type: blob.type,
     })
@@ -65,6 +78,51 @@ export async function toStandardBody(re: Request | Response, options?: ToStandar
     start(controller) {
       controller.close()
     },
+  })
+}
+
+/**
+ * Limits the body to `maxBodySize` bytes: reading the returned body rejects with
+ * `StandardBodyTooLargeError` once the body is known to exceed it.
+ */
+function _limitBody(re: Request | Response, maxBodySize: number | undefined): Request | Response {
+  if (maxBodySize === undefined || re.body === null) {
+    return re
+  }
+
+  if (Number(re.headers.get('content-length')) > maxBodySize) {
+    const error = new StandardBodyTooLargeError(maxBodySize)
+
+    // Leave an unread request body to the server, which discards it like any unread body,
+    // while cancelling one can stall the next keep-alive request (e.g. srvx on Node).
+    // An unread response body would hold its connection instead.
+    if (re instanceof Response) {
+      re.body.cancel(error).catch(() => {})
+    }
+
+    throw error
+  }
+
+  let size = 0
+
+  // throwing errors the piped stream and cancels the source body with the error
+  const body = re.body.pipeThrough(new TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>({
+    transform(chunk, controller) {
+      size += chunk.byteLength
+
+      if (size > maxBodySize) {
+        throw new StandardBodyTooLargeError(maxBodySize)
+      }
+
+      controller.enqueue(chunk)
+    },
+  }))
+
+  // read through a Response, so the limited body parses exactly like the original
+  const contentType = re.headers.get('content-type')
+
+  return new Response(body, {
+    headers: contentType === null ? {} : { 'content-type': contentType },
   })
 }
 

@@ -118,6 +118,34 @@ const payload = await standardResponse.resolveBody()
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
 
+## Limiting body size
+
+There is **no limit by default**: `json`, `form-data`, `url-search-params`, and `file` bodies are read fully into memory. The client chooses how its body is parsed, through the `standard-server` header or a bare `content-length`, so a limit that an upstream body parser only enforces for the content types it handles can be sidestepped. Set `maxBodySize` (in bytes), or make sure an upstream limit, such as your platform's or reverse proxy's, covers every request:
+
+```ts
+import { StandardBodyTooLargeError } from '@standard-server/core'
+import { toFetchResponse, toStandardLazyRequest } from '@standard-server/fetch'
+
+export async function fetchHandler(request: Request): Promise<Response> {
+  const standardRequest = toStandardLazyRequest(request, { maxBodySize: 1024 * 1024 }) // 1 MiB
+
+  try {
+    return toFetchResponse(await handle(standardRequest))
+  }
+  catch (error) {
+    if (error instanceof StandardBodyTooLargeError) {
+      return new Response(null, { status: 413 })
+    }
+
+    throw error
+  }
+}
+```
+
+`resolveBody()` rejects with a `StandardBodyTooLargeError` as soon as the body is known to be too large: before reading it when its `content-length` is larger than the limit, otherwise once the bytes read cross the limit (chunked bodies included). In the first case the request body is left untouched, for the runtime to discard like any body a handler never reads. In the second, the body is read incrementally instead of through `text()`, `blob()`, or `formData()` directly, and the rest of it is cancelled.
+
+`event-stream` and `octet-stream` bodies are streamed rather than buffered, so they are not limited: your handler controls how much of them it reads. The same option is available on `toStandardBody(requestOrResponse, { maxBodySize })`, which also lets a client limit the response bodies it parses.
+
 ## Learn more
 
 For the project overview and the shared contract this adapter implements, see the [core documentation](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md).

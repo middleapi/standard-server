@@ -98,6 +98,31 @@ The event carries the request body as a fully buffered, optionally base64-encode
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
 
+## Limiting body size
+
+API Gateway and Lambda cap the request payload they deliver, and the event already holds the whole body in memory. Parsing it has **no limit by default** on top of that: the client chooses how its body is parsed, through the `standard-server` header or a bare `content-length`. To bound the work spent parsing `json`, `form-data`, `url-search-params`, and `file` bodies, set `maxBodySize` (in bytes); larger bodies are rejected with a `StandardBodyTooLargeError` before they are parsed:
+
+```ts
+import { StandardBodyTooLargeError } from '@standard-server/core'
+
+export const handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
+  const standardRequest = toStandardLazyRequest(event, responseStream, { maxBodySize: 1024 * 1024 }) // 1 MiB
+
+  try {
+    await sendStandardResponse(responseStream, await handle(standardRequest))
+  }
+  catch (error) {
+    if (!(error instanceof StandardBodyTooLargeError)) {
+      throw error
+    }
+
+    await sendStandardResponse(responseStream, { status: 413, headers: {}, body: undefined })
+  }
+})
+```
+
+The limit applies to the decoded body, so a base64-encoded body counts its bytes, not its characters. `event-stream` and `octet-stream` bodies are not limited, like in the other adapters.
+
 ## Lambda behavior to be aware of
 
 - **Response streaming must be enabled.** `sendStandardResponse()` relies on the `awslambda` global, which only exists on the AWS Lambda Node.js runtime, and on the metadata prelude of `awslambda.HttpResponseStream`, which the platform only interprets for streaming-enabled invocations.

@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyEventV2, HttpResponseStream } from './types'
 import Stream from 'node:stream'
+import { StandardBodyTooLargeError } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 import * as Body from './body'
 import * as Headers from './headers'
@@ -77,6 +78,14 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.url).toBe('/example?foo=bar')
     expect(standardRequest.headers).toEqual({ 'content-type': 'application/json' })
     await expect(standardRequest.resolveBody()).resolves.toEqual({ foo: 'bar' })
+  })
+
+  it('forwards maxBodySize to the body parser', async () => {
+    const standardRequest = toStandardLazyRequest(event, createResponseStream(), { maxBodySize: 12 })
+
+    await expect(standardRequest.resolveBody('json')).rejects.toThrow(StandardBodyTooLargeError)
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(event, { maxBodySize: 12, hint: 'json' })
   })
 
   it('headers is lazy and can override', () => {
