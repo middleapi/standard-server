@@ -272,6 +272,57 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(chunks).toEqual([1, 2, 3])
   })
 
+  it('streams binary chunks in both directions when content-type is removed', async () => {
+    async function readAll(stream: ReadableStream<Uint8Array>): Promise<number[]> {
+      const chunks: number[] = []
+      for await (const chunk of stream) {
+        chunks.push(...chunk)
+      }
+      return chunks
+    }
+
+    let received: unknown
+    let requestContentType: unknown
+
+    const { client } = connect(async (request) => {
+      requestContentType = request.headers['content-type']
+      received = await request.resolveBody()
+
+      return {
+        status: 200,
+        headers: { 'content-type': [] },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([4, 5]))
+            controller.close()
+          },
+        }),
+      }
+    })
+
+    const response = await client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: { 'content-type': [] },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]))
+          controller.enqueue(new Uint8Array([3]))
+          controller.close()
+        },
+      }),
+    })
+
+    expect(requestContentType).toEqual([])
+    expect(received).toBeInstanceOf(ReadableStream)
+    expect(await readAll(received as ReadableStream<Uint8Array>)).toEqual([1, 2, 3])
+
+    expect(response.headers['content-type']).toEqual([])
+    const body = await response.resolveBody()
+    expect(body).toBeInstanceOf(ReadableStream)
+    expect(await readAll(body as ReadableStream<Uint8Array>)).toEqual([4, 5])
+  })
+
   it('propagates client aborts to the server handler signal', async () => {
     let serverSignal: AbortSignal | undefined
 

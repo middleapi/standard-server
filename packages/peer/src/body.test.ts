@@ -78,6 +78,29 @@ describe('toStandardBody', () => {
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
   })
 
+  it('receives a binary download stream with removed content-type', async () => {
+    const cleanup = vi.fn()
+    const { resolveBody, octetStreamMessageQueue, eventStreamMessageQueue } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { url: '/test', headers: { 'content-type': [], 'standard-server': 'event-stream' } },
+    }, cleanup)
+
+    const body = await resolveBody()
+
+    expect(body).toBeInstanceOf(ReadableStream)
+    expect(octetStreamMessageQueue).toBeInstanceOf(Queue)
+    expect(eventStreamMessageQueue).toBe(undefined)
+
+    octetStreamMessageQueue?.push({ id: '1', kind: 'octet-stream', json: { close: true }, binary: new Uint8Array([1, 2, 3]) })
+    const reader = (body as ReadableStream<Uint8Array<ArrayBuffer>>).getReader()
+    expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1, 2, 3]) })
+    expect(await reader.read()).toEqual({ done: true, value: undefined })
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
   it('receives an uploaded file with filename', async () => {
     const binary = new TextEncoder().encode('file content')
     const cleanup = vi.fn()
@@ -357,6 +380,27 @@ describe('encodeAtomicStandardBody', () => {
     expect(headers['standard-server']).toBe(undefined)
     expect(headers['content-type']).toBe('custom/type')
     expect(binary).toBe(undefined)
+  })
+
+  it('encodes ReadableStream body with removed content-type header', async () => {
+    const stream = new ReadableStream()
+
+    const { jsonBody, headers, binary } = await encodeAtomicStandardBody(stream, { 'content-type': [] })
+
+    expect(jsonBody).toBe(undefined)
+    expect(headers['standard-server']).toBe(undefined)
+    expect(headers['content-type']).toEqual([])
+    expect(binary).toBe(undefined)
+
+    const { resolveBody, octetStreamMessageQueue } = toStandardBody({
+      id: '1',
+      kind: 'request',
+      json: { url: '/upload', headers, body: jsonBody },
+      binary,
+    }, vi.fn())
+
+    expect(octetStreamMessageQueue).toBeInstanceOf(Queue)
+    expect(await resolveBody()).toBeInstanceOf(ReadableStream)
   })
 
   it('encodes AsyncIteratorObject body and remove existing content-type header', async () => {
