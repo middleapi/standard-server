@@ -405,6 +405,36 @@ describe('toFetchBody', () => {
     })
   })
 
+  it('file with existing content-type header', async () => {
+    const file = new File(['<script>alert(1)</script>'], 'foo.html', { type: 'text/html' })
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': 'application/octet-stream' }, {})
+
+    expect(body).toBe(file)
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="__mocked__"',
+      'content-length': '25',
+      'content-type': 'application/octet-stream',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
+
+    const response = new Response(body, { headers: toFetchHeaders(headers) })
+    expect(response.headers.get('content-type')).toBe('application/octet-stream')
+    expect(await response.text()).toBe('<script>alert(1)</script>')
+  })
+
+  it('file with removed content-type header', () => {
+    const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+
+    const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': [] }, {})
+
+    expect(body).toBe(file)
+    expect(headers['content-type']).toEqual([])
+  })
+
   it('file with size=nan', () => {
     // BunS3 is a File instance but has an unknown size (NaN), so to support it we should return a stream in this case.
     const file = new File(['foo'], 'foo.pdf', { type: 'application/pdf' })
@@ -441,7 +471,7 @@ describe('toFetchBody', () => {
     const reader = (body as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
 
     expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
-    expect(await reader.read()).toEqual({ done: false, value: 'event: message\ndata: 123\n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: 'data: 123\n\n' })
     expect(await reader.read()).toEqual({ done: false, value: 'event: close\ndata: 456\n\n' })
   })
 

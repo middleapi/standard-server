@@ -43,3 +43,13 @@ export function anyAbortSignal(...signals: (AbortSignal | undefined)[]): AbortSi
 
   return controller.signal
 }
+
+/**
+ * Throws the signal's abort reason if it is aborted, like `signal.throwIfAborted()`.
+ * React Native's AbortSignal polyfill has no `throwIfAborted`, so use this instead.
+ */
+export function throwIfAborted(signal: AbortSignal | undefined | null): void {
+  if (signal?.aborted) {
+    throw signal.reason
+  }
+}

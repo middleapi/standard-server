@@ -1,7 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AnyFastifyReply } from './types'
-import { canWriteToNodeResponse, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
 }
@@ -17,10 +17,7 @@ export async function sendStandardResponse(
     if (!canWriteToNodeResponse(reply.raw)) {
       const error = getNodeResponseError(reply.raw)
 
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error ?? undefined)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       if (error) {
         reject(error)
@@ -32,8 +29,16 @@ export async function sendStandardResponse(
       return
     }
 
-    reply.raw.once('error', reject)
-    reply.raw.once('close', resolve)
+    const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
+
+    connection.once('error', reject)
+    connection.once('close', () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy()
+      }
+
+      resolve()
+    })
 
     try {
       reply.status(standardResponse.status)
@@ -46,14 +51,11 @@ export async function sendStandardResponse(
         }
       }
 
-      // fastify pipes and cleans up the stream body itself, no manual piping needed
+      // fastify pipes the stream body itself, no manual piping needed
       reply.send(resBody)
     }
     catch (error) {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error as any)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       // Don't destroy reply.raw: fastify's error handler can still send a response.
       reject(error)

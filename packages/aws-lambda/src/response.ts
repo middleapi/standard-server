@@ -1,7 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AwsLambdaGlobal, HttpResponseStream } from './types'
-import { canWriteToNodeResponse, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 import { toLambdaHeaders } from './headers'
 
 /**
@@ -29,10 +29,7 @@ export async function sendStandardResponse(
     if (!canWriteToNodeResponse(responseStream)) {
       const error = getNodeResponseError(responseStream)
 
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error ?? undefined)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       if (error) {
         reject(error)
@@ -44,41 +41,50 @@ export async function sendStandardResponse(
       return
     }
 
-    const [headers, setCookies] = toLambdaHeaders(resHeaders)
+    responseStream.once('error', reject)
+    responseStream.once('close', resolve)
 
-    // arms the metadata prelude (status, headers, cookies) and
-    // returns the stream the body should be written to
-    const res = awslambda.HttpResponseStream.from(responseStream, {
-      statusCode: standardResponse.status,
-      headers,
-      cookies: setCookies,
-    })
+    try {
+      const [headers, setCookies] = toLambdaHeaders(resHeaders)
 
-    res.once('error', reject)
-    res.once('close', resolve)
-
-    // The runtime only sends the armed prelude ahead of the first `write` call:
-    // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
-    res.write('')
-
-    if (resBody === undefined) {
-      // NOTE: Lambda functions don't allow passing undefined to `res.end`
-      res.end()
-    }
-    else if (typeof resBody === 'string') {
-      res.end(resBody)
-    }
-    else {
-      res.once('close', () => {
-        if (!resBody.closed) {
-          resBody.destroy(getNodeResponseError(res) ?? undefined)
-        }
+      // arms the metadata prelude (status, headers, cookies) and
+      // returns the stream the body should be written to
+      const res = awslambda.HttpResponseStream.from(responseStream, {
+        statusCode: standardResponse.status,
+        headers,
+        cookies: setCookies,
       })
 
-      // WARNING: errors that occur here are silently ignored and not reported to the Promise
-      resBody.once('error', error => res.destroy(error))
+      // The runtime only sends the armed prelude ahead of the first `write` call:
+      // `end(chunk)` bypasses it and an empty body never writes, so trigger it now
+      res.write('')
 
-      resBody.pipe(res)
+      if (resBody === undefined) {
+        // NOTE: Lambda functions don't allow passing undefined to `res.end`
+        res.end()
+      }
+      else if (typeof resBody === 'string') {
+        res.end(resBody)
+      }
+      else {
+        res.once('close', () => {
+          if (!resBody.closed) {
+            resBody.destroy(getNodeResponseError(res) ?? undefined)
+          }
+        })
+
+        resBody.once('error', error => res.destroy(error))
+
+        resBody.pipe(res)
+      }
+    }
+    catch (error) {
+      destroyNodeHttpBody(resBody, error, reject)
+
+      // Destroy instead of leaving the response half-open:
+      // the metadata prelude may be partially applied
+      responseStream.destroy(error as any)
+      reject(error)
     }
   })
 }

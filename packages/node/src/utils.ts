@@ -72,22 +72,12 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
 }
 
 /**
- * Check both the response itself and its underlying stream (http2) are still writable.
+ * Check the response can still be sent.
  */
 export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
-  if ('headersSent' in res && res.headersSent) {
-    return false
-  }
-
-  if ('stream' in res && !_canWriteToStream(res.stream)) {
-    return false
-  }
-
-  return _canWriteToStream(res)
-}
-
-function _canWriteToStream(stream: Stream.Writable): boolean {
-  return !stream.closed && !stream.destroyed && !stream.writableFinished && !stream.writableEnded
+  return !('headersSent' in res && res.headersSent)
+    && !res.writableEnded
+    && !('stream' in res ? res.stream : res).destroyed
 }
 
 /**
@@ -99,4 +89,19 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
   }
 
   return res.errored
+}
+
+/**
+ * Destroy a body that won't be sent. `onError` is attached first, so an `error`
+ * event from `destroy` is never unhandled.
+ */
+export function destroyNodeHttpBody(
+  body: Readable | string | undefined,
+  error: unknown,
+  onError: (error: Error) => void,
+): void {
+  if (typeof body === 'object' && !body.closed) {
+    body.on('error', onError)
+    body.destroy((error ?? undefined) as Error | undefined)
+  }
 }

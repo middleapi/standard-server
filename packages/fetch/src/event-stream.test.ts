@@ -110,6 +110,44 @@ describe('toAsyncIteratorObject', () => {
     expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 
+  it('treats messages without an event type as message events', async () => {
+    const stream = new ReadableStream<string>({
+      async pull(controller) {
+        controller.enqueue('data: {"order": 1}\nid: id-1\nretry: 10000\n\n')
+        controller.enqueue(': ping\nid: id-ignored\nretry: 20000\n\n')
+        controller.enqueue('event: message\ndata: {"order": 2}\n\n')
+        controller.enqueue('event:\ndata: {"order": 3}\nid: id-3\n\n')
+        controller.enqueue('data: 4\n\n')
+        controller.enqueue('data:\n\n')
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    expect(await generator.next()).toSatisfy(({ done, value }) => {
+      expect(done).toEqual(false)
+      expect(value).toStrictEqual({ order: 1 })
+      expect(getEventMeta(value)).toEqual({ id: 'id-1', retry: 10000 })
+
+      return true
+    })
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 2 } })
+
+    expect(await generator.next()).toSatisfy(({ done, value }) => {
+      expect(done).toEqual(false)
+      expect(value).toStrictEqual({ order: 3 })
+      expect(getEventMeta(value)).toEqual({ id: 'id-3' })
+
+      return true
+    })
+
+    expect(await generator.next()).toEqual({ done: false, value: 4 })
+    expect(await generator.next()).toEqual({ done: false, value: undefined })
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
+  })
+
   it('with empty stream', async () => {
     const generator = toAsyncIteratorObject(null)
     expect(generator).toSatisfy(isAsyncIteratorObject)
@@ -228,8 +266,8 @@ describe('toEventStream', () => {
       .getReader()
 
     expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\nid: id-1\ndata: {"order":1}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\nretry: 20000\ndata: {"order":2}\n\n' })
+    expect((await reader.read())).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
+    expect((await reader.read())).toEqual({ done: false, value: 'retry: 20000\ndata: {"order":2}\n\n' })
     expect((await reader.read())).toEqual({ done: false, value: 'event: message\n\n' })
     expect((await reader.read())).toEqual({ done: false, value: 'event: close\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n' })
     expect((await reader.read())).toEqual({ done: true })
@@ -247,8 +285,8 @@ describe('toEventStream', () => {
       .getReader()
 
     expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\nid: id-1\ndata: {"order":1}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\nretry: 20000\ndata: {"order":2}\n\n' })
+    expect((await reader.read())).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
+    expect((await reader.read())).toEqual({ done: false, value: 'retry: 20000\ndata: {"order":2}\n\n' })
     expect((await reader.read())).toEqual({ done: false, value: 'event: message\n\n' })
     expect((await reader.read())).toEqual({ done: false, value: 'event: close\n\n' })
     expect((await reader.read())).toEqual({ done: true })
@@ -267,8 +305,8 @@ describe('toEventStream', () => {
       .getReader()
 
     expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read()).value).toEqual('event: message\nid: id-1\ndata: {"order":1}\n\n')
-    expect((await reader.read()).value).toEqual('event: message\nretry: 20000\ndata: {"order":2}\n\n')
+    expect((await reader.read()).value).toEqual('id: id-1\ndata: {"order":1}\n\n')
+    expect((await reader.read()).value).toEqual('retry: 20000\ndata: {"order":2}\n\n')
     expect((await reader.read()).value).toEqual('event: message\n\n')
     await expect(reader.read()).rejects.toThrow('order-4')
   })
@@ -286,8 +324,8 @@ describe('toEventStream', () => {
       .getReader()
 
     expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read()).value).toEqual('event: message\nid: id-1\ndata: {"order":1}\n\n')
-    expect((await reader.read()).value).toEqual('event: message\nretry: 20000\ndata: {"order":2}\n\n')
+    expect((await reader.read()).value).toEqual('id: id-1\ndata: {"order":1}\n\n')
+    expect((await reader.read()).value).toEqual('retry: 20000\ndata: {"order":2}\n\n')
     expect((await reader.read()).value).toEqual('event: message\n\n')
     expect((await reader.read()).value).toEqual('event: error\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n')
     expect((await reader.read()).done).toEqual(true)
@@ -476,7 +514,7 @@ describe('toEventStream', () => {
       ])
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' }),
         vi.advanceTimersByTimeAsync(20),
       ])
 
@@ -491,7 +529,7 @@ describe('toEventStream', () => {
       ])
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' }),
         vi.advanceTimersByTimeAsync(20),
       ])
 
@@ -517,12 +555,12 @@ describe('toEventStream', () => {
         .getReader()
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello1"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello1"\n\n' }),
         vi.advanceTimersByTimeAsync(100),
       ])
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello2"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello2"\n\n' }),
         vi.advanceTimersByTimeAsync(100),
       ])
 
@@ -551,7 +589,7 @@ describe('toEventStream', () => {
       await expect(reader.read()).resolves.toEqual({ done: false, value: ': stream-started\n\n' })
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' }),
         vi.advanceTimersByTimeAsync(50),
       ])
 
@@ -575,92 +613,11 @@ describe('toEventStream', () => {
         .getReader()
 
       await Promise.all([
-        expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' }),
+        expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' }),
         vi.advanceTimersByTimeAsync(50),
       ])
 
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: true })
-    })
-  })
-
-  describe('empty close event', () => {
-    it('enabled by default', async () => {
-      async function* gen() {
-        yield 'hello'
-      }
-
-      const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
-      })
-
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
-
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: true })
-    })
-
-    it('disabled', async () => {
-      async function* gen() {
-        yield 'hello'
-      }
-
-      const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
-        emptyCloseEventEnabled: false,
-      })
-
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
-
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: true })
-    })
-
-    it('enabled explicitly', async () => {
-      async function* gen() {
-        yield 'hello'
-      }
-
-      const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
-        emptyCloseEventEnabled: true,
-      })
-
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
-
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: true })
-    })
-
-    it.each([true, false])('still sends close event when iterator returns a value: %s', async (emptyCloseEventEnabled) => {
-      async function* gen() {
-        yield 'hello'
-        return 'bye'
-      }
-
-      const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
-        emptyCloseEventEnabled,
-      })
-
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
-
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\ndata: "bye"\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })
   })

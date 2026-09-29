@@ -23,6 +23,10 @@ export default antfu({
         name: ['*', 'bytes'],
         message: 'Request/Blob/Response/... .bytes is not widely supported, use readAsBuffer instead',
       },
+      {
+        name: ['*', 'throwIfAborted'],
+        message: 'React Native\'s AbortSignal polyfill has no throwIfAborted, use throwIfAborted from @standard-server/shared instead',
+      },
     ],
   },
 }, {

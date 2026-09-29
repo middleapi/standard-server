@@ -4,7 +4,7 @@ import type { NodeHttpResponse } from './types'
 import { Http2ServerResponse } from 'node:http2'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import { toNodeHttpBody } from './body'
-import { canWriteToNodeResponse, getNodeResponseError } from './utils'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
 }
@@ -20,10 +20,7 @@ export async function sendStandardResponse(
     if (!canWriteToNodeResponse(res)) {
       const error = getNodeResponseError(res)
 
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error ?? undefined)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       if (error) {
         reject(error)
@@ -35,8 +32,10 @@ export async function sendStandardResponse(
       return
     }
 
-    res.once('error', reject)
-    res.once('close', resolve)
+    const connection = 'stream' in res ? res.stream : res
+
+    connection.once('error', reject)
+    connection.once('close', resolve)
 
     try {
       // DON'T use `res.writeHead` because it send response immediately in chunked mode
@@ -57,7 +56,7 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
-        res.once('close', () => {
+        connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)
           }
@@ -82,10 +81,7 @@ export async function sendStandardResponse(
       }
     }
     catch (error) {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error as any)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       // Destroy instead of leaving the response half-open: headers/status may be
       // partially applied, so the connection is no longer safe to reuse.
