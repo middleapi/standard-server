@@ -1,4 +1,4 @@
-import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
+import type { StandardBody, StandardBodyHint, StandardHeaders, StandardResponse, StandardUrl } from './types'
 import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
 const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
@@ -143,6 +143,26 @@ export async function cancelStandardBody(body: StandardBody, reason?: unknown): 
   else if (isAsyncIteratorObject(body)) {
     await body.return?.()
   }
+}
+
+/**
+ * Get the body a response can send: `undefined` when its status forbids one
+ * (204 No Content, 205 Reset Content, 304 Not Modified), so it is sent as if it had no body.
+ * A dropped stream or async iterator body is cancelled, so its source can clean up.
+ *
+ * HEAD responses and 1xx statuses are left to the runtime.
+ */
+export function getSendableResponseBody(response: StandardResponse): StandardBody {
+  const status = response.status
+
+  if (status !== 204 && status !== 205 && status !== 304) {
+    return response.body
+  }
+
+  // nothing waits on a body that is never sent, so a failed cleanup has no one to report to
+  cancelStandardBody(response.body).catch(() => {})
+
+  return undefined
 }
 
 export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): StandardHeaders {

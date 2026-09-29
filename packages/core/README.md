@@ -347,6 +347,24 @@ if (!authorized) {
 }
 ```
 
+### Statuses without a body
+
+A `204 No Content`, `205 Reset Content` or `304 Not Modified` response must not carry a body. Every HTTP adapter sends such a response as if its body were `undefined`, so a handler that returns `status: 204` with a body gets a bodiless response, without the content headers the body would have set, instead of an error. A dropped stream or async iterator body is cancelled, so its source can clean up.
+
+The adapters do this with `getSendableResponseBody()`, which returns the body a response can send. Use it when building a custom adapter:
+
+```ts
+import { getSendableResponseBody } from '@standard-server/core'
+
+getSendableResponseBody({ status: 200, headers: {}, body: { ok: true } })
+// { ok: true }
+
+getSendableResponseBody({ status: 204, headers: {}, body: { ok: true } })
+// undefined
+```
+
+HEAD responses and `1xx` statuses are left to the runtime.
+
 ## Validators
 
 Runtime type guards are useful when requests or responses cross process, transport, or message boundaries.

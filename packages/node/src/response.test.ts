@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
 import Stream from 'node:stream'
+import { AsyncIteratorClass } from '@standard-server/shared'
 import request from 'supertest'
 import * as Body from './body'
 import { sendStandardResponse } from './response'
@@ -304,6 +305,91 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('flushed')
   })
 
+  describe.each([204, 205, 304])('%s response with a body', (status) => {
+    // node sends a zero content-length for a bodiless 205, as RFC 9110 requires
+    const contentLength = status === 205 ? '0' : undefined
+
+    it('drops the body and its content headers', async () => {
+      let sending: Promise<void> | undefined
+
+      const res = await request((req: IncomingMessage, res: ServerResponse) => {
+        sending = sendStandardResponse(res, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+        })
+      }).get('/')
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(toNodeHttpBodySpy).toBeCalledWith(undefined, { 'x-custom-header': 'custom-value' }, {})
+
+      expect(res.status).toBe(status)
+      expect(res.headers['x-custom-header']).toBe('custom-value')
+      expect(res.headers['content-length']).toBe(contentLength)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.headers).not.toHaveProperty('content-disposition')
+      expect(res.headers).not.toHaveProperty('standard-server')
+      expect(res.text).toBe('')
+    })
+
+    it('sends the response and returns an event-stream body', async () => {
+      const cleanup = vi.fn()
+      const body = new AsyncIteratorClass(() => new Promise<never>(() => {}), cleanup)
+
+      let sending: Promise<void> | undefined
+
+      // node ignores body writes for these statuses without flushing the headers,
+      // so a piped event stream that never ends would never send the response
+      const res = await request((req: IncomingMessage, res: ServerResponse) => {
+        sending = sendStandardResponse(res, { status, headers: {}, body })
+      }).get('/')
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(status)
+      expect(res.headers['content-length']).toBe(contentLength)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.text).toBe('')
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+
+    it('cancels a stream body', async () => {
+      const cancel = vi.fn()
+
+      const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+        await sendStandardResponse(res, { status, headers: {}, body: new ReadableStream({ cancel }) })
+      }).get('/')
+
+      expect(res.status).toBe(status)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.headers).not.toHaveProperty('standard-server')
+
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('sends the response over http2', async () => {
+      const cleanup = vi.fn()
+      const body = new AsyncIteratorClass(() => new Promise<never>(() => {}), cleanup)
+
+      let sending: Promise<void> | undefined
+
+      // http2 ends the stream with the headers, so writing a body would reject
+      const response = await requestHttp2('GET', (_, res) => {
+        sending = sendStandardResponse(res, { status, headers: { 'x-custom-header': 'custom-value' }, body })
+      })
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({ ':status': status, 'x-custom-header': 'custom-value' })
+      expect(response.headers).not.toHaveProperty('content-type')
+      expect(response.body).toBe('')
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+  })
+
   describe('stream destroy while sending', () => {
     it('with error', async () => {
       let clean = false
@@ -506,7 +592,7 @@ describe('sendStandardResponse', () => {
     it('sends the status and headers', async () => {
       let sending: Promise<void> | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2('HEAD', (_, res) => {
         sending = sendStandardResponse(res, {
           status: 201,
           headers: { 'x-custom-header': 'custom-value' },
@@ -539,7 +625,7 @@ describe('sendStandardResponse', () => {
 
       let sending: Promise<void> | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2('HEAD', (_, res) => {
         sending = sendStandardResponse(res, { status: 201, headers: {}, body })
         sending.catch(() => {})
       })
@@ -611,7 +697,8 @@ describe('sendStandardResponse', () => {
   })
 })
 
-async function requestHttp2Head(
+async function requestHttp2(
+  method: 'GET' | 'HEAD',
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
 ): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
   const server = http2.createServer(listener)
@@ -620,7 +707,7 @@ async function requestHttp2Head(
   const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
 
   try {
-    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    const reqStream = client.request({ ':path': '/', ':method': method })
 
     const chunks: Buffer[] = []
     reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))

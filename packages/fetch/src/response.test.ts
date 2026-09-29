@@ -38,11 +38,11 @@ describe('toFetchResponse', () => {
   })
 
   describe('releases the body when the response cannot be built', () => {
-    it('event-stream body when the status cannot have a body', async () => {
+    it('event-stream body when a header is invalid', async () => {
       const next = vi.fn(() => new Promise<never>(() => {}))
       const cleanup = vi.fn()
 
-      expect(() => toFetchResponse({ status: 204, headers: {}, body: new AsyncIteratorClass(next, cleanup) })).toThrow(TypeError)
+      expect(() => toFetchResponse({ status: 200, headers: { 'x-custom-header': 'a\nb' }, body: new AsyncIteratorClass(next, cleanup) })).toThrow(TypeError)
 
       // the event stream starts pulling right away, so it must be cancelled to stop
       // the keep-alive interval and release the pending iterator
@@ -63,6 +63,58 @@ describe('toFetchResponse', () => {
 
       // a locked stream rejects `cancel()`, which must not surface as an unhandled rejection
       expect(() => toFetchResponse({ status: 200, headers: {}, body })).toThrow(/locked/)
+    })
+  })
+
+  describe.each([204, 205, 304])('%s response with a body', (status) => {
+    it.each([
+      ['json', { ok: true }],
+      ['file', new File(['foo'], 'foo.txt', { type: 'text/plain' })],
+      ['form-data', new FormData()],
+      ['url-search-params', new URLSearchParams('foo=bar')],
+    ])('drops a %s body and its content headers', async (_, body) => {
+      const response = toFetchResponse({ status, headers: { 'x-custom-header': 'custom-value', 'etag': '"1"' }, body })
+
+      expect(toFetchBodySpy).toBeCalledWith(undefined, { 'x-custom-header': 'custom-value', 'etag': '"1"' }, {})
+
+      expect(response.status).toBe(status)
+      expect(response.body).toBe(null)
+      expect([...response.headers]).toEqual([
+        ['etag', '"1"'],
+        ['x-custom-header', 'custom-value'],
+      ])
+    })
+
+    it('drops the content headers set for a stream body', () => {
+      const response = toFetchResponse({
+        status,
+        headers: { 'content-type': 'text/plain', 'content-length': '3', 'standard-server': 'file' },
+        body: new ReadableStream(),
+      })
+
+      expect(response.status).toBe(status)
+      expect(response.body).toBe(null)
+      expect([...response.headers]).toEqual([])
+    })
+
+    it('cancels a stream body', () => {
+      const cancel = vi.fn()
+
+      const response = toFetchResponse({ status, headers: {}, body: new ReadableStream({ cancel }) })
+
+      expect(response.body).toBe(null)
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('returns an event-stream body', async () => {
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const cleanup = vi.fn()
+
+      const response = toFetchResponse({ status, headers: {}, body: new AsyncIteratorClass(next, cleanup) })
+
+      expect(response.body).toBe(null)
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' }))
+      expect(next).not.toHaveBeenCalled()
     })
   })
 })

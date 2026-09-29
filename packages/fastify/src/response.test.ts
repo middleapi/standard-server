@@ -284,6 +284,95 @@ describe('sendStandardResponse', () => {
     expect(res.headers['set-cookie']).toEqual(['foo=bar', 'bar=baz'])
   })
 
+  describe.each([204, 205, 304])('%s response with a body', (status) => {
+    // fastify sends a zero content-length for a bodiless 205, as RFC 9110 requires
+    const contentLength = status === 205 ? '0' : undefined
+
+    it('drops the body and its content headers', async ({ onTestFinished }) => {
+      let sendSpy: any
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        sendSpy = vi.spyOn(reply, 'send')
+
+        await sendStandardResponse(reply, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+        })
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).get('/')
+
+      expect(toNodeHttpBodySpy).toBeCalledWith(undefined, { 'x-custom-header': 'custom-value' }, {})
+      expect(sendSpy).toBeCalledWith(undefined)
+
+      expect(res.status).toBe(status)
+      expect(res.headers['x-custom-header']).toBe('custom-value')
+      expect(res.headers['content-length']).toBe(contentLength)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.headers).not.toHaveProperty('content-disposition')
+      expect(res.headers).not.toHaveProperty('standard-server')
+      expect(res.text).toBe('')
+    })
+
+    it('sends the response and returns an event-stream body', async ({ onTestFinished }) => {
+      const returnSpy = vi.fn(async () => ({ done: true, value: undefined }))
+      const body = {
+        next: () => new Promise<never>(() => {}),
+        return: returnSpy,
+        [Symbol.asyncIterator]() {
+          return this
+        },
+      }
+
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, { status, headers: {}, body })
+        await sending
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).get('/')
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(status)
+      expect(res.headers['content-length']).toBe(contentLength)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.text).toBe('')
+
+      expect(returnSpy).toHaveBeenCalledOnce()
+    })
+
+    it('cancels a stream body', async ({ onTestFinished }) => {
+      const cancel = vi.fn()
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        await sendStandardResponse(reply, { status, headers: {}, body: new ReadableStream({ cancel }) })
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).get('/')
+
+      expect(res.status).toBe(status)
+      expect(res.headers).not.toHaveProperty('content-type')
+      expect(res.headers).not.toHaveProperty('standard-server')
+
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('edge case', () => {
     it('error while pulling stream', async ({ onTestFinished }) => {
       const fastify = Fastify()

@@ -1,6 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AnyFastifyReply } from './types'
+import { getSendableResponseBody } from '@standard-server/core'
 import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
@@ -11,7 +12,7 @@ export async function sendStandardResponse(
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, resHeaders] = toNodeHttpBody(standardResponse.body, standardResponse.headers, options)
+  const [resBody, resHeaders] = toNodeHttpBody(getSendableResponseBody(standardResponse), standardResponse.headers, options)
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(reply.raw)) {

@@ -1,5 +1,5 @@
 import { AsyncIteratorClass } from '@standard-server/shared'
-import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
+import { cancelStandardBody, flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition, getSendableResponseBody, mergeStandardHeaders, parseStandardUrl, resolveStandardBodyHint } from './utils'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -256,6 +256,61 @@ describe('cancelStandardBody', () => {
     await expect(cancelStandardBody(new AsyncIteratorClass(async () => ({ done: true, value: undefined }), async () => {
       throw error
     }))).rejects.toBe(error)
+  })
+})
+
+describe('getSendableResponseBody', () => {
+  it.each([200, 201, 206, 404, 500])('keeps the body of a %s response', (status) => {
+    const cancel = vi.fn()
+    const stream = new ReadableStream({ cancel })
+    const json = { key: 'val' }
+
+    expect(getSendableResponseBody({ status, headers: {}, body: stream })).toBe(stream)
+    expect(getSendableResponseBody({ status, headers: {}, body: json })).toBe(json)
+    expect(getSendableResponseBody({ status, headers: {}, body: undefined })).toBe(undefined)
+
+    expect(cancel).not.toHaveBeenCalled()
+  })
+
+  describe.each([204, 205, 304])('%s response', (status) => {
+    it('drops the body', () => {
+      expect(getSendableResponseBody({ status, headers: {}, body: { key: 'val' } })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: 'text' })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: new Blob(['x']) })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: new URLSearchParams('a=1') })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: new FormData() })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: undefined })).toBe(undefined)
+    })
+
+    it('cancels a ReadableStream body', () => {
+      const cancel = vi.fn()
+
+      expect(getSendableResponseBody({ status, headers: {}, body: new ReadableStream({ cancel }) })).toBe(undefined)
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('returns an AsyncIterator body', async () => {
+      const cleanup = vi.fn()
+
+      expect(getSendableResponseBody({ status, headers: {}, body: new AsyncIteratorClass(async () => ({ done: true, value: undefined }), cleanup) })).toBe(undefined)
+
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' }))
+    })
+
+    it('ignores a failed cleanup', async () => {
+      const locked = new ReadableStream()
+      locked.getReader()
+
+      const cleanup = vi.fn(async () => {
+        throw new Error('cleanup failed')
+      })
+
+      // a rejected cleanup must not surface as an unhandled rejection
+      expect(getSendableResponseBody({ status, headers: {}, body: locked })).toBe(undefined)
+      expect(getSendableResponseBody({ status, headers: {}, body: new AsyncIteratorClass(async () => ({ done: true, value: undefined }), cleanup) })).toBe(undefined)
+
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+    })
   })
 })
 

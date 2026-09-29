@@ -1,5 +1,6 @@
 import type { StandardLazyResponse, StandardResponse } from '@standard-server/core'
 import type { ToFetchBodyOptions } from './body'
+import { getSendableResponseBody } from '@standard-server/core'
 import { toFetchBody, toStandardBody } from './body'
 import { toFetchHeaders, toStandardHeaders } from './headers'
 
@@ -10,7 +11,7 @@ export function toFetchResponse(
   standardResponse: StandardResponse,
   options: ToFetchResponseOptions = {},
 ): Response {
-  const [body, standardHeaders] = toFetchBody(standardResponse.body, standardResponse.headers, options)
+  const [body, standardHeaders] = toFetchBody(getSendableResponseBody(standardResponse), standardResponse.headers, options)
 
   try {
     const response = new Response(body, {

@@ -3,6 +3,7 @@ import type { HttpResponseStream } from './types'
 import { Buffer } from 'node:buffer'
 import Stream from 'node:stream'
 import * as StandardServerNode from '@standard-server/node'
+import { AsyncIteratorClass } from '@standard-server/shared'
 import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
@@ -179,6 +180,66 @@ describe('sendStandardResponse', () => {
 
     expect(bodyOf(responseStream)).toBe('')
     expect(responseStream.writableEnded).toBe(true)
+  })
+
+  describe.each([204, 205, 304])('%s response with a body', (status) => {
+    it('drops the body and its content headers', async () => {
+      const responseStream = createResponseStream()
+
+      await sendStandardResponse(responseStream, {
+        status,
+        headers: {
+          'x-custom-header': 'custom-value',
+          'set-cookie': ['foo=bar'],
+        },
+        body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+      })
+
+      expect(toNodeHttpBodySpy).toBeCalledWith(undefined, {
+        'x-custom-header': 'custom-value',
+        'set-cookie': ['foo=bar'],
+      }, {})
+
+      expect(metadataOf(responseStream)).toEqual({
+        statusCode: status,
+        headers: {
+          'x-custom-header': 'custom-value',
+        },
+        cookies: ['foo=bar'],
+      })
+
+      expect(bodyOf(responseStream)).toBe('')
+      expect(responseStream.writableEnded).toBe(true)
+    })
+
+    it('returns an event-stream body', async () => {
+      const responseStream = createResponseStream()
+
+      const cleanup = vi.fn()
+      const body = new AsyncIteratorClass(() => new Promise<never>(() => {}), cleanup)
+
+      await sendStandardResponse(responseStream, { status, headers: {}, body })
+
+      expect(metadataOf(responseStream)).toEqual({ statusCode: status, headers: {}, cookies: [] })
+      expect(bodyOf(responseStream)).toBe('')
+      expect(responseStream.writableEnded).toBe(true)
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+
+    it('cancels a stream body', async () => {
+      const responseStream = createResponseStream()
+
+      const cancel = vi.fn()
+
+      await sendStandardResponse(responseStream, { status, headers: {}, body: new ReadableStream({ cancel }) })
+
+      expect(metadataOf(responseStream)).toEqual({ statusCode: status, headers: {}, cookies: [] })
+      expect(bodyOf(responseStream)).toBe('')
+      expect(responseStream.writableEnded).toBe(true)
+
+      expect(cancel).toHaveBeenCalledOnce()
+    })
   })
 
   it('destroys the response stream when the body stream errors during streaming', async () => {
