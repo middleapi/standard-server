@@ -15,7 +15,7 @@ interface ClientPeerRequestStateInternal {
   eventStreamTransmitter?: EventStreamTransmitter | undefined
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
   removeAbortListener?: (() => void) | undefined
-  cancelSent?: boolean | undefined
+  requestSent?: boolean | undefined
 }
 
 export class ClientPeer {
@@ -89,16 +89,14 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
+      state.requestSent = true
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
-        if (state.cancelSent) {
-          /**
-           * The cancel may have overtaken the request message, and the server ignores
-           * cancels for requests it has not seen, so send it again now that the request is sent.
-           * A failed cancel delivery must not surface as an unhandled rejection.
-           */
-          void this.send({ id, kind: 'cancel' }).catch(() => {})
+        if (request.signal?.aborted) {
+          // the cancel was held back until the request message is sent (see abortById)
+          // a failed cancel delivery must not replace the abort reason
+          await this.send({ id, kind: 'cancel' }).catch(() => {})
         }
 
         return
@@ -275,12 +273,12 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    // sent right away even while the request message is in flight (transmitRequest resends it afterwards):
-    // some transports only resolve `send` once the server has handled the request, which only this cancel can abort
-    state.cancelSent = true
-
     const promises = [
-      this.send({ id, kind: 'cancel' }),
+      /**
+       * Sent before the request message, a cancel could reach the server first, and the server
+       * ignores cancels for requests it has not seen. transmitRequest sends it once the request is sent.
+       */
+      state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
       state.eventStreamTransmitter?.cancel(),
       state.octetStreamTransmitter?.cancel(),
     ]

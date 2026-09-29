@@ -221,9 +221,10 @@ describe('clientPeer', () => {
       const error = new Error('aborted during send')
       controller.abort(error)
 
-      // cancel right away, in case the transport only resolves `send` once the server handled the request
+      // the request settles right away, but the cancel must not overtake the request message
       await expect(promise).rejects.toBe(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
 
       return { id, error, requestSent }
     }
@@ -246,7 +247,6 @@ describe('clientPeer', () => {
       controller.abort(error)
 
       await expect(promise).rejects.toThrow(error)
-      await sleep(1) // the cancel is not sent again
       expect(send).toHaveBeenCalledTimes(2)
       expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
     })
@@ -260,8 +260,8 @@ describe('clientPeer', () => {
       controller.abort(new Error('aborted during encode'))
 
       await expect(promise).rejects.toThrow('aborted during encode')
-      // the request message is never sent, only the cancel
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['cancel'])
+      // the request message is never sent, so neither is a cancel
+      expect(send).not.toHaveBeenCalled()
     })
 
     it('throws when signal aborted during send', async () => {
@@ -274,11 +274,9 @@ describe('clientPeer', () => {
         peer.request(makeRequest({ signal: controller.signal })),
       ).rejects.toThrow('aborted during send')
 
-      // the cancel sent during the request message may overtake it, so it is sent again afterwards
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3))
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
       const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
       expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
-      expect(send).toHaveBeenNthCalledWith(3, { id, kind: 'cancel' })
     })
 
     it('rejects when send throws', async () => {
@@ -298,7 +296,7 @@ describe('clientPeer', () => {
       await expect(promise).rejects.toThrow(error)
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['cancel'])
+      expect(send).not.toHaveBeenCalled()
     })
 
     it('returns an event-stream request body when the peer is closed while encoding', async () => {
@@ -351,29 +349,28 @@ describe('clientPeer', () => {
       await expect(peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal }))).rejects.toBe(error)
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel', 'cancel'])
-    })
-
-    it('sends the cancel message again once the in-flight request message is sent', async () => {
-      const { id, requestSent } = await abortWhileSendingRequest()
-
-      // the first cancel may have overtaken the request message
-      requestSent.resolve()
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3))
-      expect(send).toHaveBeenNthCalledWith(3, { id, kind: 'cancel' })
-    })
-
-    it('does not send the cancel message again when the in-flight request message fails to send', async () => {
-      const cancel = vi.fn()
-      const { requestSent } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
-
-      // the server never received the request, so the first cancel is enough
-      requestSent.reject(new Error('transport down'))
-      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
-    it('silently ignores transport failures when sending the cancel message again', async () => {
+    it('sends the cancel message once the in-flight request message is sent', async () => {
+      const { id, requestSent } = await abortWhileSendingRequest()
+
+      requestSent.resolve()
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+      expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+    })
+
+    it('does not send a cancel message when the in-flight request message fails to send', async () => {
+      const cancel = vi.fn()
+      const { requestSent } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
+
+      // the server never received the request, so there is nothing to cancel there
+      requestSent.reject(new Error('transport down'))
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
+
+    it('ignores transport failures when sending the cancel message after the request message', async () => {
       const cancel = vi.fn()
       const { error, requestSent } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
       send.mockRejectedValueOnce(new Error('transport down'))
@@ -382,7 +379,7 @@ describe('clientPeer', () => {
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       // the failed cancel delivery does not replace the abort reason
       expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel', 'cancel'])
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
     it('rejects pending request on server abort', async () => {

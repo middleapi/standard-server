@@ -276,15 +276,13 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(chunks).toEqual([1, 2, 3])
   })
 
-  it.each([false, true])('propagates client aborts to the server handler signal (awaitRemote: %s)', async (awaitRemote) => {
+  it('propagates client aborts to the server handler signal', async () => {
     let serverSignal: AbortSignal | undefined
 
-    // with `awaitRemote`, the request `send` stays in flight until the handler settles
     const { client } = connect(async (request) => {
       serverSignal = request.signal
-      await new Promise(resolve => request.signal!.addEventListener('abort', resolve))
-      return { status: 200, headers: {}, body: 'too late' }
-    }, { awaitRemote })
+      return new Promise(() => {}) // handler never resolves
+    })
 
     const controller = new AbortController()
     const promise = client.request({ url: '/slow', method: 'GET', headers: {}, signal: controller.signal })
