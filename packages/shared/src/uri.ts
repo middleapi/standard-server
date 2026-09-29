@@ -23,13 +23,19 @@ export function safeDecodeURIComponent(value: string): string {
     return value
   }
 
-  return value.replace(PERCENT_ESCAPES_REGEX, (escapes) => {
-    try {
-      // eslint-disable-next-line no-restricted-globals
-      return decodeURIComponent(escapes)
-    }
-    catch {
-      return escapes
-    }
-  })
+  try {
+    // eslint-disable-next-line no-restricted-globals
+    return decodeURIComponent(value)
+  }
+  catch {
+    return value.replace(PERCENT_ESCAPES_REGEX, (escapes) => {
+      try {
+        // eslint-disable-next-line no-restricted-globals
+        return decodeURIComponent(escapes)
+      }
+      catch {
+        return escapes
+      }
+    })
+  }
 }
