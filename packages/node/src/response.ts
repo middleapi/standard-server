@@ -2,7 +2,7 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import type { NodeHttpResponse } from './types'
 import { toNodeHttpBody } from './body'
-import { canWriteToNodeResponse, getNodeResponseError } from './utils'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
 }
@@ -18,10 +18,7 @@ export async function sendStandardResponse(
     if (!canWriteToNodeResponse(res)) {
       const error = getNodeResponseError(res)
 
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error ?? undefined)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       if (error) {
         reject(error)
@@ -70,10 +67,7 @@ export async function sendStandardResponse(
       }
     }
     catch (error) {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error as any)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       // Destroy instead of leaving the response half-open: headers/status may be
       // partially applied, so the connection is no longer safe to reuse.

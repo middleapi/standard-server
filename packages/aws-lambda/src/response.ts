@@ -1,7 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import type { AwsLambdaGlobal, HttpResponseStream } from './types'
-import { canWriteToNodeResponse, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
 import { toLambdaHeaders } from './headers'
 
 /**
@@ -29,10 +29,7 @@ export async function sendStandardResponse(
     if (!canWriteToNodeResponse(responseStream)) {
       const error = getNodeResponseError(responseStream)
 
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.on('error', reject)
-        resBody.destroy(error ?? undefined)
-      }
+      destroyNodeHttpBody(resBody, error, reject)
 
       if (error) {
         reject(error)
