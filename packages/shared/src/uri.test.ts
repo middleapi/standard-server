@@ -28,9 +28,16 @@ describe('safeDecodeURIComponent', () => {
     expect(safeDecodeURIComponent('')).toBe('')
   })
 
-  it('returns malformed input unchanged instead of throwing', () => {
-    expect(safeDecodeURIComponent('invalid%20value%')).toBe('invalid%20value%')
+  it('keeps malformed escapes as-is and still decodes the valid ones instead of throwing', () => {
+    expect(safeDecodeURIComponent('invalid%20value%')).toBe('invalid value%')
     expect(safeDecodeURIComponent('%E0%A4%A')).toBe('%E0%A4%A') // Invalid UTF-8 sequence
     expect(safeDecodeURIComponent('%ZZ')).toBe('%ZZ')
+    expect(safeDecodeURIComponent('%E4%B8%AD%ZZ.txt')).toBe('中%ZZ.txt')
+    expect(safeDecodeURIComponent('%ZZ%e4%b8%ad%')).toBe('%ZZ中%')
+    expect(safeDecodeURIComponent('%FF-%E2%82%AC')).toBe('%FF-€')
+    // a run of escapes that is not valid UTF-8 is kept as a whole
+    expect(safeDecodeURIComponent('%E4%B8%AD%FF%')).toBe('%E4%B8%AD%FF%')
+    // decoded output is not decoded again
+    expect(safeDecodeURIComponent('%2541%ZZ')).toBe('%41%ZZ')
   })
 })
