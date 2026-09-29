@@ -523,7 +523,7 @@ describe('sendStandardResponse', () => {
       expect(response.body).toBe('')
     })
 
-    it('releases a stream body once the stream closes', async () => {
+    it('rejects and releases a stream body it cannot send', async () => {
       let clean = false
       const body = (async function* () {
         try {
@@ -541,9 +541,10 @@ describe('sendStandardResponse', () => {
 
       const response = await requestHttp2Head((_, res) => {
         sending = sendStandardResponse(res, { status: 201, headers: {}, body })
+        sending.catch(() => {})
       })
 
-      await expect(sending).resolves.toBeUndefined()
+      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
       expect(response.headers).toMatchObject({
         ':status': 201,
@@ -554,6 +555,58 @@ describe('sendStandardResponse', () => {
       await vi.waitFor(() => {
         expect(clean).toBe(true)
       })
+    })
+  })
+
+  describe('http2 stream reset by the client', () => {
+    it.each([
+      ['resolves on a cancel', http2.constants.NGHTTP2_CANCEL, undefined],
+      ['rejects with the stream error on an error code', http2.constants.NGHTTP2_INTERNAL_ERROR, 'ERR_HTTP2_STREAM_ERROR'],
+    ])('%s', async (_, code, errorCode) => {
+      let clean = false
+      const body = (async function* () {
+        try {
+          while (true) {
+            yield 'foo'
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        finally {
+          clean = true
+        }
+      })()
+
+      let sending: Promise<void> | undefined
+
+      const server = http2.createServer((req, res) => {
+        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
+      })
+      await new Promise<void>(r => server.listen(0, r))
+
+      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+      try {
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.once('error', () => {})
+
+        await new Promise(r => reqStream.once('data', r))
+        reqStream.close(code)
+
+        if (errorCode) {
+          await expect(sending).rejects.toMatchObject({ code: errorCode })
+        }
+        else {
+          await expect(sending).resolves.toBeUndefined()
+        }
+
+        await vi.waitFor(() => {
+          expect(clean).toBe(true)
+        })
+      }
+      finally {
+        client.close()
+        await new Promise(r => server.close(r))
+      }
     })
   })
 })

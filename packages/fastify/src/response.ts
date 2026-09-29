@@ -34,7 +34,7 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
 
-    reply.raw.once('error', reject)
+    connection.once('error', reject)
     connection.once('close', () => {
       if (typeof resBody === 'object' && !resBody.closed) {
         resBody.destroy()

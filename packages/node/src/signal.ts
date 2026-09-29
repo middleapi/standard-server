@@ -18,7 +18,7 @@ export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSig
     onClose()
   }
   else {
-    res.once('error', error => controller.abort(error))
+    stream.once('error', error => controller.abort(error))
     stream.once('close', onClose)
   }
 

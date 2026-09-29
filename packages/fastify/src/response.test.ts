@@ -642,7 +642,7 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('releases the body on an explicit http2 HEAD route', async ({ onTestFinished }) => {
+    it('rejects and releases the body on an explicit http2 HEAD route', async ({ onTestFinished }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
 
@@ -651,12 +651,12 @@ describe('sendStandardResponse', () => {
 
       fastify.head('/', async (req, reply) => {
         sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
-        await sending
+        await sending.catch(() => {})
       })
 
       const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
 
-      await expect(sending).resolves.toBeUndefined()
+      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
       expect(response.headers).toMatchObject({ ':status': 201, 'x-custom-header': 'custom-value' })
       expect(response.body).toBe('')
@@ -664,6 +664,34 @@ describe('sendStandardResponse', () => {
       await vi.waitFor(() => {
         expect(isReleased()).toBe(true)
       })
+    })
+  })
+
+  it('rejects with the stream error when the client resets an http2 stream with an error code', async ({ onTestFinished }) => {
+    const { body, isReleased } = createEndlessBody()
+    let sending: Promise<void> | undefined
+
+    const fastify = Fastify({ http2: true })
+    onTestFinished(() => fastify.close())
+
+    fastify.get('/', async (req, reply) => {
+      sending = sendStandardResponse(reply, { status: 200, headers: {}, body })
+      await sending.catch(() => {})
+    })
+
+    const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+    onTestFinished(() => client.close())
+
+    const reqStream = client.request({ ':path': '/' })
+    reqStream.once('error', () => {})
+
+    await new Promise(r => reqStream.once('data', r))
+    reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR)
+
+    await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP2_STREAM_ERROR' })
+
+    await vi.waitFor(() => {
+      expect(isReleased()).toBe(true)
     })
   })
 })

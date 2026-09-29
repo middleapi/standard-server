@@ -35,7 +35,7 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in res ? res.stream : res
 
-    res.once('error', reject)
+    connection.once('error', reject)
     connection.once('close', resolve)
 
     try {
