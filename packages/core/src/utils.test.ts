@@ -22,7 +22,23 @@ describe('generateContentDisposition', () => {
     expect(generateContentDisposition('a\\b.txt')).toEqual('inline; filename="a\\\\b.txt"; filename*=utf-8\'\'a%5Cb.txt')
     // a trailing backslash must not escape the closing quote
     expect(generateContentDisposition('a\\')).toEqual('inline; filename="a\\\\"; filename*=utf-8\'\'a%5C')
-    expect(generateContentDisposition('a\\"; injected=x')).toEqual('inline; filename="a\\\\\\"; injected=x"; filename*=utf-8\'\'a%5C%22%3B%20injected%3Dx')
+    expect(generateContentDisposition('a\\"; injected=x')).toEqual('inline; filename="a\\\\\\"_ injected_x"; filename*=utf-8\'\'a%5C%22%3B%20injected%3Dx')
+  })
+
+  it('round-trip through getFilenameFromContentDisposition', () => {
+    const filenames = [
+      '',
+      'test.txt',
+      'invoice;filename*=utf-8\'\'invoice.exe;.pdf',
+      'a;filename="evil.exe".txt',
+      'a\\"; filename=evil.exe',
+      '!@#$%^%^&*()\'"=;.txt',
+      'テンプレ\'";ート.txt',
+    ]
+
+    for (const filename of filenames) {
+      expect(getFilenameFromContentDisposition(generateContentDisposition(filename))).toEqual(filename)
+    }
   })
 
   it('escape non-ASCII filenames', () => {
@@ -79,6 +95,25 @@ it('getFilenameFromContentDisposition', () => {
   expect(getFilenameFromContentDisposition('attachment; filename*=us-ascii\'en\'test.txt')).toEqual('test.txt')
   expect(getFilenameFromContentDisposition('attachment; filename*=iso-8859-1\'\'%E9.txt; filename="fallback.txt"')).toEqual('fallback.txt')
   expect(getFilenameFromContentDisposition('attachment; filename*=iso-8859-1\'\'%E9.txt')).toEqual(undefined)
+
+  // ';' and parameters inside a quoted-string are part of the value
+  expect(getFilenameFromContentDisposition('inline; filename="invoice;filename*=utf-8\'\'invoice.exe;.pdf"; filename*=utf-8\'\'invoice%3Bfilename%2A%3Dutf-8%27%27invoice.exe%3B.pdf')).toEqual('invoice;filename*=utf-8\'\'invoice.exe;.pdf')
+  expect(getFilenameFromContentDisposition('inline; filename="report;filename*=utf-8\'\'evil.exe"')).toEqual('report;filename*=utf-8\'\'evil.exe')
+  expect(getFilenameFromContentDisposition('inline; filename="a;filename=evil.exe"')).toEqual('a;filename=evil.exe')
+  expect(getFilenameFromContentDisposition('inline; x="; filename=evil.exe"; filename="good.txt"')).toEqual('good.txt')
+  expect(getFilenameFromContentDisposition('inline; x="\\"; filename=evil.exe"; filename="good.txt"')).toEqual('good.txt')
+
+  // an unterminated quoted-string runs to the end of the header
+  expect(getFilenameFromContentDisposition('inline; filename="a.txt; filename*=utf-8\'\'evil.exe')).toEqual(undefined)
+  expect(getFilenameFromContentDisposition('inline; x="; filename*=utf-8\'\'evil.exe')).toEqual(undefined)
+  expect(getFilenameFromContentDisposition('inline; filename="a\\"')).toEqual(undefined)
+
+  // quoted filename* is tolerated
+  expect(getFilenameFromContentDisposition('attachment; filename*="utf-8\'\'%E2%82%AC.txt"')).toEqual('€.txt')
+
+  // whitespace around '=' and parameter names are case-insensitive
+  expect(getFilenameFromContentDisposition('attachment; FileName = "test.txt"')).toEqual('test.txt')
+  expect(getFilenameFromContentDisposition('attachment; FILENAME*= UTF-8\'\'test.txt')).toEqual('test.txt')
 })
 
 describe('resolveStandardBodyHint', () => {

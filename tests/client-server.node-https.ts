@@ -5,6 +5,7 @@ import * as https from 'node:https'
 import { Readable } from 'node:stream'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
+import { throwIfAborted } from '@standard-server/shared'
 import { generateTlsCert } from './tls'
 
 export function createNodeHttpsClientServerTest(): ClientServerTest {
@@ -39,7 +40,7 @@ export function createNodeHttpsClientServerTest(): ClientServerTest {
   })
 
   const request: ClientServerTest['request'] = vi.fn(async (standardRequest) => {
-    standardRequest.signal?.throwIfAborted()
+    throwIfAborted(standardRequest.signal)
 
     const { agent, port } = await serverReady
 

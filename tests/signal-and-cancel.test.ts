@@ -55,7 +55,7 @@ describe.each([
 ] as const)('signal and cancel: $0', (adapter, createClientServer) => {
   const clientServer = createClientServer()
 
-  it('never aborted', async () => {
+  it.each(['GET', 'HEAD'])('never aborted: %s', async (method) => {
     let serverSignal!: AbortSignal
 
     clientServer.handler.mockImplementationOnce(async ({ signal }) => {
@@ -66,14 +66,14 @@ describe.each([
       return {
         headers: {},
         status: 200,
-        body: 'Hello',
+        body: method === 'HEAD' ? undefined : 'Hello',
       }
     })
 
     const response = await clientServer.request({
       headers: {},
       body: undefined,
-      method: 'GET',
+      method,
       url: '/',
     })
 

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
-import { canWriteToNodeResponse, getNodeResponseError, toWebReadableStream } from './utils'
+import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toWebReadableStream } from './utils'
 
 describe('canWriteToNodeResponse', () => {
   it('on http1 response aborted by client', async ({ onTestFinished }) => {
@@ -178,6 +178,39 @@ describe('canWriteToNodeResponse', () => {
 
     await handled
   })
+
+  it('on http2 HEAD response, whose stream Node already ended', async ({ onTestFinished }) => {
+    const server = http2.createServer()
+    onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+    const handled = new Promise<void>((resolve, reject) => {
+      server.on('request', async (req, res) => {
+        try {
+          expect(res.stream.writableEnded).toBe(true)
+          expect(canWriteToNodeResponse(res)).toBe(true)
+
+          res.end()
+
+          expect(canWriteToNodeResponse(res)).toBe(false)
+
+          resolve()
+        }
+        catch (error) {
+          reject(error)
+        }
+      })
+    })
+
+    await new Promise<void>(r => server.listen(0, r))
+    const port = (server.address() as any).port
+
+    const client = http2.connect(`http://localhost:${port}`)
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    reqStream.resume()
+    reqStream.once('close', () => client.close())
+
+    await handled
+  })
 })
 
 describe('getNodeResponseError', () => {
@@ -317,6 +350,76 @@ describe('getNodeResponseError', () => {
     reqStream.once('end', () => client.close())
 
     await handled
+  })
+})
+
+describe('destroyNodeHttpBody', () => {
+  it('ignores non-stream bodies', () => {
+    const onError = vi.fn()
+
+    destroyNodeHttpBody(undefined, new Error('test'), onError)
+    destroyNodeHttpBody('body', new Error('test'), onError)
+
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('ignores an already-closed stream', async () => {
+    const body = new Readable({ read() {} })
+    body.destroy()
+    await new Promise<void>(r => body.once('close', () => r()))
+
+    const destroy = vi.spyOn(body, 'destroy')
+    const onError = vi.fn()
+
+    destroyNodeHttpBody(body, new Error('test'), onError)
+
+    expect(destroy).not.toHaveBeenCalled()
+    expect(body.listenerCount('error')).toBe(0)
+  })
+
+  it('destroys an open stream with the error, routing the error event to onError', async () => {
+    const body = new Readable({ read() {} })
+    const error = new Error('test')
+    const onError = vi.fn()
+
+    destroyNodeHttpBody(body, error, onError)
+
+    expect(body.errored).toBe(error)
+
+    await new Promise<void>(r => body.once('close', () => r()))
+
+    expect(onError.mock.calls).toEqual([[error]])
+  })
+
+  it('destroys an open stream with undefined, not null, when there is no error', async () => {
+    const body = new Readable({ read() {} })
+    const destroy = vi.spyOn(body, 'destroy')
+    const onError = vi.fn()
+
+    destroyNodeHttpBody(body, null, onError)
+
+    expect(destroy.mock.calls).toEqual([[undefined]])
+
+    await new Promise<void>(r => body.once('close', () => r()))
+
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('routes an error raised while tearing the stream down to onError', async () => {
+    const error = new Error('teardown')
+    const body = new Readable({
+      read() {},
+      destroy(_, callback) {
+        callback(error)
+      },
+    })
+    const onError = vi.fn()
+
+    destroyNodeHttpBody(body, undefined, onError)
+
+    await new Promise<void>(r => body.once('close', () => r()))
+
+    expect(onError).toHaveBeenCalledWith(error)
   })
 })
 

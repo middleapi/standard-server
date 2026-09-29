@@ -1,29 +1,25 @@
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
 import { AbortError } from '@standard-server/shared'
-import { canWriteToNodeResponse, getNodeResponseError } from './utils'
+import { getNodeResponseError } from './utils'
 
-export function toAbortSignal(stream: Stream.Writable | NodeHttpResponse): AbortSignal {
+export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSignal {
   const controller = new AbortController()
 
-  const error = getNodeResponseError(stream)
+  const stream = 'stream' in res ? res.stream : res
 
-  if (error) {
-    controller.abort(error)
-  }
-  else if (!canWriteToNodeResponse(stream)) {
-    if (!stream.writableFinished || !stream.writableEnded) {
-      controller.abort(new AbortError('Writable stream closed before it finished writing'))
+  const onClose = () => {
+    if (!res.writableEnded) {
+      controller.abort(getNodeResponseError(res) ?? new AbortError('Writable stream closed before it finished writing'))
     }
+  }
+
+  if (stream.destroyed) {
+    onClose()
   }
   else {
     stream.once('error', error => controller.abort(error))
-
-    stream.once('close', () => {
-      if (!stream.writableFinished || !stream.writableEnded) {
-        controller.abort(new AbortError('Writable stream closed before it finished writing'))
-      }
-    })
+    stream.once('close', onClose)
   }
 
   return controller.signal

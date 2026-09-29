@@ -208,6 +208,32 @@ describe('clientPeer', () => {
   })
 
   describe('signal / abort', () => {
+    async function abortWhileSendingRequest() {
+      const requestSending = promiseWithResolvers<PeerRequestMessage>()
+      const releaseRequest = promiseWithResolvers<void>()
+      const bodyCancelled = promiseWithResolvers<void>()
+      send.mockImplementation(async (message) => {
+        if (message.kind === 'request') {
+          requestSending.resolve(message)
+          await releaseRequest.promise
+        }
+      })
+
+      const controller = new AbortController()
+      const body = new ReadableStream({ cancel: () => bodyCancelled.resolve() })
+      const promise = peer.request(makeRequest({ body, signal: controller.signal }))
+      const { id } = await requestSending.promise
+      const error = new Error('aborted during send')
+      controller.abort(error)
+
+      // the request settles right away, but the cancel must not overtake the request message
+      await expect(promise).rejects.toBe(error)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+      // the unsent body is released last, after any cancel message
+      return { id, releaseRequest, bodyCancelled: bodyCancelled.promise }
+    }
+
     it('throws immediately if signal already aborted', async () => {
       const controller = new AbortController()
       controller.abort(new Error('pre-aborted'))
@@ -239,8 +265,8 @@ describe('clientPeer', () => {
       controller.abort(new Error('aborted during encode'))
 
       await expect(promise).rejects.toThrow('aborted during encode')
-      // the request message is never sent, only the cancel
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['cancel'])
+      // the request message is never sent, so neither is a cancel
+      expect(send).not.toHaveBeenCalled()
     })
 
     it('throws when signal aborted during send', async () => {
@@ -253,7 +279,7 @@ describe('clientPeer', () => {
         peer.request(makeRequest({ signal: controller.signal })),
       ).rejects.toThrow('aborted during send')
 
-      expect(send).toHaveBeenCalledTimes(2)
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
       const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
       expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
     })
@@ -275,7 +301,7 @@ describe('clientPeer', () => {
       await expect(promise).rejects.toThrow(error)
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['cancel'])
+      expect(send).not.toHaveBeenCalled()
     })
 
     it('returns an event-stream request body when the peer is closed while encoding', async () => {
@@ -329,6 +355,24 @@ describe('clientPeer', () => {
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(cancel).toHaveBeenCalledWith(error)
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    })
+
+    it('sends the cancel message once the in-flight request message is sent', async () => {
+      const { id, releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+
+      releaseRequest.resolve()
+      await bodyCancelled
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+    })
+
+    it('does not send a cancel message when the in-flight request message fails to send', async () => {
+      const { releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+
+      // the server never received the request, so there is nothing to cancel there
+      releaseRequest.reject(new Error('transport down'))
+      await bodyCancelled
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
     })
 
     it('rejects pending request on server abort', async () => {

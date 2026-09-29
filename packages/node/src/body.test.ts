@@ -540,6 +540,31 @@ describe('toNodeHttpBody', () => {
     expect(await resBlob.text()).toBe('foo')
   })
 
+  it('file with existing content-type header', async () => {
+    const file = new File(['<script>alert(1)</script>'], 'foo.html', { type: 'text/html' })
+
+    generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
+
+    const [body, headers] = toNodeHttpBody(file, { ...baseHeaders, 'content-type': 'application/octet-stream' }, {})
+
+    expect(body).toBeInstanceOf(Readable)
+    expect(headers).toEqual({
+      'content-disposition': 'inline; filename="__mocked__"',
+      'content-length': '25',
+      'content-type': 'application/octet-stream',
+      'x-custom-header': 'custom-value',
+      'standard-server': 'file',
+    })
+
+    const response = new Response(body, {
+      headers: toFetchHeaders(headers),
+    })
+    const resBlob = await response.blob()
+
+    expect(resBlob.type).toBe('application/octet-stream')
+    expect(await resBlob.text()).toBe('<script>alert(1)</script>')
+  })
+
   it('empty blob without content-type', async () => {
     const blob = new Blob([])
 
@@ -690,6 +715,26 @@ describe('toNodeHttpBody', () => {
       const fetchHeaders = toFetchHeaders(headers)
       expect(fetchHeaders.has('standard-server')).toBe(false)
       expect(fetchHeaders.has('content-disposition')).toBe(false)
+    })
+
+    it('file: unset content-type', async () => {
+      const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+      const [body, headers] = toNodeHttpBody(file, {
+        ...baseHeaders,
+        'content-type': [],
+      })
+
+      expect(body).toBeInstanceOf(Readable)
+      expect(headers).toEqual({
+        'content-length': '3',
+        'content-type': [],
+        'content-disposition': expect.any(String),
+        'x-custom-header': 'custom-value',
+        'standard-server': 'file',
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.has('content-type')).toBe(false)
     })
   })
 })

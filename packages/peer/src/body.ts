@@ -19,11 +19,13 @@ export function toStandardBody(
   message: PeerRequestMessage | PeerResponseMessage,
   cleanup: AsyncCleanupFn,
 ): ToStandardBodyResult {
-  const contentType = flattenStandardHeader(message.json.headers?.['content-type'])
+  const rawContentType = message.json.headers?.['content-type']
+  const contentType = flattenStandardHeader(rawContentType)
   const bodyHint = flattenStandardHeader(message.json.headers?.['standard-server'])
 
   if (message.json.body === undefined && message.binary === undefined) {
-    if (contentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
+    // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
+    if (rawContentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
@@ -31,7 +33,7 @@ export function toStandardBody(
       }
     }
 
-    if (contentType !== undefined) {
+    if (rawContentType !== undefined) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
@@ -121,7 +123,7 @@ export async function encodeAtomicStandardBody(
   }
 
   if (body instanceof Blob) {
-    headers['content-type'] = body.type
+    headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(
       body instanceof File ? body.name ?? '' : 'blob',

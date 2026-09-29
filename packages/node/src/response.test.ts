@@ -1,6 +1,9 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
+import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
+import http2 from 'node:http2'
 import Stream from 'node:stream'
 import request from 'supertest'
 import * as Body from './body'
@@ -498,4 +501,141 @@ describe('sendStandardResponse', () => {
       expect((responseStream as any).setHeader).not.toHaveBeenCalled()
     })
   })
+
+  describe('http2 HEAD request', () => {
+    it('sends the status and headers', async () => {
+      let sending: Promise<void> | undefined
+
+      const response = await requestHttp2Head((_, res) => {
+        sending = sendStandardResponse(res, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: undefined,
+        })
+      })
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': 201,
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+    })
+
+    it('rejects and releases a stream body it cannot send', async () => {
+      let clean = false
+      const body = (async function* () {
+        try {
+          while (true) {
+            yield 'foo'
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        finally {
+          clean = true
+        }
+      })()
+
+      let sending: Promise<void> | undefined
+
+      const response = await requestHttp2Head((_, res) => {
+        sending = sendStandardResponse(res, { status: 201, headers: {}, body })
+        sending.catch(() => {})
+      })
+
+      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
+
+      expect(response.headers).toMatchObject({
+        ':status': 201,
+        'content-type': 'text/event-stream',
+      })
+      expect(response.body).toBe('')
+
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
+    })
+  })
+
+  describe('http2 stream reset by the client', () => {
+    it.each([
+      ['resolves on a cancel', http2.constants.NGHTTP2_CANCEL, undefined],
+      ['rejects with the stream error on an error code', http2.constants.NGHTTP2_INTERNAL_ERROR, 'ERR_HTTP2_STREAM_ERROR'],
+    ])('%s', async (_, code, errorCode) => {
+      let clean = false
+      const body = (async function* () {
+        try {
+          while (true) {
+            yield 'foo'
+            await new Promise(r => setTimeout(r, 10))
+          }
+        }
+        finally {
+          clean = true
+        }
+      })()
+
+      let sending: Promise<void> | undefined
+
+      const server = http2.createServer((req, res) => {
+        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
+      })
+      await new Promise<void>(r => server.listen(0, r))
+
+      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+      try {
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.once('error', () => {})
+
+        await new Promise(r => reqStream.once('data', r))
+        reqStream.close(code)
+
+        if (errorCode) {
+          await expect(sending).rejects.toMatchObject({ code: errorCode })
+        }
+        else {
+          await expect(sending).resolves.toBeUndefined()
+        }
+
+        await vi.waitFor(() => {
+          expect(clean).toBe(true)
+        })
+      }
+      finally {
+        client.close()
+        await new Promise(r => server.close(r))
+      }
+    })
+  })
 })
+
+async function requestHttp2Head(
+  listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
+): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
+  const server = http2.createServer(listener)
+  await new Promise<void>(r => server.listen(0, r))
+
+  const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+  try {
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+
+    const chunks: Buffer[] = []
+    reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
+
+    const headers = await new Promise<http2.IncomingHttpHeaders>((resolve, reject) => {
+      reqStream.once('response', resolve)
+      reqStream.once('error', reject)
+    })
+
+    await new Promise(r => reqStream.once('close', r))
+
+    return { headers, body: Buffer.concat(chunks).toString() }
+  }
+  finally {
+    client.close()
+    await new Promise(r => server.close(r))
+  }
+}

@@ -2,6 +2,7 @@ import type { StandardLazyRequest, StandardResponse } from '@standard-server/cor
 import type { ClientPeer, ServerPeer } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { promiseWithResolvers } from '@standard-server/shared'
 import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
 
 /**
@@ -271,6 +272,57 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(chunks).toEqual([1, 2, 3])
   })
 
+  it('streams binary chunks in both directions when content-type is removed', async () => {
+    async function readAll(stream: ReadableStream<Uint8Array>): Promise<number[]> {
+      const chunks: number[] = []
+      for await (const chunk of stream) {
+        chunks.push(...chunk)
+      }
+      return chunks
+    }
+
+    let received: unknown
+    let requestContentType: unknown
+
+    const { client } = connect(async (request) => {
+      requestContentType = request.headers['content-type']
+      received = await request.resolveBody()
+
+      return {
+        status: 200,
+        headers: { 'content-type': [] },
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([4, 5]))
+            controller.close()
+          },
+        }),
+      }
+    })
+
+    const response = await client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: { 'content-type': [] },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]))
+          controller.enqueue(new Uint8Array([3]))
+          controller.close()
+        },
+      }),
+    })
+
+    expect(requestContentType).toEqual([])
+    expect(received).toBeInstanceOf(ReadableStream)
+    expect(await readAll(received as ReadableStream<Uint8Array>)).toEqual([1, 2, 3])
+
+    expect(response.headers['content-type']).toEqual([])
+    const body = await response.resolveBody()
+    expect(body).toBeInstanceOf(ReadableStream)
+    expect(await readAll(body as ReadableStream<Uint8Array>)).toEqual([4, 5])
+  })
+
   it('propagates client aborts to the server handler signal', async () => {
     let serverSignal: AbortSignal | undefined
 
@@ -287,6 +339,36 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     await expect(promise).rejects.toThrow('user navigated away')
     await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+  })
+
+  it('propagates a client abort fired while the request message is still being sent', async () => {
+    const encodeStarted = promiseWithResolvers<void>()
+    const releaseEncode = promiseWithResolvers<void>()
+    let serverSignal: AbortSignal | undefined
+
+    const { client } = connect(async (request) => {
+      serverSignal = request.signal
+      return new Promise(() => {}) // handler never resolves
+    })
+
+    // encoding the request message awaits `file.arrayBuffer()`, so the cancel message could overtake it
+    const file = new File(['hello'], 'hello.txt', { type: 'text/plain' })
+    const arrayBuffer = file.arrayBuffer.bind(file)
+    vi.spyOn(file, 'arrayBuffer').mockImplementation(async () => {
+      encodeStarted.resolve()
+      await releaseEncode.promise
+      return arrayBuffer()
+    })
+
+    const controller = new AbortController()
+    const promise = client.request({ url: '/upload', method: 'POST', headers: {}, body: file, signal: controller.signal })
+
+    await encodeStarted.promise
+    controller.abort(new Error('user navigated away'))
+    await expect(promise).rejects.toThrow('user navigated away')
+
+    releaseEncode.resolve()
+    await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
   })
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {
