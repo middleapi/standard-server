@@ -208,25 +208,30 @@ describe('clientPeer', () => {
   })
 
   describe('signal / abort', () => {
-    async function abortWhileSendingRequest(body?: StandardRequest['body']) {
-      const requestSent = promiseWithResolvers<void>()
+    async function abortWhileSendingRequest() {
+      const requestSending = promiseWithResolvers<PeerRequestMessage>()
+      const releaseRequest = promiseWithResolvers<void>()
+      const bodyCancelled = promiseWithResolvers<void>()
       send.mockImplementation(async (message) => {
         if (message.kind === 'request') {
-          await requestSent.promise
+          requestSending.resolve(message)
+          await releaseRequest.promise
         }
       })
 
       const controller = new AbortController()
-      const { id, promise } = await requestAndGetId(makeRequest({ body, signal: controller.signal }))
+      const body = new ReadableStream({ cancel: () => bodyCancelled.resolve() })
+      const promise = peer.request(makeRequest({ body, signal: controller.signal }))
+      const { id } = await requestSending.promise
       const error = new Error('aborted during send')
       controller.abort(error)
 
       // the request settles right away, but the cancel must not overtake the request message
       await expect(promise).rejects.toBe(error)
-      await sleep(1)
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
 
-      return { id, error, requestSent }
+      // the unsent body is released last, after any cancel message
+      return { id, releaseRequest, bodyCancelled: bodyCancelled.promise }
     }
 
     it('throws immediately if signal already aborted', async () => {
@@ -343,6 +348,10 @@ describe('clientPeer', () => {
         if (message.kind === 'request') {
           controller.abort(error)
         }
+        else {
+          // a failed cancel delivery must not replace the abort reason
+          throw new Error('transport down')
+        }
       })
       const cancel = vi.fn()
 
@@ -353,33 +362,21 @@ describe('clientPeer', () => {
     })
 
     it('sends the cancel message once the in-flight request message is sent', async () => {
-      const { id, requestSent } = await abortWhileSendingRequest()
+      const { id, releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
 
-      requestSent.resolve()
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+      releaseRequest.resolve()
+      await bodyCancelled
+      expect(send).toHaveBeenCalledTimes(2)
       expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
     })
 
     it('does not send a cancel message when the in-flight request message fails to send', async () => {
-      const cancel = vi.fn()
-      const { requestSent } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
+      const { releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
 
       // the server never received the request, so there is nothing to cancel there
-      requestSent.reject(new Error('transport down'))
-      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      releaseRequest.reject(new Error('transport down'))
+      await bodyCancelled
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
-    })
-
-    it('ignores transport failures when sending the cancel message after the request message', async () => {
-      const cancel = vi.fn()
-      const { error, requestSent } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
-      send.mockRejectedValueOnce(new Error('transport down'))
-
-      requestSent.resolve()
-      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
-      // the failed cancel delivery does not replace the abort reason
-      expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
     it('rejects pending request on server abort', async () => {
