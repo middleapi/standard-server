@@ -1,7 +1,6 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
 import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
-// ';' and '=' are legal when quoted, but a quote-unaware parser would read them as new parameters
 const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
 const QUOTED_STRING_SPECIAL_CHAR_REGEX = /[\\"]/g
 const QUOTED_PAIR_REGEX = /\\(.)/g
@@ -14,11 +13,6 @@ const EXT_VALUE_ALLOWED_ESCAPE_REGEX = /%(7C|60|5E)/g
 const EXT_VALUE_REGEX = /^([^']*)'[^']*'(.*)$/
 const EXT_VALUE_SUPPORTED_CHARSET_REGEX = /^(?:utf-8|us-ascii)$/i
 
-/**
- * name (group 1), then a quoted-string (group 2, anything after it before the next ';' is malformed and skipped),
- * an unterminated quoted-string that runs to the end, or a token (group 3).
- * Always matches, and advances while input remains.
- */
 const CONTENT_DISPOSITION_PARAM_REGEX = /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
 
 export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
@@ -33,7 +27,6 @@ export function generateContentDisposition(filename: string, type: 'inline' | 'a
   return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
 }
 
-/** First value of a Content-Disposition parameter, honoring quoted-strings. */
 function getContentDispositionParam(contentDisposition: string, name: string): string | undefined {
   CONTENT_DISPOSITION_PARAM_REGEX.lastIndex = 0
 
@@ -60,10 +53,8 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
     if (EXT_VALUE_SUPPORTED_CHARSET_REGEX.test(charset)) {
       return safeDecodeURIComponent(encodedFilename)
     }
-    // unsupported charset: fall through to the plain filename param
   }
   else if (extValue) {
-    // lenient: some senders omit the charset prefix entirely
     return safeDecodeURIComponent(extValue)
   }
 
