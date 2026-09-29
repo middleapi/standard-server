@@ -274,6 +274,37 @@ describe('sendStandardResponse', () => {
     await sendPromise
   })
 
+  it.each([
+    ['`from` throws', () => {
+      fromSpy.mockImplementationOnce(() => {
+        throw new Error('Cannot set content-type, too late.')
+      })
+    }],
+    ['the first write throws', (responseStream: HttpResponseStream) => {
+      responseStream.write = () => {
+        throw new Error('write failed')
+      }
+    }],
+    ['the `awslambda` global is missing', () => {
+      vi.unstubAllGlobals()
+    }],
+  ])('rejects, destroys the response stream and the body when %s', async (_, setup) => {
+    const responseStream = createResponseStream()
+    setup(responseStream)
+
+    const error = await sendStandardResponse(responseStream, {
+      status: 200,
+      headers: {},
+      body: new Blob(['foo']),
+    }).catch(error => error)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(responseStream.errored).toBe(error)
+
+    const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+    expect((resBody as any).destroyed).toBe(true)
+  })
+
   describe('response stream closed before sending', () => {
     it('resolves and destroys the body', async () => {
       const responseStream = createResponseStream()
