@@ -121,7 +121,7 @@ export async function encodeAtomicStandardBody(
   }
 
   if (body instanceof Blob) {
-    headers['content-type'] = body.type
+    headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(
       body instanceof File ? body.name ?? '' : 'blob',

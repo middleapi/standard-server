@@ -306,6 +306,17 @@ describe('encodeAtomicStandardBody', () => {
     expect(headers['content-disposition']).toBe('existing')
   })
 
+  it('encodes File body and preserves existing content-type header', async () => {
+    const file = new File(['<b>hi</b>'], 'page.html', { type: 'text/html' })
+
+    const { headers, binary } = await encodeAtomicStandardBody(file, { 'content-type': 'application/octet-stream' })
+    expect(headers['content-type']).toBe('application/octet-stream')
+    expect(binary).toBe(file)
+
+    const { headers: removedHeaders } = await encodeAtomicStandardBody(file, { 'content-type': [] })
+    expect(removedHeaders['content-type']).toEqual([])
+  })
+
   it('encodes URLSearchParams body', async () => {
     const params = new URLSearchParams('a=1&b=2')
     const { jsonBody, headers, binary } = await encodeAtomicStandardBody(params, {})
