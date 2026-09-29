@@ -436,6 +436,37 @@ describe('toStandardBody', () => {
       expect(result).toBeInstanceOf(TypeError)
       expect((result as Error).message).toContain('Failed to read body')
     })
+
+    // body-parser 1.x (express 4) assigns `{}` to every request, even the ones it leaves unread,
+    // and a destroyed request is no longer readable either
+    describe('ignores a body assigned without reading the stream', () => {
+      const assignBody = (req: IncomingMessage) => Object.assign(req, { body: {}, rawBody: Buffer.from('stale') })
+
+      it('complete body', async ({ onTestFinished }) => {
+        const result = await sendThenDisconnect(
+          onTestFinished,
+          'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"\r\nContent-Length: 3\r\n\r\nabc',
+          req => toStandardBody(req),
+          assignBody,
+        )
+
+        expect(result).toBeInstanceOf(File)
+        expect((result as File).name).toBe('a.pdf')
+        expect(await (result as File).text()).toBe('abc')
+      })
+
+      it('incomplete body', async ({ onTestFinished }) => {
+        const result = await sendThenDisconnect(
+          onTestFinished,
+          'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"\r\nContent-Length: 5\r\n\r\nabc',
+          req => toStandardBody(req),
+          assignBody,
+        )
+
+        expect(result).toBeInstanceOf(TypeError)
+        expect((result as Error).message).toContain('Failed to read body')
+      })
+    })
   })
 
   describe('handle utf-8 characters split across stream chunks', () => {

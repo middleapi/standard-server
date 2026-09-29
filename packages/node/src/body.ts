@@ -23,12 +23,17 @@ export async function toStandardBody(
   req: NodeHttpRequest,
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
+  // `req.body` and `req.rawBody` are only trusted once the stream was consumed (an empty body ends it
+  // without a read): body-parser 1.x (express 4) assigns `{}` to requests it leaves unread,
+  // and a destroyed request is not readable either
+  const consumed = !req.readable && (req.readableDidRead || req.readableEnded)
+
   // Some platforms (e.g. Firebase and Google Cloud Functions) consume the stream before
   // the handler runs and keep the unparsed bytes, while `req.body` is only parsed for some types
-  const rawBody = !req.readable && req.rawBody instanceof Uint8Array ? req.rawBody : undefined
+  const rawBody = consumed && req.rawBody instanceof Uint8Array ? req.rawBody : undefined
 
   // body's already parsed by upstream framework like express, ...
-  if (rawBody === undefined && req.body !== undefined && !req.readable) {
+  if (consumed && rawBody === undefined && req.body !== undefined) {
     return req.body
   }
 
