@@ -85,3 +85,18 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
 
   return res.errored
 }
+
+/**
+ * Destroy a body that won't be sent. `onError` is attached first, so an `error`
+ * event from `destroy` is never unhandled.
+ */
+export function destroyNodeHttpBody(
+  body: Readable | string | undefined,
+  error: unknown,
+  onError: (error: Error) => void,
+): void {
+  if (typeof body === 'object' && !body.closed) {
+    body.on('error', onError)
+    body.destroy((error ?? undefined) as Error | undefined)
+  }
+}
