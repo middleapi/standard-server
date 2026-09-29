@@ -66,6 +66,28 @@ describe('toStandardBody', () => {
       }))).resolves.toEqual({ foo: 'bar' })
     })
 
+    it('strips a leading BOM from json', async () => {
+      await expect(toStandardBody(event({
+        body: '﻿{"foo":"bar"}',
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }))).resolves.toEqual({ foo: 'bar' })
+    })
+
+    it('strips a leading BOM from base64-encoded json', async () => {
+      await expect(toStandardBody(event({
+        body: Buffer.from('﻿{"foo":"bar"}').toString('base64'),
+        isBase64Encoded: true,
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }))).resolves.toEqual({ foo: 'bar' })
+    })
+
+    it('replaces lone surrogates in json with U+FFFD', async () => {
+      await expect(toStandardBody(event({
+        body: '{"foo":"\uD800","bar":"\uDC00😀"}',
+        multiValueHeaders: { 'Content-Type': ['application/json'] },
+      }))).resolves.toEqual({ foo: '�', bar: '�😀' })
+    })
+
     it('parses empty json as undefined', async () => {
       await expect(toStandardBody(event({
         body: '',
@@ -80,6 +102,13 @@ describe('toStandardBody', () => {
         body: 'foo=bar&baz=qux',
         multiValueHeaders: { 'Content-Type': ['application/x-www-form-urlencoded'] },
       }))).resolves.toEqual(new URLSearchParams('foo=bar&baz=qux'))
+    })
+
+    it('strips a leading BOM from url-encoded forms', async () => {
+      await expect(toStandardBody(event({
+        body: '﻿foo=bar',
+        multiValueHeaders: { 'Content-Type': ['application/x-www-form-urlencoded'] },
+      }))).resolves.toEqual(new URLSearchParams('foo=bar'))
     })
   })
 
