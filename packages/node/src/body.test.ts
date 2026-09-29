@@ -438,6 +438,268 @@ describe('toStandardBody', () => {
     })
   })
 
+  describe('body buffered when the client disconnected mid-read', () => {
+    /**
+     * Sends the start of a raw http1 request, and calls `read` once node buffered the start of its body.
+     * `disconnect` sends the rest while closing the connection, and resolves once node tore the request down.
+     */
+    async function sendThenDisconnectMidRead(
+      onTestFinished: (fn: () => Promise<any>) => void,
+      [start, rest]: [string, string],
+      read: (req: IncomingMessage, disconnect: () => Promise<void>) => Promise<unknown>,
+    ): Promise<unknown> {
+      let resolve!: (value: unknown) => void
+      const result = new Promise<unknown>(r => (resolve = r))
+      let socket!: net.Socket
+
+      const server = http.createServer(async (req, res) => {
+        if (req.readableLength === 0) {
+          await new Promise(r => req.once('readable', r))
+        }
+
+        const disconnect = async () => {
+          const closed = new Promise(r => req.once('close', r))
+          socket.end(Buffer.from(rest, 'latin1'))
+          await closed
+        }
+
+        resolve(await read(req, disconnect).catch(error => error))
+        res.end()
+      })
+      onTestFinished(() => new Promise<any>(r => server.close(r)))
+
+      await new Promise<void>(r => server.listen(0, r))
+      const { port } = server.address() as AddressInfo
+
+      socket = net.connect(port, '127.0.0.1', () => socket.write(Buffer.from(start, 'latin1')))
+      socket.on('error', () => {})
+
+      return result
+    }
+
+    async function readBytes(body: unknown): Promise<Uint8Array> {
+      return new Uint8Array(await new Response(body as ReadableStream).arrayBuffer())
+    }
+
+    const start = 'x'.repeat(5000)
+    const rest = `${'y'.repeat(4996)}\xDE\xAD\xBE\xEF`
+    const bytes = Buffer.from(start + rest, 'latin1')
+    const head = `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/octet-stream\r\nContent-Length: ${bytes.length}\r\n\r\n`
+    const chunked: [string, string] = [
+      `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/octet-stream\r\nTransfer-Encoding: chunked\r\n\r\n${start.length.toString(16)}\r\n${start}\r\n`,
+      `${rest.length.toString(16)}\r\n${rest}\r\n0\r\n\r\n`,
+    ]
+
+    it('the rest of the body still buffered', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [head + start, rest], async (req, disconnect) => {
+        // the stream reads ahead what node has buffered, the start of the body
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        expect(req.readableLength).toBe(rest.length)
+        return readBytes(body)
+      })
+
+      expect(result).toEqual(new Uint8Array(bytes))
+    })
+
+    it('the whole body read, but not its end', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, chunked, async (req, disconnect) => {
+        const body = await toStandardBody(req, { hint: 'octet-stream' }) as ReadableStream
+        const reader = body.getReader()
+        const chunks = [(await reader.read()).value]
+
+        // the stream reads the rest ahead as it arrives
+        await disconnect()
+        expect(req.readableLength).toBe(0)
+
+        for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+          chunks.push(chunk.value)
+        }
+
+        return Buffer.concat(chunks)
+      })
+
+      expect(result).toEqual(bytes)
+    })
+
+    /**
+     * The other hints keep reading the body as it arrives, and node always gets such a read to the data
+     * it pushed before tearing the request down. Hold node's wake-ups back, as if the read fell behind.
+     */
+    describe('a read that fell behind', () => {
+      function holdReads(req: IncomingMessage): void {
+        const emit = req.emit
+        req.emit = function (this: IncomingMessage, event: string | symbol, ...args: any[]) {
+          return event === 'readable' ? false : emit.call(this, event, ...args)
+        } as typeof req.emit
+      }
+
+      async function read(req: IncomingMessage, disconnect: () => Promise<void>): Promise<unknown> {
+        holdReads(req)
+        const body = toStandardBody(req)
+        await disconnect()
+        return body
+      }
+
+      it('json', async ({ onTestFinished }) => {
+        const json = Buffer.from(JSON.stringify({ foo: 'x'.repeat(5000), emoji: '😀' })).toString('latin1')
+        const result = await sendThenDisconnectMidRead(onTestFinished, [
+          `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: ${json.length}\r\n\r\n${json.slice(0, 5003)}`,
+          json.slice(5003),
+        ], read)
+
+        expect(result).toEqual({ foo: 'x'.repeat(5000), emoji: '😀' })
+      })
+
+      it('url-search-params', async ({ onTestFinished }) => {
+        const result = await sendThenDisconnectMidRead(onTestFinished, [
+          'POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nTransfer-Encoding: chunked\r\n\r\n7\r\nfoo=bar\r\n',
+          '8\r\n&baz=qux\r\n0\r\n\r\n',
+        ], read)
+
+        expect(result).toEqual(new URLSearchParams('foo=bar&baz=qux'))
+      })
+
+      it('form-data', async ({ onTestFinished }) => {
+        const formData = '--boundary\r\nContent-Disposition: form-data; name="foo"\r\n\r\nbar\r\n--boundary--\r\n'
+        const result = await sendThenDisconnectMidRead(onTestFinished, [
+          `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=boundary\r\nContent-Length: ${formData.length}\r\n\r\n${formData.slice(0, 30)}`,
+          formData.slice(30),
+        ], read)
+
+        expect(result).toBeInstanceOf(FormData)
+        expect((result as FormData).get('foo')).toBe('bar')
+      })
+
+      it('event-stream', async ({ onTestFinished }) => {
+        const events = 'event: message\ndata: 1\n\nevent: message\ndata: 2\n\nevent: close\ndata: 3\n\n'
+        const result = await sendThenDisconnectMidRead(onTestFinished, [
+          `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: text/event-stream\r\nContent-Length: ${events.length}\r\n\r\n${events.slice(0, 30)}`,
+          events.slice(30),
+        ], async (req, disconnect) => {
+          const iterator = await read(req, disconnect) as AsyncIterator<unknown>
+          const values: unknown[] = []
+
+          for (let event = await iterator.next(); ; event = await iterator.next()) {
+            values.push(event.value)
+
+            if (event.done) {
+              return values
+            }
+          }
+        })
+
+        expect(result).toEqual([1, 2, 3])
+      })
+
+      it('file', async ({ onTestFinished }) => {
+        const result = await sendThenDisconnectMidRead(onTestFinished, [
+          `POST / HTTP/1.1\r\nHost: x\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename="foo.pdf"\r\nContent-Length: ${bytes.length}\r\n\r\n${start}`,
+          rest,
+        ], read)
+
+        expect(result).toBeInstanceOf(File)
+        expect((result as File).name).toBe('foo.pdf')
+        expect(new Uint8Array(await (result as File).arrayBuffer())).toEqual(new Uint8Array(bytes))
+      })
+    })
+
+    it.for(['latin1', 'hex', 'base64'] as const)('%s: request stream with a byte exact encoding set', async (encoding, { onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [head + start, rest], async (req, disconnect) => {
+        req.setEncoding(encoding)
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        return readBytes(body)
+      })
+
+      expect(result).toEqual(new Uint8Array(bytes))
+    })
+
+    it('only once', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [head + start, rest], async (req, disconnect) => {
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        await readBytes(body)
+        return toStandardBody(req, { hint: 'octet-stream' })
+      })
+
+      expect(result).toBeInstanceOf(TypeError)
+      expect((result as Error).message).toContain('Failed to read body')
+    })
+
+    it('not when the body is incomplete', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [chunked[0], `${rest.length.toString(16)}\r\n${rest}\r\n`], async (req, disconnect) => {
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        return readBytes(body)
+      })
+
+      expect(result).toBeInstanceOf(Error)
+      expect((result as NodeJS.ErrnoException).code).toBe('ECONNRESET')
+    })
+
+    it('not when the read started after part of the body was read', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, chunked, async (req, disconnect) => {
+        req.read()
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        return readBytes(body)
+      })
+
+      expect(result).toBeInstanceOf(Error)
+      expect((result as NodeJS.ErrnoException).code).toBe('ECONNRESET')
+    })
+
+    it('not when part of the body was read before the client disconnected', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, chunked, async (req, disconnect) => {
+        req.read()
+        await disconnect()
+        return toStandardBody(req, { hint: 'octet-stream' })
+      })
+
+      expect(result).toBeInstanceOf(TypeError)
+      expect((result as Error).message).toContain('Failed to read body')
+    })
+
+    it('not when something else took part of the body', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [head + start, rest], async (req, disconnect) => {
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        req.read(10)
+        return readBytes(body)
+      })
+
+      expect(result).toBeInstanceOf(Error)
+      expect((result as NodeJS.ErrnoException).code).toBe('ECONNRESET')
+    })
+
+    it('not when the request was destroyed with another error', async ({ onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, [head + start, rest], async (req, disconnect) => {
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        // e.g. a body size guard, once node parsed the whole request
+        req.socket.once('end', () => req.destroy(new Error('body too large')))
+        await disconnect()
+        expect(req.complete).toBe(true)
+        return readBytes(body)
+      })
+
+      expect(result).toBeInstanceOf(Error)
+      expect((result as Error).message).toBe('body too large')
+    })
+
+    it.for(['utf8', 'ascii'] as const)('not when the request stream has an encoding set that is not byte exact: %s', async (encoding, { onTestFinished }) => {
+      const result = await sendThenDisconnectMidRead(onTestFinished, chunked, async (req, disconnect) => {
+        req.setEncoding(encoding)
+        const body = await toStandardBody(req, { hint: 'octet-stream' })
+        await disconnect()
+        return readBytes(body)
+      })
+
+      expect(result).toBeInstanceOf(Error)
+      expect((result as NodeJS.ErrnoException).code).toBe('ECONNRESET')
+    })
+  })
+
   describe('handle utf-8 characters split across stream chunks', () => {
     function createChunkedIncomingMessage(method: string, contentType: string, chunks: Buffer[]): IncomingMessage {
       const request = Readable.from(chunks) as IncomingMessage

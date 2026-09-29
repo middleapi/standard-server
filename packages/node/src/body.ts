@@ -1,12 +1,11 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import type { ToEventStreamOptions } from './event-stream'
 import type { NodeHttpRequest } from './types'
-import { Buffer } from 'node:buffer'
-import { IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
+import { readBodyBufferedBeforeDisconnect, readNodeReadable } from './readable'
 import { toWebReadableStream } from './utils'
 
 export interface ToStandardBodyOptions {
@@ -46,7 +45,7 @@ export async function toStandardBody(
   let stream: Readable = req
 
   if (!req.readable) {
-    const buffered = rawBody ?? _readBodyBufferedBeforeDisconnect(req)
+    const buffered = rawBody ?? readBodyBufferedBeforeDisconnect(req)
 
     if (buffered === undefined) {
       // native fetch error use TypeError
@@ -86,43 +85,6 @@ export async function toStandardBody(
   }
 
   return toWebReadableStream(stream)
-}
-
-const RECOVERED_REQUESTS = new WeakSet<IncomingMessage>()
-
-/**
- * A client can disconnect after node parsed its whole http1 request, but before the handler
- * reads the body: node then destroys the request, with the unread body still buffered in it.
- * Returns that body once, or `undefined` when it cannot be recovered.
- *
- * http2 is left out: a stream reset discards the buffered data, and `complete` is not reliable there.
- */
-function _readBodyBufferedBeforeDisconnect(req: NodeHttpRequest): Uint8Array | undefined {
-  if (
-    !(req instanceof IncomingMessage)
-    || !req.complete
-    || !req.readableAborted
-    || req.readableDidRead
-    // any other error (e.g. a body size guard destroying the request) must surface
-    || (req.errored as NodeJS.ErrnoException | null)?.code !== 'ECONNRESET'
-    || RECOVERED_REQUESTS.has(req)
-  ) {
-    return undefined
-  }
-
-  RECOVERED_REQUESTS.add(req)
-
-  const chunk: Buffer<ArrayBuffer> | string | null = req.read()
-  const body = chunk === null ? new Uint8Array() : _toBytes(chunk, req.readableEncoding)
-
-  // `read()` on a destroyed stream does not flag it as read, so something
-  // may have taken part of the body without `readableDidRead` noticing
-  const contentLength = req.headers['content-length']
-  if (contentLength !== undefined && /^\d+$/.test(contentLength) && Number(contentLength) !== body.length) {
-    return undefined
-  }
-
-  return body
 }
 
 export interface ToNodeHttpBodyOptions {
@@ -219,8 +181,8 @@ async function _streamToString(stream: Readable): Promise<string> {
   const decoder = new TextDecoder()
   let string = ''
 
-  for await (const chunk of stream) {
-    string += decoder.decode(_toBytes(chunk, stream.readableEncoding), { stream: true })
+  for await (const chunk of readNodeReadable(stream)) {
+    string += decoder.decode(chunk, { stream: true })
   }
 
   // Flush any remaining bytes (e.g. incomplete multi-byte sequences)
@@ -232,17 +194,9 @@ async function _streamToString(stream: Readable): Promise<string> {
 async function _streamToFile(stream: Readable, fileName: string, contentType: string): Promise<File> {
   const chunks: Uint8Array<ArrayBuffer>[] = []
 
-  for await (const chunk of stream) {
-    chunks.push(_toBytes(chunk, stream.readableEncoding))
+  for await (const chunk of readNodeReadable(stream)) {
+    chunks.push(chunk)
   }
 
   return new File(chunks, fileName, { type: contentType })
-}
-
-/**
- * Node yields strings instead of bytes once `setEncoding()` is called on a stream,
- * encoding them back with the same encoding recovers the original bytes.
- */
-function _toBytes(chunk: Uint8Array<ArrayBuffer> | string, encoding: BufferEncoding | null): Uint8Array<ArrayBuffer> {
-  return typeof chunk === 'string' ? Buffer.from(chunk, encoding ?? 'utf8') : chunk
 }

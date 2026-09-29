@@ -1,9 +1,9 @@
 import type { Readable } from 'node:stream'
 import type Stream from 'node:stream'
 import type { NodeHttpResponse } from './types'
-import { Buffer } from 'node:buffer'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
+import { readNodeReadable } from './readable'
 
 /**
  * A cancel-safe alternative to `Readable.toWeb`.
@@ -24,9 +24,12 @@ import { Http2ServerRequest } from 'node:http2'
  * destroying an http1 request kills the socket its response shares, and an
  * unread body stalls on backpressure, blocking the next keep-alive request
  * (http1) or the response's `close` (http2).
+ *
+ * Unlike `Readable.toWeb`, a request whose client disconnected once its whole body
+ * was sent ends with the rest of that body, see `readBodyBufferedBeforeDisconnect`.
  */
 export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array<ArrayBuffer>> {
-  const iterator = stream[Symbol.asyncIterator]()
+  const iterator = readNodeReadable(stream)
   let canceled = false
 
   return new ReadableStream({
@@ -39,10 +42,6 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
 
       if (done) {
         controller.close()
-      }
-      else if (typeof value === 'string') {
-        // node yields strings once `setEncoding()` is called, encode them back to the original bytes
-        controller.enqueue(new Uint8Array(Buffer.from(value, stream.readableEncoding ?? 'utf8')))
       }
       else {
         controller.enqueue(new Uint8Array(value))
