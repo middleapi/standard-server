@@ -19,14 +19,13 @@ export function toStandardBody(
   message: PeerRequestMessage | PeerResponseMessage,
   cleanup: AsyncCleanupFn,
 ): ToStandardBodyResult {
-  const contentType = flattenStandardHeader(message.json.headers?.['content-type'])
+  const rawContentType = message.json.headers?.['content-type']
+  const contentType = flattenStandardHeader(rawContentType)
   const bodyHint = flattenStandardHeader(message.json.headers?.['standard-server'])
 
   if (message.json.body === undefined && message.binary === undefined) {
     // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
-    const hasContentType = message.json.headers?.['content-type'] !== undefined
-
-    if (!hasContentType && bodyHint === 'event-stream' satisfies StandardBodyHint) {
+    if (rawContentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
@@ -34,7 +33,7 @@ export function toStandardBody(
       }
     }
 
-    if (hasContentType) {
+    if (rawContentType !== undefined) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
         resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
