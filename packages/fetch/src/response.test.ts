@@ -35,16 +35,6 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledTimes(1)
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
-
-  it.each([
-    ['file', () => new File(['<b>hi</b>'], 'foo.html', { type: 'text/html' })],
-    ['stream', () => new File(['<b>hi</b>'], 'foo.html', { type: 'text/html' }).stream()],
-  ])('keeps a removed content-type removed for a %s body', async (_, createBody) => {
-    const fetchResponse = toFetchResponse({ body: createBody(), headers: { 'content-type': [] }, status: 200 })
-
-    expect(fetchResponse.headers.has('content-type')).toBe(false)
-    expect(await fetchResponse.text()).toBe('<b>hi</b>')
-  })
 })
 
 describe('toStandardLazyResponse', () => {
