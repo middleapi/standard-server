@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
 import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
+import http from 'node:http'
 import http2 from 'node:http2'
 import Stream from 'node:stream'
 import request from 'supertest'
@@ -304,61 +305,6 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('flushed')
   })
 
-  describe('bodiless response with a stream body', () => {
-    function createEndlessBody() {
-      const state = { clean: false }
-
-      const body = (async function* () {
-        try {
-          while (true) {
-            yield 'tick'
-            await new Promise(r => setTimeout(r, 10))
-          }
-        }
-        finally {
-          state.clean = true
-        }
-      })()
-
-      return { body, state }
-    }
-
-    it.each([
-      ['HEAD', 200],
-      ['GET', 204],
-      ['GET', 304],
-    ] as const)('ends a %s %i response instead of piping the body (http1)', async (method, status) => {
-      const { body, state } = createEndlessBody()
-      let endSpy: any
-      let sendPromise: Promise<void> | undefined
-
-      const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
-        endSpy = vi.spyOn(res, 'end')
-
-        sendPromise = sendStandardResponse(res, {
-          status,
-          headers: {
-            'x-custom-header': 'custom-value',
-          },
-          body,
-        })
-
-        await sendPromise
-      })[method === 'HEAD' ? 'head' : 'get']('/')
-
-      expect(res.status).toBe(status)
-      expect(res.headers['x-custom-header']).toEqual('custom-value')
-
-      expect(endSpy).toBeCalledTimes(1)
-      expect(endSpy).toBeCalledWith()
-
-      await expect(sendPromise).resolves.toBeUndefined()
-      await vi.waitFor(() => {
-        expect(state.clean).toBe(true)
-      })
-    })
-  })
-
   describe('stream destroy while sending', () => {
     it('with error', async () => {
       let clean = false
@@ -578,7 +524,7 @@ describe('sendStandardResponse', () => {
       expect(response.body).toBe('')
     })
 
-    it('releases a stream body without sending it', async () => {
+    it('rejects and releases a stream body it cannot send', async () => {
       let clean = false
       const body = (async function* () {
         try {
@@ -596,9 +542,10 @@ describe('sendStandardResponse', () => {
 
       const response = await requestHttp2Head((_, res) => {
         sending = sendStandardResponse(res, { status: 201, headers: {}, body })
+        sending.catch(() => {})
       })
 
-      await expect(sending).resolves.toBeUndefined()
+      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
       expect(response.headers).toMatchObject({
         ':status': 201,
@@ -656,6 +603,119 @@ describe('sendStandardResponse', () => {
         await vi.waitFor(() => {
           expect(clean).toBe(true)
         })
+      }
+      finally {
+        client.close()
+        await new Promise(r => server.close(r))
+      }
+    })
+  })
+
+  // Node never sends these a body, so nothing consumes the stream: it must
+  // still be released once the response closes
+  describe('stream body on a bodiless response', () => {
+    function createBody(yields = Infinity) {
+      const state = { clean: false, done: false }
+
+      const body = (async function* () {
+        try {
+          for (let i = 0; i < yields; i++) {
+            yield 'foo'
+            await new Promise(r => setTimeout(r, 10))
+          }
+          state.done = true
+        }
+        finally {
+          state.clean = true
+        }
+      })()
+
+      return { body, state }
+    }
+
+    it.each([
+      ['HEAD', 200],
+      ['GET', 204],
+      ['GET', 304],
+    ] as const)('http1 %s %i: releases an endless body when the client disconnects', async (method, status) => {
+      const { body, state } = createBody()
+      let sending: Promise<void> | undefined
+
+      const server = http.createServer((req, res) => {
+        sending = sendStandardResponse(res, { status, headers: {}, body })
+      })
+      await new Promise<void>(r => server.listen(0, r))
+
+      try {
+        const req = http.request({ port: (server.address() as AddressInfo).port, method })
+        req.once('error', () => {})
+        req.end()
+
+        await vi.waitFor(() => {
+          expect(sending).toBeDefined()
+        })
+
+        // nothing reaches the client, but the body keeps running until it disconnects
+        await new Promise(r => setTimeout(r, 50))
+        expect(state.clean).toBe(false)
+
+        req.destroy()
+
+        await expect(sending).resolves.toBeUndefined()
+        await vi.waitFor(() => {
+          expect(state.clean).toBe(true)
+        })
+        expect(state.done).toBe(false)
+      }
+      finally {
+        await new Promise(r => server.close(r))
+      }
+    })
+
+    it.each([
+      ['HEAD', 200],
+      ['GET', 204],
+      ['GET', 304],
+    ] as const)('http1 %s %i: completes once a finite body ends', async (method, status) => {
+      const { body, state } = createBody(3)
+
+      const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+        await sendStandardResponse(res, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
+      })[method === 'HEAD' ? 'head' : 'get']('/')
+
+      expect(res.status).toBe(status)
+      expect(res.headers['x-custom-header']).toEqual('custom-value')
+      expect(state).toEqual({ clean: true, done: true })
+    })
+
+    it.each([204, 304])('http2 GET %i: rejects and releases the body', async (status) => {
+      const { body, state } = createBody()
+      let sending: Promise<void> | undefined
+
+      const server = http2.createServer((req, res) => {
+        sending = sendStandardResponse(res, { status, headers: {}, body })
+        sending.catch(() => {})
+      })
+      await new Promise<void>(r => server.listen(0, r))
+
+      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+      try {
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.resume()
+
+        const headers = await new Promise<http2.IncomingHttpHeaders>(r => reqStream.once('response', r))
+        expect(headers[':status']).toBe(status)
+
+        await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
+        await vi.waitFor(() => {
+          expect(state.clean).toBe(true)
+        })
+        expect(state.done).toBe(false)
       }
       finally {
         client.close()

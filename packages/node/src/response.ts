@@ -56,12 +56,6 @@ export async function sendStandardResponse(
       else if (typeof resBody === 'string') {
         res.end(resBody)
       }
-      else if (_isBodilessResponse(res, standardResponse.status)) {
-        // Node ignores body writes here and, on http1, holds the headers until `end()`, so
-        // piping would stall the response for as long as the (possibly endless) body runs
-        resBody.destroy()
-        res.end()
-      }
       else {
         connection.once('close', () => {
           if (!resBody.closed) {
@@ -87,14 +81,4 @@ export async function sendStandardResponse(
       reject(error)
     }
   })
-}
-
-/**
- * Responses Node never sends a body for: HEAD requests, 1xx, 204 and 304.
- */
-function _isBodilessResponse(res: NodeHttpResponse, status: number): boolean {
-  return res.req?.method === 'HEAD'
-    || status === 204
-    || status === 304
-    || (status >= 100 && status < 200)
 }
