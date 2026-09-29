@@ -243,6 +243,35 @@ describe('clientPeer', () => {
       ).rejects.toThrow('pre-aborted')
     })
 
+    it('cancels an octet-stream request body if signal already aborted', async () => {
+      const controller = new AbortController()
+      const error = new Error('pre-aborted')
+      controller.abort(error)
+      const cancel = vi.fn()
+
+      await expect(
+        peer.request(makeRequest({ body: new ReadableStream({ cancel }), signal: controller.signal })),
+      ).rejects.toBe(error)
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
+      expect(cancel).toHaveBeenCalledWith(error)
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toEqual(0)
+    })
+
+    it('returns an event-stream request body if signal already aborted', async () => {
+      const controller = new AbortController()
+      controller.abort(new Error('pre-aborted'))
+      const cleanup = vi.fn()
+
+      await expect(
+        peer.request(makeRequest({ body: new AsyncIteratorClass<unknown>(() => new Promise(() => {}), cleanup), signal: controller.signal })),
+      ).rejects.toThrow('pre-aborted')
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce())
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toEqual(0)
+    })
+
     it('sends abort message when signal aborts after request sent', async () => {
       const controller = new AbortController()
       const promise = peer.request(makeRequest({ signal: controller.signal }))

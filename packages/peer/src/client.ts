@@ -37,8 +37,6 @@ export class ClientPeer {
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
       const signal = request.signal
-      throwIfAborted(signal)
-
       const id = this.idGenerator.generate()
       const state: ClientPeerRequestStateInternal = { resolve, reject }
       this.requests.set(id, state)
@@ -71,6 +69,8 @@ export class ClientPeer {
     let failure: unknown
 
     try {
+      throwIfAborted(request.signal)
+
       const encodedAtomicBody = await encodeAtomicStandardBody(request.body, request.headers)
 
       // signal can be aborted during encode
