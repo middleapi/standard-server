@@ -62,6 +62,7 @@ describe('decodeEventStreamMessage', () => {
 
     // Per spec, only a single U+0020 SPACE is stripped — not tabs.
     expect(decodeEventStreamMessage('data:\thello\n\n')).toEqual({
+      event: 'message',
       data: '\thello',
     })
   })
@@ -76,10 +77,29 @@ describe('decodeEventStreamMessage', () => {
   })
 
   it('treats lines without a colon as fields with empty values', () => {
-    expect(decodeEventStreamMessage('data\n\n')).toEqual({ data: '' })
-    expect(decodeEventStreamMessage('data:\n\n')).toEqual({ data: '' })
-    expect(decodeEventStreamMessage('data: a\ndata:\ndata: b\n\n')).toEqual({ data: 'a\n\nb' })
-    expect(decodeEventStreamMessage('event\ndata: x\n\n')).toEqual({ event: '', data: 'x' })
+    expect(decodeEventStreamMessage('data\n\n')).toEqual({ event: 'message', data: '' })
+    expect(decodeEventStreamMessage('data:\n\n')).toEqual({ event: 'message', data: '' })
+    expect(decodeEventStreamMessage('data: a\ndata:\ndata: b\n\n')).toEqual({ event: 'message', data: 'a\n\nb' })
+    expect(decodeEventStreamMessage('event\ndata: x\n\n')).toEqual({ event: 'message', data: 'x' })
+  })
+
+  it('defaults the event type of an unnamed message with data to message', () => {
+    expect(decodeEventStreamMessage('data: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
+    expect(decodeEventStreamMessage('event:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
+    expect(decodeEventStreamMessage('event: a\nevent:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
+
+    // an empty data line still counts as data
+    expect(decodeEventStreamMessage('data:\n\n')).toStrictEqual({ event: 'message', data: '' })
+    expect(decodeEventStreamMessage('event:\ndata:\n\n')).toStrictEqual({ event: 'message', data: '' })
+
+    // named messages keep their event type, even without data
+    expect(decodeEventStreamMessage('event: close\n\n')).toStrictEqual({ event: 'close' })
+    expect(decodeEventStreamMessage('event: message\n\n')).toStrictEqual({ event: 'message' })
+
+    // unnamed messages without data get no event type
+    expect(decodeEventStreamMessage(': ping\n\n')).toStrictEqual({ comments: ['ping'] })
+    expect(decodeEventStreamMessage('id: 1\nretry: 10\n\n')).toStrictEqual({ id: '1', retry: 10 })
+    expect(decodeEventStreamMessage('event:\nid: 1\n\n')).toStrictEqual({ id: '1' })
   })
 
   it('ignores unknown and case-mismatched keys', () => {
@@ -161,7 +181,7 @@ describe('eventStreamDecoder', () => {
 
     it('ignores empty chunks', () => {
       expect(feedAll(['', 'data: hello', '', '\n\n', ''])).toEqual([
-        { data: 'hello' },
+        { event: 'message', data: 'hello' },
       ])
     })
 
@@ -221,8 +241,8 @@ describe('eventStreamDecoder', () => {
           const events = feedAll([stream.slice(0, split), stream.slice(split)])
 
           expect(events, `delimiter ${JSON.stringify(delimiter)} split at ${split}`).toEqual([
-            { data: 'first' },
-            { data: 'second' },
+            { event: 'message', data: 'first' },
+            { event: 'message', data: 'second' },
           ])
         }
       }
@@ -265,8 +285,8 @@ describe('eventStreamDecoder', () => {
       ])
 
       expect(events).toEqual([
-        { data: 'first' },
-        { data: 'second' },
+        { event: 'message', data: 'first' },
+        { event: 'message', data: 'second' },
       ])
     })
 
@@ -279,8 +299,8 @@ describe('eventStreamDecoder', () => {
       ])
 
       expect(events).toEqual([
-        { data: 'first' },
-        { data: 'second' },
+        { event: 'message', data: 'first' },
+        { event: 'message', data: 'second' },
       ])
     })
   })
@@ -318,7 +338,7 @@ describe('eventStreamDecoder', () => {
       expect(() => decoder.end()).toThrowError('Event Stream ended before complete')
 
       expect(events).toEqual([
-        { data: 'hello' },
+        { event: 'message', data: 'hello' },
       ])
     })
   })
@@ -390,7 +410,7 @@ describe('eventStreamDecoderStream', () => {
     const module = await import('./decoder')
 
     expect(module.EventStreamDecoderStream).toBeDefined()
-    expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({ data: 'hello' })
+    expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({ event: 'message', data: 'hello' })
   })
 
   it('on incomplete message', async () => {

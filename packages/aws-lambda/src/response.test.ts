@@ -132,7 +132,7 @@ describe('sendStandardResponse', () => {
       },
     })
 
-    expect(bodyOf(responseStream)).toBe(': \n\nevent: message\ndata: "foo"\n\nevent: message\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
+    expect(bodyOf(responseStream)).toBe(': \n\ndata: "foo"\n\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
     expect(responseStream.writableEnded).toBe(true)
   })
 

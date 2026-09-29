@@ -132,22 +132,37 @@ describe('encodeEventStreamMessage', () => {
   })
 
   it('encodes fields in order: comments, event, retry, id, data', () => {
-    expect(encodeEventStreamMessage({ event: 'message', data: 'hello\nworld' }))
-      .toBe('event: message\ndata: hello\ndata: world\n\n')
+    expect(encodeEventStreamMessage({ event: 'close', data: 'hello\nworld' }))
+      .toBe('event: close\ndata: hello\ndata: world\n\n')
 
     expect(encodeEventStreamMessage({ event: 'message', id: '123', retry: 10000 }))
       .toBe('event: message\nretry: 10000\nid: 123\n\n')
 
-    expect(encodeEventStreamMessage({ event: 'message', id: '123', retry: 10000, comments: ['hello', 'world'] }))
-      .toBe(': hello\n: world\nevent: message\nretry: 10000\nid: 123\n\n')
+    expect(encodeEventStreamMessage({ event: 'close', id: '123', retry: 10000, data: 'hello', comments: ['hello', 'world'] }))
+      .toBe(': hello\n: world\nevent: close\nretry: 10000\nid: 123\ndata: hello\n\n')
+  })
+
+  it('omits the default message event type when the message has data', () => {
+    expect(encodeEventStreamMessage({ event: 'message', data: 'hello' })).toBe('data: hello\n\n')
+    expect(encodeEventStreamMessage({ event: 'message', data: '' })).toBe('data: \n\n')
+    expect(encodeEventStreamMessage({ event: 'message', id: '123', data: 'hello', comments: ['hi'] }))
+      .toBe(': hi\nid: 123\ndata: hello\n\n')
+
+    // kept without data, so it is not mistaken for a comment
+    expect(encodeEventStreamMessage({ event: 'message' })).toBe('event: message\n\n')
+    expect(encodeEventStreamMessage({ event: 'message', comments: ['hi'] })).toBe(': hi\nevent: message\n\n')
   })
 
   it('round-trips through decodeEventStreamMessage', () => {
     const messages: EventStreamMessage[] = [
       {},
-      { data: 'hello' },
-      { data: 'hello\nworld\n' },
+      { comments: ['ping'] },
+      { event: 'message' },
+      { event: 'close' },
+      { event: 'message', data: 'hello' },
+      { event: 'message', data: 'hello\nworld\n' },
       { event: 'message', data: 'hello', id: '123', retry: 10000, comments: ['hi'] },
+      { event: 'close', data: 'bye', id: '123' },
     ]
 
     for (const message of messages) {

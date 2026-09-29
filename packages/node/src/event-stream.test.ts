@@ -47,9 +47,9 @@ it('toEventStream', async () => {
     .getReader()
 
   expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'event: message\ndata: 1\n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'event: message\ndata: 2\n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'event: message\ndata: 3\n\n' })
+  expect((await reader.read())).toEqual({ done: false, value: 'data: 1\n\n' })
+  expect((await reader.read())).toEqual({ done: false, value: 'data: 2\n\n' })
+  expect((await reader.read())).toEqual({ done: false, value: 'data: 3\n\n' })
   expect((await reader.read())).toEqual({ done: false, value: 'event: close\n\n' })
   expect((await reader.read())).toEqual({ done: true, value: undefined })
 

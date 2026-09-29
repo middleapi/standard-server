@@ -155,7 +155,7 @@ describe('sendStandardResponse', () => {
       'x-custom-header': 'custom-value',
     })
 
-    expect(res.text).toEqual(': \n\nevent: message\ndata: "foo"\n\nevent: message\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
+    expect(res.text).toEqual(': \n\ndata: "foo"\n\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
   })
 
   it('chunked (octet)', async () => {
@@ -345,8 +345,8 @@ describe('sendStandardResponse', () => {
 
       expect(chunks).toEqual([
         Buffer.from(': \n\n'),
-        Buffer.from('event: message\ndata: 1\n\n'),
-        Buffer.from('event: message\ndata: 2\n\n'),
+        Buffer.from('data: 1\n\n'),
+        Buffer.from('data: 2\n\n'),
       ])
 
       expect(responseStream.closed).toBe(false)
@@ -402,8 +402,8 @@ describe('sendStandardResponse', () => {
 
       expect(chunks).toEqual([
         Buffer.from(': \n\n'),
-        Buffer.from('event: message\ndata: 1\n\n'),
-        Buffer.from('event: message\ndata: 2\n\n'),
+        Buffer.from('data: 1\n\n'),
+        Buffer.from('data: 2\n\n'),
       ])
 
       expect(responseStream.closed).toBe(false)

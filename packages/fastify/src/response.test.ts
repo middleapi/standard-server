@@ -202,7 +202,7 @@ describe('sendStandardResponse', () => {
       'x-custom-header': 'custom-value',
     })
 
-    expect(res.text).toEqual(': \n\nevent: message\ndata: "foo"\n\nevent: message\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
+    expect(res.text).toEqual(': \n\ndata: "foo"\n\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
   })
 
   it('chunked (octet)', async ({ onTestFinished }) => {

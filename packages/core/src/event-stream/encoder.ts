@@ -72,7 +72,9 @@ export function encodeEventStreamMessage(message: EventStreamMessage): string {
 
   output += encodeEventStreamMessageComments(message.comments)
 
-  if (message.event !== undefined) {
+  // 'message' is the default for a message with data. Without data, keep it
+  // so the message is not mistaken for a comment.
+  if (message.event !== undefined && (message.event !== 'message' || message.data === undefined)) {
     assertEventStreamMessageName(message.event)
 
     output += `event: ${message.event}\n`
