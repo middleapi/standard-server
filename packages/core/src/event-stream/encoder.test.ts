@@ -145,9 +145,13 @@ describe('encodeEventStreamMessage', () => {
   it('round-trips through decodeEventStreamMessage', () => {
     const messages: EventStreamMessage[] = [
       {},
-      { data: 'hello' },
-      { data: 'hello\nworld\n' },
+      { comments: ['ping'] },
+      { event: 'message' },
+      { event: 'close' },
+      { event: 'message', data: 'hello' },
+      { event: 'message', data: 'hello\nworld\n' },
       { event: 'message', data: 'hello', id: '123', retry: 10000, comments: ['hi'] },
+      { event: 'close', data: 'bye', id: '123' },
     ]
 
     for (const message of messages) {

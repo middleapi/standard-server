@@ -72,6 +72,21 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
     }
   }
 
+  /**
+   * Per spec, a message with no (or an empty) event type is a 'message' event.
+   * An unnamed message without data (e.g. a comment-only keep-alive) is never
+   * dispatched, so it is left without an event type.
+   * https://html.spec.whatwg.org/multipage/server-sent-events.html#dispatchMessage
+   */
+  if (!message.event) {
+    if (message.data === undefined) {
+      delete message.event
+    }
+    else {
+      message.event = 'message'
+    }
+  }
+
   return message
 }
 

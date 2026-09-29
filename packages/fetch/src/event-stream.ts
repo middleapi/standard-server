@@ -27,13 +27,7 @@ export function toAsyncIteratorObject(
         return { done: true, value: undefined }
       }
 
-      /**
-       * Per the SSE spec, a message with no (or an empty) event type is a 'message' event,
-       * but an unnamed message without data (e.g. a comment-only keep-alive) is not dispatched.
-       */
-      const event = value.event || (value.data === undefined ? undefined : 'message')
-
-      switch (event) {
+      switch (value.event) {
         case 'message': {
           let message = parseEmptyableJSON(value.data)
 
