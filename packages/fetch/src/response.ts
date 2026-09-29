@@ -11,15 +11,25 @@ export function toFetchResponse(
   options: ToFetchResponseOptions = {},
 ): Response {
   const [body, standardHeaders] = toFetchBody(standardResponse.body, standardResponse.headers, options)
-  const response = new Response(body, {
-    headers: toFetchHeaders(standardHeaders),
-    status: standardResponse.status,
-  })
 
-  // not sure why, but some tests (@hono/node-server) fail without pre-accessing body
-  void response.body
+  try {
+    const response = new Response(body, {
+      headers: toFetchHeaders(standardHeaders),
+      status: standardResponse.status,
+    })
 
-  return response
+    // not sure why, but some tests (@hono/node-server) fail without pre-accessing body
+    void response.body
+
+    return response
+  }
+  catch (error) {
+    if (body instanceof ReadableStream) {
+      body.cancel(error).catch(() => {})
+    }
+
+    throw error
+  }
 }
 
 export function toStandardLazyResponse(

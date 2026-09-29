@@ -1,4 +1,5 @@
 import type { StandardResponse } from '@standard-server/core'
+import { AsyncIteratorClass } from '@standard-server/shared'
 import * as Body from './body'
 import * as Headers from './headers'
 import { toFetchResponse, toStandardLazyResponse } from './response'
@@ -34,6 +35,35 @@ describe('toFetchResponse', () => {
 
     expect(toFetchHeadersSpy).toBeCalledTimes(1)
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
+  })
+
+  describe('releases the body when the response cannot be built', () => {
+    it('event-stream body when the status cannot have a body', async () => {
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const cleanup = vi.fn()
+
+      expect(() => toFetchResponse({ status: 204, headers: {}, body: new AsyncIteratorClass(next, cleanup) })).toThrow(TypeError)
+
+      // the event stream starts pulling right away, so it must be cancelled to stop
+      // the keep-alive interval and release the pending iterator
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' }))
+      expect(next).toHaveBeenCalledTimes(1)
+    })
+
+    it('stream body when a header is invalid', () => {
+      const cancel = vi.fn()
+
+      expect(() => toFetchResponse({ status: 200, headers: { 'x-custom-header': 'a\nb' }, body: new ReadableStream({ cancel }) })).toThrow(TypeError)
+      expect(cancel).toHaveBeenCalledWith(expect.any(TypeError))
+    })
+
+    it('throws the original error when the stream cannot be cancelled', () => {
+      const body = new ReadableStream()
+      body.getReader()
+
+      // a locked stream rejects `cancel()`, which must not surface as an unhandled rejection
+      expect(() => toFetchResponse({ status: 200, headers: {}, body })).toThrow(/locked/)
+    })
   })
 })
 
