@@ -130,26 +130,41 @@ export function toEventStream(
   const keepAliveEnabled = options.keepAlive?.enabled ?? true
   const keepAliveInterval = options.keepAlive?.interval ?? 15000
   const initialCommentEnabled = options.initialComment?.enabled ?? true
-  const initialComment = options.initialComment?.comment ?? ''
   const emptyCloseEventEnabled = options.emptyCloseEventEnabled ?? true
 
+  let initialMessage: string | undefined
+  let keepAliveMessage: string | undefined
+
   /**
-   * Encoded once up front so an invalid comment throws here, like an invalid initial comment,
+   * Encoded once up front so an invalid comment throws here, before the response starts,
    * instead of later from the keep-alive timer, where nothing can catch it.
    */
-  const keepAliveMessage = keepAliveEnabled
-    ? encodeEventStreamMessage({ comments: [options.keepAlive?.comment ?? ''] })
-    : undefined
+  try {
+    if (initialCommentEnabled) {
+      initialMessage = encodeEventStreamMessage({ comments: [options.initialComment?.comment ?? ''] })
+    }
+
+    if (keepAliveEnabled) {
+      keepAliveMessage = encodeEventStreamMessage({ comments: [options.keepAlive?.comment ?? ''] })
+    }
+  }
+  catch (err) {
+    /**
+     * No stream is created, so nothing else will release the iterator.
+     * Its cleanup errors are ignored so the caller sees the invalid option instead.
+     */
+    void (async () => iterator.return?.())().catch(() => {})
+
+    throw err
+  }
 
   let cancelled = false
   let timeout: ReturnType<typeof setInterval> | undefined
 
   const stream = new ReadableStream<string>({
     start(controller) {
-      if (initialCommentEnabled) {
-        controller.enqueue(encodeEventStreamMessage({
-          comments: [initialComment],
-        }))
+      if (initialMessage !== undefined) {
+        controller.enqueue(initialMessage)
       }
     },
     async pull(controller) {

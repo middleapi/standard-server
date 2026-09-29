@@ -1,5 +1,5 @@
 import { ErrorEvent, EventStreamEncoderError, getEventMeta, withEventMeta } from '@standard-server/core'
-import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
+import { AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 beforeEach(() => {
@@ -529,33 +529,6 @@ describe('toEventStream', () => {
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })
-
-    it.each(['\n', '\r', '\r\n'])('throws upfront when the comment contains a line break: %j', (lineBreak) => {
-      async function* gen() {
-        yield 'hello'
-      }
-
-      expect(() => toEventStream(gen(), {
-        keepAlive: { enabled: true, interval: 40, comment: `ping${lineBreak}` },
-      })).toThrow(new EventStreamEncoderError('Event\'s comment must not contain a carriage return or newline character'))
-    })
-
-    it('ignores an invalid comment when disabled', async () => {
-      async function* gen() {
-        yield 'hello'
-      }
-
-      const reader = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false, comment: 'ping\n' },
-      })
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
-
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
-      await expect(reader.read()).resolves.toEqual({ done: true })
-    })
   })
 
   describe('initial comment', () => {
@@ -606,6 +579,56 @@ describe('toEventStream', () => {
         vi.advanceTimersByTimeAsync(50),
       ])
 
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: true })
+    })
+  })
+
+  describe('invalid comment', () => {
+    const invalidCases = [
+      ['initial comment', { initialComment: { enabled: true, comment: 'hi\n' } }],
+      ['keep-alive comment', { keepAlive: { enabled: true, comment: 'ping\r' } }],
+      ['keep-alive comment', { keepAlive: { enabled: true, comment: 'ping\r\n' } }],
+    ] as const
+
+    it.each(invalidCases)('throws and releases the iterator when the %s is invalid: %j', (_, options) => {
+      const next = vi.fn(async () => ({ done: false, value: 'hello' }))
+      const cleanup = vi.fn(async () => {})
+      const iterator = new AsyncIteratorClass(next, cleanup)
+
+      expect(() => toEventStream(iterator, options))
+        .toThrow(new EventStreamEncoderError('Event\'s comment must not contain a carriage return or newline character'))
+
+      expect(next).not.toHaveBeenCalled()
+      expect(cleanup).toHaveBeenCalledTimes(1)
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+    })
+
+    it.each([
+      ['rejects', async () => { throw new Error('cleanup') }],
+      ['throws', () => { throw new Error('cleanup') }],
+    ])('reports the invalid comment when releasing the iterator %s', async (_, returnFn) => {
+      const iterator = { next: vi.fn(), return: vi.fn(returnFn) }
+
+      expect(() => toEventStream(iterator, { keepAlive: { enabled: true, comment: 'ping\n' } }))
+        .toThrow(EventStreamEncoderError)
+
+      expect(iterator.return).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ['initial comment', { initialComment: { enabled: false, comment: 'hi\n' }, keepAlive: { enabled: false } }],
+      ['keep-alive comment', { initialComment: { enabled: false }, keepAlive: { enabled: false, comment: 'ping\n' } }],
+    ] as const)('ignores an invalid %s when disabled', async (_, options) => {
+      async function* gen() {
+        yield 'hello'
+      }
+
+      const reader = toEventStream(gen(), options)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
+
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: message\ndata: "hello"\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })
