@@ -45,7 +45,13 @@ export async function sendStandardResponse(
     }
 
     responseStream.once('error', reject)
-    responseStream.once('close', resolve)
+    responseStream.once('close', () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy(getNodeResponseError(responseStream) ?? undefined)
+      }
+
+      resolve()
+    })
 
     try {
       const [headers, setCookies] = toLambdaHeaders(resHeaders)
@@ -70,12 +76,6 @@ export async function sendStandardResponse(
         res.end(resBody)
       }
       else {
-        res.once('close', () => {
-          if (!resBody.closed) {
-            resBody.destroy(getNodeResponseError(res) ?? undefined)
-          }
-        })
-
         // WARNING: errors that occur here are silently ignored and not reported to the Promise
         resBody.once('error', error => res.destroy(error))
 
