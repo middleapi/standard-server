@@ -73,6 +73,18 @@ describe('toStandardBody', () => {
       expect(await toStandardBody(request)).toEqual({ foo: 'bar' })
     })
 
+    it('json strips a leading BOM', async () => {
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: '\uFEFF{"foo":"bar"}',
+        headers: {
+          'standard-server': 'json',
+        },
+      })
+
+      expect(await toStandardBody(request)).toEqual({ foo: 'bar' })
+    })
+
     it('async iterator object', async () => {
       const stream = new ReadableStream<string>({
         async pull(controller) {
@@ -128,6 +140,18 @@ describe('toStandardBody', () => {
       })
 
       expect(await toStandardBody(request)).toEqual(new URLSearchParams('foo=bar&bar=baz'))
+    })
+
+    it('url-search-params strips a leading BOM', async () => {
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: '\uFEFFfoo=bar',
+        headers: {
+          'standard-server': 'url-search-params',
+        },
+      })
+
+      expect(await toStandardBody(request)).toEqual(new URLSearchParams('foo=bar'))
     })
 
     it('file/blob', async () => {
