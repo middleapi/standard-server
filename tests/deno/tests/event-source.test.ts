@@ -39,6 +39,7 @@ describe('eventSource', () => {
     createBody = async function* () {
       yield 'hello'
       yield { order: 2 }
+      // must return a value: a close event without data is dropped by EventSource, which reconnects
       return 'bye'
     }
 
