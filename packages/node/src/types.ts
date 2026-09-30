@@ -12,6 +12,12 @@ export type NodeHttpRequest = (IncomingMessage | Http2ServerRequest) & {
    * Only used once the request stream has been consumed.
    */
   body?: unknown
+
+  /**
+   * Raw body bytes (`Uint8Array`) kept by upstream like Google Cloud Functions, preferred over `body`.
+   * Only used once the request stream has been consumed.
+   */
+  rawBody?: unknown
 }
 
 export type NodeHttpResponse = ServerResponse | Http2ServerResponse

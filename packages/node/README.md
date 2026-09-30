@@ -91,6 +91,8 @@ createServer(async (req, res) => {
 
 `resolveBody(hint?)` follows the shared Standard Server resolution rules: an explicit `hint` wins, then the [`standard-server` header](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#the-standard-server-header), then inference from the content headers. See [how body parsing works](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#how-body-parsing-works) in the core README for the full algorithm.
 
+If upstream middleware already read the request stream, the body is parsed from `req.rawBody` when it holds the raw bytes (Google Cloud Functions, Firebase), otherwise `req.body` is returned as is (e.g. from `express.json()`).
+
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
 

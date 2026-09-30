@@ -4,7 +4,7 @@ import type { NodeHttpRequest } from './types'
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
 import { Readable } from 'node:stream'
-import { text } from 'node:stream/consumers'
+import { buffer, text } from 'node:stream/consumers'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
@@ -183,6 +183,39 @@ describe('toStandardBody', () => {
         // fake an upstream parser: consume the stream, then assign the parsed body
         await text(req)
         // @ts-expect-error fake body is parsed
+        req.body = { value: 123 }
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.from('foo'))
+
+      expect(standardBody).toEqual({ value: 123 })
+    })
+
+    it('prefer raw body over parsed body', async () => {
+      let standardBody: any
+
+      await request(async (req: NodeHttpRequest, res: ServerResponse) => {
+        req.rawBody = new Uint8Array(await buffer(req))
+        req.body = 'foo'
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.from('foo'))
+
+      expect(standardBody).toBeInstanceOf(File)
+      expect(await standardBody.text()).toBe('foo')
+    })
+
+    it('ignore raw body that is not a Uint8Array', async () => {
+      let standardBody: StandardBody
+
+      await request(async (req: NodeHttpRequest, res: ServerResponse) => {
+        req.rawBody = await text(req)
         req.body = { value: 123 }
         standardBody = await toStandardBody(req)
         res.end()

@@ -21,8 +21,10 @@ export async function toStandardBody(
   req: NodeHttpRequest,
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
+  const stream = !req.readable && req.rawBody instanceof Uint8Array ? Readable.from([req.rawBody]) : req
+
   // body's already parsed by upstream framework like express, ...
-  if (req.body !== undefined && !req.readable) {
+  if (req.body !== undefined && !stream.readable) {
     return req.body
   }
 
@@ -37,29 +39,29 @@ export async function toStandardBody(
     return undefined
   }
 
-  if (!req.readable) {
+  if (!stream.readable) {
     // native fetch error use TypeError
     throw new TypeError('Failed to read body: body stream already read or destroyed')
   }
 
   if (hint === 'json') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(stream)
     return parseEmptyableJSON(text)
   }
 
   const contentType = req.headers['content-type']
 
   if (hint === 'form-data') {
-    return _streamToFormData(req, contentType)
+    return _streamToFormData(stream, contentType)
   }
 
   if (hint === 'url-search-params') {
-    const text = await _streamToString(req)
+    const text = await _streamToString(stream)
     return new URLSearchParams(text)
   }
 
   if (hint === 'event-stream') {
-    return toAsyncIteratorObject(req)
+    return toAsyncIteratorObject(stream)
   }
 
   if (hint === 'file') {
@@ -68,10 +70,10 @@ export async function toStandardBody(
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined
 
-    return _streamToFile(req, fileName ?? 'blob', contentType ?? '')
+    return _streamToFile(stream, fileName ?? 'blob', contentType ?? '')
   }
 
-  return toWebReadableStream(req)
+  return toWebReadableStream(stream)
 }
 
 export interface ToNodeHttpBodyOptions {
