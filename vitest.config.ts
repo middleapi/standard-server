@@ -7,6 +7,8 @@ export default defineConfig(() => ({
     globals: true,
     include: ['**/*.test.ts'],
     exclude: [...defaultExclude, '**/.claude/**', './tests/bun/**', './tests/deno/**'],
+    // exposes Node's EventSource global, which is still behind a flag (Node 20 - 26)
+    execArgv: ['--experimental-eventsource'],
     coverage: {
       include: ['packages/*/src/**'],
       exclude: ['**.test-d.*', '**.test.*', '**/*.bench.ts', './tests/bun/**', './tests/deno/**'],
