@@ -82,8 +82,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - run: pnpm --filter='./packages/*' run -r build
-
       - run: pnpm --filter='./packages/*' publish -r --provenance --access=public --tag="$TAG" $NO_GIT_CHECKS
         env:
           TAG: ${{ steps.version.outputs.tag }}
