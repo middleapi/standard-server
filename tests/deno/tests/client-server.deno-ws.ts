@@ -7,16 +7,9 @@ import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 export function createDenoWsClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER
 
-  /**
-   * `message()` can reject (e.g. the handler throws), and a rejection
-   * inside an event listener is unhandled, so always attach a catch.
-   * Fail the test instead of silently ignoring the error.
-   */
+  // message() rejections must be caught, record them and fail the test instead of ignoring them
   const peerMessageErrors: unknown[] = []
-  const onPeerMessageError = (error: unknown) => {
-    peerMessageErrors.push(error)
-  }
-
+  const onPeerMessageError = (error: unknown) => peerMessageErrors.push(error)
   afterEach(() => {
     expect(peerMessageErrors.splice(0)).toEqual([])
   })

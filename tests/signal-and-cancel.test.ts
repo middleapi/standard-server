@@ -143,69 +143,61 @@ describe.each([
     })
   })
 
-  /**
-   * Only peer adapters surface handler errors through `message()`,
-   * the other test servers do not catch a rejecting handler.
-   */
-  it.runIf(clientServer.onPeerMessageError !== undefined)('abort while a signal-aware handler is running', async () => {
-    let serverSignal!: AbortSignal
-    let serverRejected = false
+  // only peer adapters surface handler errors through message(), the other test servers do not catch a rejecting handler
+  describe.runIf(clientServer.onPeerMessageError !== undefined)('peer message() rejections', () => {
+    it('abort while a signal-aware handler is running', async () => {
+      let serverSignal!: AbortSignal
 
-    clientServer.handler.mockImplementationOnce(({ signal }) => {
-      serverSignal = signal!
+      clientServer.handler.mockImplementationOnce(async ({ signal }) => {
+        serverSignal = signal!
+        await sleep(10_000, { signal }) // like fetch(url, { signal }): rejects with signal.reason
+        return { headers: {}, status: 200, body: 'Hello' }
+      })
 
-      // like fetch(url, { signal }): rejects with signal.reason once aborted
-      return new Promise((_, reject) => {
-        signal!.addEventListener('abort', () => {
-          serverRejected = true
-          reject(signal!.reason)
-        })
+      const abortController = new AbortController()
+      const responsePromise = clientServer.request({
+        headers: {},
+        body: undefined,
+        method: 'GET',
+        url: '/',
+        signal: abortController.signal,
+      })
+
+      await waitFor(() => expect(serverSignal).toBeDefined()) // wait for server start handling
+      abortController.abort()
+
+      await expect(responsePromise).rejects.toThrow(abortController.signal.reason)
+      // the handler rejects and message() settles in microtasks of the same task that aborts
+      await waitFor(() => expect(serverSignal.aborted).toBe(true))
+
+      // the cancellation is expected, so serverPeer.message() must not reject
+      expect(clientServer.onPeerMessageError).not.toHaveBeenCalled()
+
+      expectPeerMessages(clientServer, {
+        client: [{ kind: 'request' }, { kind: 'cancel' }],
+        server: [],
       })
     })
 
-    const abortController = new AbortController()
-    const responsePromise = clientServer.request({
-      headers: {},
-      body: undefined,
-      method: 'GET',
-      url: '/',
-      signal: abortController.signal,
-    })
+    it('error thrown while handling', async () => {
+      const error = new Error('__TEST__')
+      clientServer.handler.mockRejectedValueOnce(error)
 
-    await waitFor(() => expect(serverSignal).toBeDefined()) // wait for server start handling
-    abortController.abort()
+      await expect(clientServer.request({
+        headers: {},
+        body: undefined,
+        method: 'GET',
+        url: '/',
+      })).rejects.toThrow('Server canceled the request')
 
-    await expect(responsePromise).rejects.toThrow(abortController.signal.reason)
-    await waitFor(() => expect(serverRejected).toBe(true))
-    await sleep(100) // ensure serverPeer.message() is settled
+      // serverPeer.message() still rejects with the handler error
+      await waitFor(() => expect(clientServer.onPeerMessageError).toHaveBeenCalledWith(error))
+      clientServer.onPeerMessageError!.mockClear()
 
-    // the cancellation is expected, so serverPeer.message() must not reject
-    expect(clientServer.onPeerMessageError).not.toHaveBeenCalled()
-
-    expectPeerMessages(clientServer, {
-      client: [{ kind: 'request' }, { kind: 'cancel' }],
-      server: [],
-    })
-  })
-
-  it.runIf(clientServer.onPeerMessageError !== undefined)('error thrown while handling', async () => {
-    const error = new Error('__TEST__')
-    clientServer.handler.mockRejectedValueOnce(error)
-
-    await expect(clientServer.request({
-      headers: {},
-      body: undefined,
-      method: 'GET',
-      url: '/',
-    })).rejects.toThrow('Server canceled the request')
-
-    // serverPeer.message() still rejects with the handler error
-    await waitFor(() => expect(clientServer.onPeerMessageError).toHaveBeenCalledWith(error))
-    clientServer.onPeerMessageError!.mockClear()
-
-    expectPeerMessages(clientServer, {
-      client: [{ kind: 'request' }],
-      server: [{ kind: 'cancel' }],
+      expectPeerMessages(clientServer, {
+        client: [{ kind: 'request' }],
+        server: [{ kind: 'cancel' }],
+      })
     })
   })
 

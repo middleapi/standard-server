@@ -144,9 +144,8 @@ export class ClientPeer {
   /**
    * Handle a message from server
    *
-   * Request failures reach the caller through `request()` or the response body.
-   * This only rejects when releasing a request body fails (its `return()` or `cancel()` throws),
-   * so still attach a `.catch` when calling this from an event listener.
+   * Only rejects when releasing a request body fails (request failures reach the caller through
+   * `request()` or the response body). Always attach a `.catch`.
    */
   async message(
     message: ServerPeerSendMessage,

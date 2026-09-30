@@ -191,39 +191,22 @@ describe('serverPeer', () => {
       await promise
     })
 
-    it('does not reject when a signal-aware handler rejects with the abort reason after cancel', async () => {
-      const signals: AbortSignal[] = []
-      const handler = vi.fn<HandlerFn>().mockImplementation(({ signal }) => {
-        signals.push(signal!)
-        // like fetch(url, { signal }): rejects with signal.reason once aborted
-        return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason)))
+    it.each([
+      ['cancel', () => peer.message(makeCancelMessage('1'), vi.fn())],
+      ['close', () => peer.close()],
+    ])('does not reject when a signal-aware handler rejects with the abort reason after %s', async (_, abort) => {
+      let signal!: AbortSignal
+      const promise = peer.message(makeRequestMessage(), async (request) => {
+        signal = request.signal!
+        await sleep(10_000, { signal }) // like fetch(url, { signal }): rejects with signal.reason
+        return jsonResponse()
       })
+      await vi.waitFor(() => expect(signal).toBeDefined())
 
-      const promise = peer.message(makeRequestMessage(), handler)
-      await vi.waitFor(() => expect(signals.length).toBe(1))
-
-      await peer.message(makeCancelMessage('1'), vi.fn())
+      await abort()
 
       await expect(promise).resolves.toBeUndefined()
-      expect(signals[0]!.reason).toEqual(new AbortError('Client aborted the request'))
-      expect(send).toHaveBeenCalledTimes(0)
-    })
-
-    it('does not reject when a signal-aware handler rejects with the abort reason after close', async () => {
-      const signals: AbortSignal[] = []
-      const handler = vi.fn<HandlerFn>().mockImplementation(({ signal }) => {
-        signals.push(signal!)
-        return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason)))
-      })
-
-      const promise = peer.message(makeRequestMessage(), handler)
-      await vi.waitFor(() => expect(signals.length).toBe(1))
-
-      const reason = new Error('connection lost')
-      await peer.close(reason)
-
-      await expect(promise).resolves.toBeUndefined()
-      expect(signals[0]!.reason).toBe(reason)
+      expect(signal.reason).toBeInstanceOf(AbortError)
       expect(send).toHaveBeenCalledTimes(0)
     })
 

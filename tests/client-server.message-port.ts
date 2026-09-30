@@ -1,16 +1,12 @@
 import type { ClientServerTest } from './client-server'
 import type { PeerClientServerTestOptions } from './client-server.peer'
 import { ClientPeer, decodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
-import { expectNoPeerMessageErrorAfterEach, expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler } from './client-server.peer'
+import { createPeerMessageErrorSpy, expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler } from './client-server.peer'
 
 export function createMessagePortClientServerTest(options: PeerClientServerTestOptions = {}): ClientServerTest {
   const { port1, port2 } = new MessageChannel()
 
-  /**
-   * `message()` can reject (e.g. the handler throws), and a rejection
-   * inside an event listener is unhandled, so always attach a catch.
-   */
-  const onPeerMessageError: NonNullable<ClientServerTest['onPeerMessageError']> = vi.fn()
+  const onPeerMessageError = createPeerMessageErrorSpy()
 
   const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(async (message) => {
     port1.postMessage(await randomEncodePeerMessage(message))
@@ -59,7 +55,6 @@ export function createMessagePortClientServerTest(options: PeerClientServerTestO
   })
 
   expectPeerRequestsCleanedUpAfterEach(clientPeer, serverPeer)
-  expectNoPeerMessageErrorAfterEach(onPeerMessageError)
 
   if (options.fetchStreamed) {
     return { handler, request, onPeerMessageError }

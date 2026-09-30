@@ -1,7 +1,6 @@
 import type { StandardLazyRequest, StandardRequest, StandardResponse } from '@standard-server/core'
 import type { ClientPeer, PeerMessage, ServerPeer } from '@standard-server/peer'
 import type { BlobPart } from 'node:buffer'
-import type { Mock } from 'vitest'
 import type { ClientServerTest } from './client-server'
 import { toFetchBody, toFetchHeaders, toStandardBody } from '@standard-server/fetch'
 import { encodePeerMessage } from '@standard-server/peer'
@@ -99,11 +98,16 @@ export function expectPeerRequestsCleanedUpAfterEach(clientPeer: ClientPeer, ser
 }
 
 /**
- * The wiring catches `message()` rejections (as documented) and reports them to `onPeerMessageError`,
- * so fail the test instead of silently ignoring them. Tests that expect one should assert it, then clear the mock.
+ * `message()` rejections must be caught (a rejection inside an event listener is unhandled),
+ * so the wiring reports them here and the test fails instead of silently ignoring them.
+ * Tests that expect one should assert it, then clear the mock.
  */
-export function expectNoPeerMessageErrorAfterEach(onPeerMessageError: Mock<(error: unknown) => void>): void {
+export function createPeerMessageErrorSpy(): NonNullable<ClientServerTest['onPeerMessageError']> {
+  const onPeerMessageError = vi.fn()
+
   afterEach(() => {
     expect(onPeerMessageError).not.toHaveBeenCalled()
   })
+
+  return onPeerMessageError
 }

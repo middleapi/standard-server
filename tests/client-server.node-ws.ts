@@ -2,7 +2,7 @@ import type { ClientServerTest } from './client-server'
 import type { PeerClientServerTestOptions } from './client-server.peer'
 import { ClientPeer, decodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 import { WebSocket, WebSocketServer } from 'ws'
-import { expectNoPeerMessageErrorAfterEach, expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler, wsMessageDataToEncoded } from './client-server.peer'
+import { createPeerMessageErrorSpy, expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler, wsMessageDataToEncoded } from './client-server.peer'
 
 export function createNodeWsClientServerTest(options: PeerClientServerTestOptions = {}): ClientServerTest {
   const wss = new WebSocketServer({ port: 0 })
@@ -25,11 +25,7 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
     })
   })
 
-  /**
-   * `message()` can reject (e.g. the handler throws), and a rejection
-   * inside an event listener is unhandled, so always attach a catch.
-   */
-  const onPeerMessageError: NonNullable<ClientServerTest['onPeerMessageError']> = vi.fn()
+  const onPeerMessageError = createPeerMessageErrorSpy()
 
   const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(async (message) => {
     await untilReady
@@ -83,7 +79,6 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
   })
 
   expectPeerRequestsCleanedUpAfterEach(clientPeer, serverPeer)
-  expectNoPeerMessageErrorAfterEach(onPeerMessageError)
 
   if (options.fetchStreamed) {
     return { handler, request, onPeerMessageError }
