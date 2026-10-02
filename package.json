@@ -12,18 +12,15 @@
     }
   },
   "scripts": {
-    "prepare": "simple-git-hooks",
-    "type:check": "pnpm -r run type:check && tsc",
+    "prepare": "uncheck prepare --pre-commit",
+    "check": "uncheck",
+    "fix": "uncheck --fix",
     "test": "pnpm run -r test && vitest run",
     "test:coverage": "pnpm run -r test && vitest run --coverage",
     "bench": "vitest bench --run",
-    "lint": "eslint .",
-    "lint:fix": "eslint --fix .",
-    "repo:fix": "sherif --fix",
-    "sponsors:sync": "node scripts/sync-sponsors.ts && eslint --fix **/README.md"
+    "sponsors:sync": "node scripts/sync-sponsors.ts && pnpm run fix '**/README.md'"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^9.2.0",
     "@codspeed/vitest-plugin": "^5.7.1",
     "@hono/node-server": "^2.0.12",
     "@remix-run/node-fetch-server": "^0.14.0",
@@ -40,28 +37,20 @@
     "@vitest/coverage-v8": "^4.1.10",
     "bumpp": "^12.1.1",
     "changelogithub": "^15.0.4",
-    "eslint": "^10.8.0",
-    "eslint-plugin-ban": "^2.0.0",
-    "eslint-plugin-format": "^2.0.1",
     "express": "^5.2.1",
     "express4": "npm:express@^4.22.3",
     "fastify": "^5.11.0",
     "h3": "2.0.1-rc.26",
-    "lint-staged": "^17.3.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
     "pkg-pr-new": "^0.0.87",
     "selfsigned": "^5.5.0",
     "sherif": "^1.13.0",
-    "simple-git-hooks": "^2.13.1",
     "srvx": "^0.12.5",
     "typescript": "^6.0.3",
     "unbuild": "^3.6.1",
+    "uncheck": "^0.0.3",
     "vitest": "^4.1.10",
     "ws": "^8.21.1"
-  },
-  "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
-  },
-  "lint-staged": {
-    "*": "eslint --no-warn-ignored --fix"
   }
 }

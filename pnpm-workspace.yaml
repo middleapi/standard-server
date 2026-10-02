@@ -24,4 +24,3 @@ preferWorkspacePackages: true
 
 allowBuilds:
   esbuild: false
-  simple-git-hooks: false

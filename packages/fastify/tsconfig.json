@@ -1,6 +1,7 @@
 {
-  "extends": "../../tsconfig.lib.json",
+  "extends": "uncheck/tsconfig/middleapi/lib",
   "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
   "references": [

@@ -44,8 +44,7 @@
     "dist"
   ],
   "scripts": {
-    "prepack": "unbuild",
-    "type:check": "tsc -b"
+    "prepack": "unbuild"
   },
   "peerDependencies": {
     "fastify": ">=5.6.1"

@@ -47,8 +47,7 @@
     "dist"
   ],
   "scripts": {
-    "prepack": "unbuild",
-    "type:check": "tsc -b"
+    "prepack": "unbuild"
   },
   "dependencies": {
     "@standard-server/shared": "workspace:*"

@@ -12,7 +12,6 @@
     "dist"
   ],
   "scripts": {
-    "type:check": "tsc -b",
     "test": "bun test"
   },
   "devDependencies": {

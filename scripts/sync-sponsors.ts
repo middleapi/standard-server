@@ -202,7 +202,7 @@ function replaceSponsorsSection(content: string, replacement: string): string {
   const endIndex = nextHeadingIndex === -1 ? content.length : nextHeadingIndex + 1
 
   // Trimmed to a single trailing newline, or a section replaced at the end of
-  // the file leaves a blank last line that eslint's markdown fixer removes —
+  // the file leaves a blank last line that the markdown formatter removes —
   // and the next sync would put back, forever.
   return `${`${content.slice(0, startIndex)}${replacement}${content.slice(endIndex)}`.trimEnd()}\n`
 }
@@ -236,6 +236,7 @@ async function main(): Promise<void> {
   }
 
   await Promise.all(writePromises)
+  // oxlint-disable-next-line no-console
   console.log(`Updated sponsors section in ${updatedCount} README files.`)
 }
 

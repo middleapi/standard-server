@@ -10,17 +10,17 @@ updates:
       default-days: 1
     versioning-strategy: increase
     groups:
-      eslint:
+      uncheck:
         patterns:
-          - eslint
-          - '@antfu/eslint-config'
-          - 'eslint-plugin-*'
+          - uncheck
+          - oxlint
+          - oxfmt
       dev-dependencies-minor-patch:
         dependency-type: development
         exclude-patterns:
-          - eslint
-          - '@antfu/eslint-config'
-          - 'eslint-plugin-*'
+          - uncheck
+          - oxlint
+          - oxfmt
         update-types:
           - minor
           - patch

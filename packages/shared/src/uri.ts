@@ -6,11 +6,11 @@ const PERCENT_ESCAPES_REGEX = /(?:%[0-9A-F]{2})+/gi
  */
 export function safeEncodeURIComponent(value: string): string {
   try {
-    // eslint-disable-next-line no-restricted-globals
+    // oxlint-disable-next-line no-restricted-globals
     return encodeURIComponent(value)
   }
   catch {
-    // eslint-disable-next-line no-restricted-globals
+    // oxlint-disable-next-line no-restricted-globals
     return encodeURIComponent(value.replace(LONE_SURROGATE_REGEX, '�'))
   }
 }
@@ -24,13 +24,13 @@ export function safeDecodeURIComponent(value: string): string {
   }
 
   try {
-    // eslint-disable-next-line no-restricted-globals
+    // oxlint-disable-next-line no-restricted-globals
     return decodeURIComponent(value)
   }
   catch {
     return value.replace(PERCENT_ESCAPES_REGEX, (escapes) => {
       try {
-        // eslint-disable-next-line no-restricted-globals
+        // oxlint-disable-next-line no-restricted-globals
         return decodeURIComponent(escapes)
       }
       catch {

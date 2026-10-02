@@ -367,7 +367,7 @@ describe('toEventStream', () => {
         yield { big: 1n }
       }
       finally {
-        // eslint-disable-next-line no-unsafe-finally
+        // oxlint-disable-next-line no-unsafe-finally
         throw new Error('cleanup')
       }
     }
@@ -462,7 +462,7 @@ describe('toEventStream', () => {
       }
       finally {
         hasFinally = true
-        // eslint-disable-next-line no-unsafe-finally
+        // oxlint-disable-next-line no-unsafe-finally
         throw new Error('something')
       }
     }

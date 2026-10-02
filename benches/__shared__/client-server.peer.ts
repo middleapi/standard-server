@@ -2,8 +2,6 @@ import type { ClientServer } from './client-server'
 import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 
 export function createPeerClientServer(): ClientServer {
-  let clientPeer: ClientPeer
-
   const clientServer: ClientServer = {
     handler: async () => ({ status: 404, body: 'Not Found', headers: {} }),
     request: async (standardRequest) => {
@@ -22,7 +20,7 @@ export function createPeerClientServer(): ClientServer {
     clientPeer.message(decoded.message)
   })
 
-  clientPeer = new ClientPeer(async (message) => {
+  const clientPeer = new ClientPeer(async (message) => {
     const encoded = await encodePeerMessage(message)
     const decoded = decodePeerMessage(encoded)
 

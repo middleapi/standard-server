@@ -42,7 +42,7 @@ export async function wsMessageDataToEncoded(data: unknown): Promise<string | Ui
   }
 
   if (Array.isArray(data)) {
-    // eslint-disable-next-line ban/ban
+    // oxlint-disable-next-line no-restricted-properties
     return (new Blob(data as BlobPart[])).bytes()
   }
 
