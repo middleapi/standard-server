@@ -17,6 +17,9 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # uncheck needs Node 22.20+ or 24.8+, and oxlint.config.ts needs type stripping
+      - run: pnpm runtime set node 24
+
       - run: pnpm i
 
       - run: pnpm run check
