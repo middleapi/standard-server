@@ -1,8 +1,10 @@
-import type { AddressInfo } from 'node:net'
-import type { ClientServer } from './client-server'
 import * as http from 'node:http'
+import type { AddressInfo } from 'node:net'
+
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
+
+import type { ClientServer } from './client-server'
 
 export function createNodeClientServer(): ClientServer {
   const clientServer: ClientServer = {

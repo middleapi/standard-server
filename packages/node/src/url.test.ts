@@ -1,11 +1,12 @@
-import type { AddressInfo } from 'node:net'
 import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import net from 'node:net'
+
 import { toStandardUrl } from './url'
 
 describe('toStandardUrl', () => {
   it('origin-form', () => {
-    expect(toStandardUrl({ } as any)).toBe('/')
+    expect(toStandardUrl({} as any)).toBe('/')
     expect(toStandardUrl({ url: '/' } as any)).toBe('/')
     expect(toStandardUrl({ url: '/foo' } as any)).toBe('/foo')
     expect(toStandardUrl({ url: '/foo?bar=1#baz' } as any)).toBe('/foo?bar=1#baz')
@@ -15,7 +16,9 @@ describe('toStandardUrl', () => {
 
   it('prefers originalUrl over url', () => {
     expect(toStandardUrl({ url: '/', originalUrl: '/foo?bar=2#baz' } as any)).toBe('/foo?bar=2#baz')
-    expect(toStandardUrl({ url: '/', originalUrl: 'http://127.0.0.1:80/foo?x=1' } as any)).toBe('/foo?x=1')
+    expect(toStandardUrl({ url: '/', originalUrl: 'http://127.0.0.1:80/foo?x=1' } as any)).toBe(
+      '/foo?x=1',
+    )
   })
 
   it('absolute-form (RFC 9112 §3.2.2, sent by clients that treat the server as a proxy)', () => {
@@ -60,24 +63,30 @@ describe('toStandardUrl', () => {
     // unparseable absolute-form keeps the legacy `/${url}` behavior instead of throwing
     expect(toStandardUrl({ url: 'http://' } as any)).toBe('/http://')
     expect(toStandardUrl({ url: 'http://[::1' } as any)).toBe('/http://[::1')
-    expect(toStandardUrl({ url: 'http://example.com:99999/x' } as any)).toBe('/http://example.com:99999/x')
+    expect(toStandardUrl({ url: 'http://example.com:99999/x' } as any)).toBe(
+      '/http://example.com:99999/x',
+    )
   })
 
-  it('absolute-form from a real node:http server (what `curl -x <server> <url>` sends)', async ({ onTestFinished }) => {
+  it('absolute-form from a real node:http server (what `curl -x <server> <url>` sends)', async ({
+    onTestFinished,
+  }) => {
     let url: string | undefined
 
     const server = http.createServer((req, res) => {
       url = toStandardUrl(req)
       res.end()
     })
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const { port } = server.address() as AddressInfo
 
     await new Promise<void>((resolve, reject) => {
       const socket = net.connect(port, '127.0.0.1', () => {
-        socket.end(`GET http://127.0.0.1:${port}/ping?x=1 HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
+        socket.end(
+          `GET http://127.0.0.1:${port}/ping?x=1 HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`,
+        )
       })
       socket.resume()
       socket.on('close', resolve)

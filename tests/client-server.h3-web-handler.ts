@@ -1,6 +1,13 @@
-import type { ClientServerTest } from './client-server'
-import { toFetchBody, toFetchHeaders, toFetchResponse, toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
+import {
+  toFetchBody,
+  toFetchHeaders,
+  toFetchResponse,
+  toStandardLazyRequest,
+  toStandardLazyResponse,
+} from '@standard-server/fetch'
 import { fromWebHandler, H3, serve } from 'h3'
+
+import type { ClientServerTest } from './client-server'
 
 export function createH3WebHandlerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -9,13 +16,16 @@ export function createH3WebHandlerClientServerTest(): ClientServerTest {
 
   const app = new H3()
 
-  app.all('/*', fromWebHandler(async (request) => {
-    const standardRequest = toStandardLazyRequest(request)
-    const standardResponse = await handler(standardRequest)
-    const response = toFetchResponse(standardResponse)
+  app.all(
+    '/*',
+    fromWebHandler(async (request) => {
+      const standardRequest = toStandardLazyRequest(request)
+      const standardResponse = await handler(standardRequest)
+      const response = toFetchResponse(standardResponse)
 
-    return response
-  }))
+      return response
+    }),
+  )
 
   const server = serve(app, { port: 0 })
 

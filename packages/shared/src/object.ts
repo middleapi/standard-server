@@ -16,7 +16,9 @@ export function hasAnyDefinedValue(object: Record<string, unknown>): boolean {
 /**
  * Checks whether the provided container is a typescript object (object or function).
  */
-export function isTypescriptObject(maybeObject: unknown): maybeObject is object & Record<PropertyKey, unknown> {
+export function isTypescriptObject(
+  maybeObject: unknown,
+): maybeObject is object & Record<PropertyKey, unknown> {
   if (!maybeObject) {
     return false
   }

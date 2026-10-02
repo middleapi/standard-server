@@ -23,9 +23,5 @@
     "*/*/tests",
     "*/*/*"
   ],
-  "exclude": [
-    "playgrounds/**",
-    "tests/bun/**",
-    "tests/deno/**"
-  ]
+  "exclude": ["playgrounds/**", "tests/bun/**", "tests/deno/**"]
 }

@@ -1,5 +1,12 @@
+import {
+  toFetchBody,
+  toFetchHeaders,
+  toFetchResponse,
+  toStandardLazyRequest,
+  toStandardLazyResponse,
+} from '@standard-server/fetch'
+
 import type { ClientServer } from './client-server'
-import { toFetchBody, toFetchHeaders, toFetchResponse, toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
 
 export function createFetchClientServer(): ClientServer {
   const clientServer: ClientServer = {
@@ -26,9 +33,7 @@ export function createFetchClientServer(): ClientServer {
     return toStandardLazyResponse(
       toFetchResponse(
         await clientServer.handler(
-          toStandardLazyRequest(
-            new Request(`http://localhost:${standardRequest.url}`, init),
-          ),
+          toStandardLazyRequest(new Request(`http://localhost:${standardRequest.url}`, init)),
         ),
       ),
     )

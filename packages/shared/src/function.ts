@@ -7,8 +7,10 @@ export function sequential<A extends any[], R>(
   let lastOperationPromise: Promise<any> = Promise.resolve()
 
   return (...args: A): Promise<R> => {
-    return lastOperationPromise = lastOperationPromise.catch(() => { }).then(() => {
-      return fn(...args)
-    })
+    return (lastOperationPromise = lastOperationPromise
+      .catch(() => {})
+      .then(() => {
+        return fn(...args)
+      }))
   }
 }

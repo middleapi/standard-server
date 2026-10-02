@@ -1,4 +1,5 @@
 import { AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
+
 import { expectPeerMessages } from './client-server'
 import { createExpressjsClientServerTest } from './client-server.expressjs'
 import { createFastifyClientServerTest } from './client-server.fastify'
@@ -35,7 +36,10 @@ describe.each([
   ['expressjs', () => createExpressjsClientServerTest()],
   ['expressjs-body-parser', () => createExpressjsClientServerTest({ bodyParser: true })],
   ['expressjs4', () => createExpressjsClientServerTest({ version: 4 })],
-  ['expressjs4-body-parser', () => createExpressjsClientServerTest({ version: 4, bodyParser: true })],
+  [
+    'expressjs4-body-parser',
+    () => createExpressjsClientServerTest({ version: 4, bodyParser: true }),
+  ],
   // ['inprogress', createInprogressClientServerTest],
   // ['inprogress-fetch', createInprogressFetchClientServerTest],
   // ['h3-node-handler', createH3NodeHandlerClientServerTest],
@@ -93,13 +97,15 @@ describe.each([
     const abortController = new AbortController()
     abortController.abort()
 
-    await expect(clientServer.request({
-      headers: {},
-      body: undefined,
-      method: 'GET',
-      url: '/',
-      signal: abortController.signal,
-    })).rejects.toThrow(abortController.signal.reason)
+    await expect(
+      clientServer.request({
+        headers: {},
+        body: undefined,
+        method: 'GET',
+        url: '/',
+        signal: abortController.signal,
+      }),
+    ).rejects.toThrow(abortController.signal.reason)
 
     expectPeerMessages(clientServer, { client: [], server: [] })
   })
@@ -188,7 +194,8 @@ describe.each([
     expect(serverSignal.aborted).toBe(false)
     abortController.abort()
 
-    await waitFor(() => { // wait for server receive abort signal
+    await waitFor(() => {
+      // wait for server receive abort signal
       expect(canceled).toBe(REQUEST_STREAM_CANCEL_ADAPTERS.has(adapter))
       expect(serverSignal.aborted).toBe(true)
     })
@@ -247,7 +254,8 @@ describe.each([
     expect(serverSignal.aborted).toBe(false)
     abortController.abort()
 
-    await waitFor(() => { // wait for server receive abort signal
+    await waitFor(() => {
+      // wait for server receive abort signal
       expect(cancelled).toBe(REQUEST_STREAM_CANCEL_ADAPTERS.has(adapter))
       expect(serverSignal.aborted).toBe(true)
     })
@@ -297,14 +305,15 @@ describe.each([
       signal: controller.signal,
     })
 
-    const actualBody = await response.resolveBody() as AsyncGenerator
+    const actualBody = (await response.resolveBody()) as AsyncGenerator
     expect(actualBody).toSatisfy(isAsyncIteratorObject)
     await actualBody.next()
 
     expect(serverSignal.aborted).toBe(false)
     controller.abort()
 
-    await waitFor(() => { // wait for server receive abort signal
+    await waitFor(() => {
+      // wait for server receive abort signal
       expect(canceled).toBe(true)
       expect(serverSignal.aborted).toBe(true)
       expect(times).toBe(2) // the second chunk is being pulled
@@ -350,7 +359,7 @@ describe.each([
       signal: controller.signal,
     })
 
-    const actualBody = await response.resolveBody() as ReadableStream
+    const actualBody = (await response.resolveBody()) as ReadableStream
     expect(actualBody).toBeInstanceOf(ReadableStream)
     const reader = actualBody.getReader()
     await reader.read()
@@ -358,7 +367,8 @@ describe.each([
     expect(serverSignal.aborted).toBe(false)
     controller.abort()
 
-    await waitFor(() => { // wait for server receive abort signal
+    await waitFor(() => {
+      // wait for server receive abort signal
       expect(canceled).toBe(true)
       expect(serverSignal.aborted).toBe(true)
       expect(times).toBe(2) // the second chunk is being pulled
@@ -404,7 +414,7 @@ describe.each([
       url: '/',
     })
 
-    const actualBody = await response.resolveBody() as AsyncGenerator
+    const actualBody = (await response.resolveBody()) as AsyncGenerator
     expect(actualBody).toSatisfy(isAsyncIteratorObject)
 
     await actualBody.next() // wait for first chunk
@@ -412,7 +422,8 @@ describe.each([
 
     await actualBody.return(undefined)
 
-    await waitFor(() => { // wait for server receive cancel signal
+    await waitFor(() => {
+      // wait for server receive cancel signal
       expect(serverSignal.aborted).toBe(true)
       expect(canceled).toBe(true)
       expect(times).toBe(2) // the second chunk is being pulled
@@ -456,7 +467,7 @@ describe.each([
       url: '/',
     })
 
-    const body = await response.resolveBody() as ReadableStream
+    const body = (await response.resolveBody()) as ReadableStream
     expect(body).toBeInstanceOf(ReadableStream)
     const reader = body.getReader()
 
@@ -465,7 +476,8 @@ describe.each([
     expect(serverSignal.aborted).toBe(false)
     await reader.cancel()
 
-    await waitFor(() => { // wait for server receive cancel signal
+    await waitFor(() => {
+      // wait for server receive cancel signal
       expect(serverSignal.aborted).toBe(true)
       expect(canceled).toBe(true)
       expect(times).toBe(2) // the second chunk is being pulled
@@ -484,7 +496,7 @@ describe.each([
     clientServer.handler.mockImplementationOnce(async (request) => {
       serverSignal = request.signal!
 
-      const body = await request.resolveBody() as AsyncGenerator
+      const body = (await request.resolveBody()) as AsyncGenerator
       expect(body).toSatisfy(isAsyncIteratorObject)
 
       await body.next() // wait for first chunk
@@ -537,7 +549,7 @@ describe.each([
     clientServer.handler.mockImplementationOnce(async (request) => {
       serverSignal = request.signal!
 
-      const body = await request.resolveBody() as ReadableStream
+      const body = (await request.resolveBody()) as ReadableStream
       expect(body).toBeInstanceOf(ReadableStream)
 
       const reader = body.getReader()
@@ -591,14 +603,13 @@ describe.each([
     clientServer.handler.mockImplementationOnce(async (request) => {
       serverSignal = request.signal!
 
-      const body = await request.resolveBody() as AsyncGenerator
+      const body = (await request.resolveBody()) as AsyncGenerator
       expect(body).toSatisfy(isAsyncIteratorObject)
 
       await body.next()
       try {
         await body.next() // pull second chunk where error happen
-      }
-      catch (e) {
+      } catch (e) {
         serverError = e
       }
 
@@ -637,7 +648,8 @@ describe.each([
 
     await expect(responsePromise).rejects.toThrow()
 
-    await waitFor(() => { // wait for server handle abort
+    await waitFor(() => {
+      // wait for server handle abort
       expect(serverSignal.aborted).toBe(true)
       expect(serverError).toBeInstanceOf(Error)
     })
@@ -658,15 +670,14 @@ describe.each([
     clientServer.handler.mockImplementationOnce(async (request) => {
       serverSignal = request.signal!
 
-      const body = await request.resolveBody() as ReadableStream
+      const body = (await request.resolveBody()) as ReadableStream
       expect(body).toBeInstanceOf(ReadableStream)
 
       const reader = body.getReader()
       await reader.read()
       try {
         await reader.read() // pull second chunk where error happen
-      }
-      catch (e) {
+      } catch (e) {
         serverError = e
       }
 
@@ -702,12 +713,12 @@ describe.each([
 
     if (REQUEST_STREAM_CANCEL_ADAPTERS.has(adapter)) {
       await expect(responsePromise).rejects.toThrow(error)
-    }
-    else {
+    } else {
       await expect(responsePromise).rejects.toThrow()
     }
 
-    await waitFor(() => { // wait for server handle abort
+    await waitFor(() => {
+      // wait for server handle abort
       expect(serverSignal.aborted).toBe(true)
       expect(serverError).toBeInstanceOf(Error)
     })
@@ -737,7 +748,7 @@ describe.each([
             await sleep(50)
 
             if (times !== 1) {
-            // throw normal error not async iterator object error
+              // throw normal error not async iterator object error
               throw new Error('__TEST__')
             }
 
@@ -759,7 +770,7 @@ describe.each([
       url: '/',
     })
 
-    const body = await response.resolveBody() as AsyncGenerator
+    const body = (await response.resolveBody()) as AsyncGenerator
     expect(body).toSatisfy(isAsyncIteratorObject)
 
     await body.next()
@@ -811,7 +822,7 @@ describe.each([
       url: '/',
     })
 
-    const body = await response.resolveBody() as ReadableStream
+    const body = (await response.resolveBody()) as ReadableStream
     expect(body).toBeInstanceOf(ReadableStream)
 
     const reader = body.getReader()
@@ -837,13 +848,12 @@ describe.each([
       serverSignal = request.signal!
 
       ;(async () => {
-        const body = await request.resolveBody() as AsyncGenerator
+        const body = (await request.resolveBody()) as AsyncGenerator
         expect(body).toSatisfy(isAsyncIteratorObject)
         await body.next()
         try {
           await body.next() // pull second chunk where error happen
-        }
-        catch (e) {
+        } catch (e) {
           serverError = e
         }
       })()
@@ -888,11 +898,12 @@ describe.each([
     })
 
     const response = await responsePromise
-    const iterator = await response.resolveBody() as AsyncIteratorClass<any>
+    const iterator = (await response.resolveBody()) as AsyncIteratorClass<any>
 
     await expect(iterator.next().then(() => iterator.next())).rejects.toThrow(Error)
 
-    await waitFor(() => { // wait for server handle abort
+    await waitFor(() => {
+      // wait for server handle abort
       expect(serverSignal.aborted).toBe(true)
       expect(serverError).toBeInstanceOf(Error)
     })
@@ -914,15 +925,14 @@ describe.each([
       serverSignal = request.signal!
 
       ;(async () => {
-        const body = await request.resolveBody() as ReadableStream
+        const body = (await request.resolveBody()) as ReadableStream
         expect(body).toBeInstanceOf(ReadableStream)
 
         const reader = body.getReader()
         await reader.read()
         try {
           await reader.read() // pull second chunk where error happen
-        }
-        catch (e) {
+        } catch (e) {
           serverError = e
         }
       })()
@@ -965,13 +975,14 @@ describe.each([
     })
 
     const response = await responsePromise
-    const body = await response.resolveBody() as ReadableStream
+    const body = (await response.resolveBody()) as ReadableStream
 
     const reader = body.getReader()
 
     await expect(reader.read().then(() => reader.read())).rejects.toThrow(Error)
 
-    await waitFor(() => { // wait for server handle abort
+    await waitFor(() => {
+      // wait for server handle abort
       expect(serverSignal.aborted).toBe(true)
       expect(serverError).toBeInstanceOf(Error)
     })

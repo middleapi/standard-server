@@ -1,5 +1,13 @@
+import {
+  ClientPeer,
+  decodePeerMessage,
+  encodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+
 import type { ClientServer } from './client-server'
-import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 
 export function createPeerClientServer(): ClientServer {
   const clientServer: ClientServer = {

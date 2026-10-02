@@ -1,7 +1,8 @@
 import type { StandardHeaders } from '@standard-server/core'
 import type { NodeHttpRequest, NodeHttpResponse } from '@standard-server/node'
-import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 import Fastify from 'fastify'
+
+import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 
 /**
  * Passing a concrete fastify request/reply here only compiles if the widened
@@ -41,7 +42,7 @@ it('accept the request and reply of an http2 instance', () => {
 it('accept the request and reply of a route with a route generic', () => {
   const fastify = Fastify()
 
-  fastify.post<{ Querystring: { q: string }, Body: { b: number } }>('/', async (req, reply) => {
+  fastify.post<{ Querystring: { q: string }; Body: { b: number } }>('/', async (req, reply) => {
     accepts(req, reply)
   })
 })
@@ -49,7 +50,10 @@ it('accept the request and reply of a route with a route generic', () => {
 it('accept the request and reply of an encapsulated plugin', () => {
   const fastify = Fastify()
 
-  fastify.register(async (instance) => {
-    instance.all('/*', async (req, reply) => accepts(req, reply))
-  }, { prefix: '/api' })
+  fastify.register(
+    async (instance) => {
+      instance.all('/*', async (req, reply) => accepts(req, reply))
+    },
+    { prefix: '/api' },
+  )
 })

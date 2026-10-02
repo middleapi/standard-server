@@ -1,4 +1,8 @@
-import { decodeEventStreamMessage, encodeEventStreamMessage, EventStreamDecoder } from '@standard-server/core'
+import {
+  decodeEventStreamMessage,
+  encodeEventStreamMessage,
+  EventStreamDecoder,
+} from '@standard-server/core'
 import { bench, describe } from 'vitest'
 
 const SIZE_1KB = 1024

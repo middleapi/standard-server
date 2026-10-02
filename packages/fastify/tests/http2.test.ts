@@ -1,6 +1,8 @@
-import type { AddressInfo } from 'node:net'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
+
 import Fastify from 'fastify'
+
 import { sendStandardResponse, toStandardLazyRequest } from '../src'
 
 /**
@@ -39,7 +41,7 @@ describe('http2', () => {
     const { port } = fastify.server.address() as AddressInfo
 
     const client = http2.connect(`http://127.0.0.1:${port}`)
-    onTestFinished(() => new Promise<void>(resolve => client.close(resolve)))
+    onTestFinished(() => new Promise<void>((resolve) => client.close(resolve)))
 
     const stream = client.request({
       ':method': 'POST',
@@ -84,7 +86,7 @@ describe('http2', () => {
         headers: {},
         body: (async function* () {
           yield 'foo'
-          await new Promise(r => setTimeout(r, 9999999))
+          await new Promise((r) => setTimeout(r, 9999999))
         })(),
       })
     })
@@ -93,7 +95,7 @@ describe('http2', () => {
     const { port } = fastify.server.address() as AddressInfo
 
     const client = http2.connect(`http://127.0.0.1:${port}`)
-    onTestFinished(() => new Promise<void>(resolve => client.close(resolve)))
+    onTestFinished(() => new Promise<void>((resolve) => client.close(resolve)))
 
     const stream = client.request({ ':path': '/' })
     stream.once('error', () => {})

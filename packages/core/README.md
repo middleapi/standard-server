@@ -301,10 +301,7 @@ const filename = getFilenameFromContentDisposition(disposition)
 `mergeStandardHeaders()` combines two `StandardHeaders` objects while preserving duplicate values, and `flattenStandardHeader()` turns a single header value into a plain string when needed.
 
 ```ts
-import {
-  flattenStandardHeader,
-  mergeStandardHeaders,
-} from '@standard-server/core'
+import { flattenStandardHeader, mergeStandardHeaders } from '@standard-server/core'
 
 const headers = mergeStandardHeaders(
   { 'accept': 'application/json', 'set-cookie': ['a=1'] },
@@ -385,10 +382,7 @@ The event-stream helpers include:
 - `EventStreamDecoder` and `EventStreamDecoderStream` for chunked stream decoding
 
 ```ts
-import {
-  decodeEventStreamMessage,
-  encodeEventStreamMessage,
-} from '@standard-server/core'
+import { decodeEventStreamMessage, encodeEventStreamMessage } from '@standard-server/core'
 
 const encoded = encodeEventStreamMessage({
   comments: ['bootstrap'],
@@ -413,8 +407,8 @@ For streaming decode, pipe text chunks through `EventStreamDecoderStream`:
 ```ts
 import { EventStreamDecoderStream } from '@standard-server/core'
 
-const messages = response.body!
-  .pipeThrough(new TextDecoderStream())
+const messages = response
+  .body!.pipeThrough(new TextDecoderStream())
   .pipeThrough(new EventStreamDecoderStream())
 ```
 
@@ -426,10 +420,7 @@ const messages = response.body!
 import type { StandardResponse } from '@standard-server/core'
 import { getEventMeta, unwrapEvent, withEventMeta } from '@standard-server/core'
 
-const event = withEventMeta(
-  { message: 'hello' },
-  { id: '1', retry: 3000, comments: ['bootstrap'] },
-)
+const event = withEventMeta({ message: 'hello' }, { id: '1', retry: 3000, comments: ['bootstrap'] })
 
 const [data, meta] = unwrapEvent(event)
 // data => { message: 'hello' }

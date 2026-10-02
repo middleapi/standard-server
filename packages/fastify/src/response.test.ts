@@ -1,10 +1,12 @@
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
 import { Readable, Writable } from 'node:stream'
+
 import FastifyCookie from '@fastify/cookie'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
+
 import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
@@ -24,22 +26,30 @@ describe('sendStandardResponse', () => {
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
-      await sendStandardResponse(reply, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        reply,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: undefined,
         },
-        body: undefined,
-      }, options)
+        options,
+      )
     })
 
     await fastify.ready()
     const res = await request(fastify.server).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(undefined, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      undefined,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(sendSpy).toBeCalledTimes(1)
     expect(sendSpy).toBeCalledWith(undefined)
@@ -61,22 +71,30 @@ describe('sendStandardResponse', () => {
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
-      await sendStandardResponse(reply, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        reply,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: { foo: 'bar' },
         },
-        body: { foo: 'bar' },
-      }, options)
+        options,
+      )
     })
 
     await fastify.ready()
     const res = await request(fastify.server).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith({ foo: 'bar' }, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      { foo: 'bar' },
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(sendSpy).toBeCalledTimes(1)
     // fastify must NOT serialize the payload again
@@ -126,22 +144,30 @@ describe('sendStandardResponse', () => {
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
-      await sendStandardResponse(reply, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        reply,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: blob,
         },
-        body: blob,
-      }, options)
+        options,
+      )
     })
 
     await fastify.ready()
     const res = await request(fastify.server).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(blob, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      blob,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(sendSpy).toBeCalledTimes(1)
     expect(sendSpy).toBeCalledWith((await toNodeHttpBodySpy.mock.results[0]!.value)[0])
@@ -176,22 +202,30 @@ describe('sendStandardResponse', () => {
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
-      await sendStandardResponse(reply, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        reply,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: generator,
         },
-        body: generator,
-      }, options)
+        options,
+      )
     })
 
     await fastify.ready()
     const res = await request(fastify.server).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(generator, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      generator,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(sendSpy).toBeCalledTimes(1)
     expect(sendSpy).toBeCalledWith((await toNodeHttpBodySpy.mock.results[0]!.value)[0])
@@ -289,13 +323,18 @@ describe('sendStandardResponse', () => {
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
 
-      toNodeHttpBodySpy.mockReturnValueOnce([Readable.fromWeb(new ReadableStream({
-        async pull(controller) {
-          controller.enqueue(new TextEncoder().encode('foo'))
-          await new Promise(r => setTimeout(r, 100))
-          controller.error(new Error('foo'))
-        },
-      })), {}])
+      toNodeHttpBodySpy.mockReturnValueOnce([
+        Readable.fromWeb(
+          new ReadableStream({
+            async pull(controller) {
+              controller.enqueue(new TextEncoder().encode('foo'))
+              await new Promise((r) => setTimeout(r, 100))
+              controller.error(new Error('foo'))
+            },
+          }),
+        ),
+        {},
+      ])
 
       fastify.get('/', async (req, reply) => {
         await sendStandardResponse(reply, {
@@ -303,7 +342,7 @@ describe('sendStandardResponse', () => {
           headers: {
             'x-custom-header': 'custom-value',
           },
-          async* body() { },
+          async *body() {},
         })
       })
 
@@ -317,13 +356,18 @@ describe('sendStandardResponse', () => {
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
 
-      toNodeHttpBodySpy.mockReturnValueOnce([Readable.fromWeb(new ReadableStream({
-        async pull(controller) {
-          controller.enqueue(new TextEncoder().encode('foo'))
-          await new Promise(r => setTimeout(r, 100))
-        },
-        cancel: cancelMock,
-      })), {}])
+      toNodeHttpBodySpy.mockReturnValueOnce([
+        Readable.fromWeb(
+          new ReadableStream({
+            async pull(controller) {
+              controller.enqueue(new TextEncoder().encode('foo'))
+              await new Promise((r) => setTimeout(r, 100))
+            },
+            cancel: cancelMock,
+          }),
+        ),
+        {},
+      ])
 
       fastify.get('/', async (req, reply) => {
         await sendStandardResponse(reply, {
@@ -331,7 +375,7 @@ describe('sendStandardResponse', () => {
           headers: {
             'x-custom-header': 'custom-value',
           },
-          async* body() { },
+          async *body() {},
         })
       })
 
@@ -350,19 +394,26 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('rejects and destroys the body when reply throws synchronously', async ({ onTestFinished }) => {
+    it('rejects and destroys the body when reply throws synchronously', async ({
+      onTestFinished,
+    }) => {
       const cancelMock = vi.fn()
 
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
 
-      toNodeHttpBodySpy.mockReturnValueOnce([Readable.fromWeb(new ReadableStream({
-        async pull(controller) {
-          controller.enqueue(new TextEncoder().encode('foo'))
-          await new Promise(r => setTimeout(r, 100))
-        },
-        cancel: cancelMock,
-      })), {}])
+      toNodeHttpBodySpy.mockReturnValueOnce([
+        Readable.fromWeb(
+          new ReadableStream({
+            async pull(controller) {
+              controller.enqueue(new TextEncoder().encode('foo'))
+              await new Promise((r) => setTimeout(r, 100))
+            },
+            cancel: cancelMock,
+          }),
+        ),
+        {},
+      ])
 
       let thrownError: any
       fastify.get('/', async (req, reply) => {
@@ -371,10 +422,9 @@ describe('sendStandardResponse', () => {
             // status outside [100, 599] makes reply.status throw FST_ERR_BAD_STATUS_CODE
             status: 999,
             headers: {},
-            async* body() { },
+            async *body() {},
           })
-        }
-        catch (err) {
+        } catch (err) {
           thrownError = err
           throw err
         }
@@ -414,9 +464,7 @@ describe('sendStandardResponse', () => {
       expect(res.status).toBe(207)
       expect(res.headers).toMatchObject({
         'content-type': 'application/json; charset=utf-8',
-        'set-cookie': [
-          expect.stringContaining('foo=bar'),
-        ],
+        'set-cookie': [expect.stringContaining('foo=bar')],
       })
 
       expect(res.text).toEqual('{"foo":"bar"}')
@@ -444,11 +492,13 @@ describe('sendStandardResponse', () => {
         send: vi.fn(),
       } as any
 
-      await expect(sendStandardResponse(reply, {
-        status: 200,
-        headers: {},
-        body: { foo: 'bar' },
-      })).resolves.toBeUndefined()
+      await expect(
+        sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body: { foo: 'bar' },
+        }),
+      ).resolves.toBeUndefined()
 
       expect(reply.send).not.toHaveBeenCalled()
     })
@@ -458,10 +508,8 @@ describe('sendStandardResponse', () => {
       const body = (async function* () {
         try {
           yield 1
-        }
-        catch {
-        }
-        finally {
+        } catch {
+        } finally {
           clean = true
         }
       })()
@@ -485,11 +533,13 @@ describe('sendStandardResponse', () => {
         send: vi.fn(),
       } as any
 
-      await expect(sendStandardResponse(reply, {
-        status: 200,
-        headers: {},
-        body,
-      })).resolves.toBeUndefined()
+      await expect(
+        sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body,
+        }),
+      ).resolves.toBeUndefined()
 
       await vi.waitFor(() => {
         expect(clean).toBe(true)
@@ -505,8 +555,7 @@ describe('sendStandardResponse', () => {
       const body = (async function* () {
         try {
           yield 1
-        }
-        finally {
+        } finally {
           clean = true
         }
       })()
@@ -517,7 +566,7 @@ describe('sendStandardResponse', () => {
         },
       })
 
-      stream.once('error', () => { })
+      stream.once('error', () => {})
       stream.destroy(new Error('test'))
 
       await vi.waitFor(() => {
@@ -532,11 +581,13 @@ describe('sendStandardResponse', () => {
         send: vi.fn(),
       } as any
 
-      await expect(sendStandardResponse(reply, {
-        status: 200,
-        headers: {},
-        body,
-      })).rejects.toThrow('test')
+      await expect(
+        sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body,
+        }),
+      ).rejects.toThrow('test')
 
       await vi.waitFor(() => {
         expect(clean).toBe(true)
@@ -550,8 +601,7 @@ describe('sendStandardResponse', () => {
       const body = (async function* () {
         try {
           yield 1
-        }
-        finally {
+        } finally {
           clean = true
         }
       })()
@@ -562,7 +612,7 @@ describe('sendStandardResponse', () => {
         },
       })
 
-      raw.once('error', () => { })
+      raw.once('error', () => {})
       raw.destroy(new Error('test'))
 
       await vi.waitFor(() => {
@@ -576,11 +626,13 @@ describe('sendStandardResponse', () => {
         send: vi.fn(),
       } as any
 
-      await expect(sendStandardResponse(reply, {
-        status: 200,
-        headers: {},
-        body,
-      })).rejects.toThrow('test')
+      await expect(
+        sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body,
+        }),
+      ).rejects.toThrow('test')
 
       await vi.waitFor(() => {
         expect(clean).toBe(true)
@@ -601,7 +653,11 @@ describe('sendStandardResponse', () => {
       onTestFinished(() => fastify.close())
 
       fastify.get('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
         await sending
       })
 
@@ -626,7 +682,11 @@ describe('sendStandardResponse', () => {
       onTestFinished(() => fastify.close())
 
       fastify.get('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
         await sending
       })
 
@@ -642,7 +702,9 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('rejects and releases the body on an explicit http2 HEAD route', async ({ onTestFinished }) => {
+    it('rejects and releases the body on an explicit http2 HEAD route', async ({
+      onTestFinished,
+    }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
 
@@ -650,7 +712,11 @@ describe('sendStandardResponse', () => {
       onTestFinished(() => fastify.close())
 
       fastify.head('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, { status: 201, headers: { 'x-custom-header': 'custom-value' }, body })
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
         await sending.catch(() => {})
       })
 
@@ -667,7 +733,9 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  it('rejects with the stream error when the client resets an http2 stream with an error code', async ({ onTestFinished }) => {
+  it('rejects with the stream error when the client resets an http2 stream with an error code', async ({
+    onTestFinished,
+  }) => {
     const { body, isReleased } = createEndlessBody()
     let sending: Promise<void> | undefined
 
@@ -685,7 +753,7 @@ describe('sendStandardResponse', () => {
     const reqStream = client.request({ ':path': '/' })
     reqStream.once('error', () => {})
 
-    await new Promise(r => reqStream.once('data', r))
+    await new Promise((r) => reqStream.once('data', r))
     reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR)
 
     await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP2_STREAM_ERROR' })
@@ -703,10 +771,9 @@ function createEndlessBody() {
     try {
       while (true) {
         yield 'foo'
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise((r) => setTimeout(r, 10))
       }
-    }
-    finally {
+    } finally {
       released = true
     }
   })()
@@ -714,7 +781,9 @@ function createEndlessBody() {
   return { body, isReleased: () => released }
 }
 
-async function requestHttp2Head(origin: string): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
+async function requestHttp2Head(
+  origin: string,
+): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
   const client = http2.connect(origin)
 
   try {
@@ -728,11 +797,10 @@ async function requestHttp2Head(origin: string): Promise<{ headers: http2.Incomi
       reqStream.once('error', reject)
     })
 
-    await new Promise(r => reqStream.once('close', r))
+    await new Promise((r) => reqStream.once('close', r))
 
     return { headers, body: Buffer.concat(chunks).toString() }
-  }
-  finally {
+  } finally {
     client.close()
   }
 }

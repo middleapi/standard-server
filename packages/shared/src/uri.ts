@@ -1,4 +1,5 @@
-const LONE_SURROGATE_REGEX = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+const LONE_SURROGATE_REGEX =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
 const PERCENT_ESCAPES_REGEX = /(?:%[0-9A-F]{2})+/gi
 
 /**
@@ -8,8 +9,7 @@ export function safeEncodeURIComponent(value: string): string {
   try {
     // oxlint-disable-next-line no-restricted-globals
     return encodeURIComponent(value)
-  }
-  catch {
+  } catch {
     // oxlint-disable-next-line no-restricted-globals
     return encodeURIComponent(value.replace(LONE_SURROGATE_REGEX, '�'))
   }
@@ -26,14 +26,12 @@ export function safeDecodeURIComponent(value: string): string {
   try {
     // oxlint-disable-next-line no-restricted-globals
     return decodeURIComponent(value)
-  }
-  catch {
+  } catch {
     return value.replace(PERCENT_ESCAPES_REGEX, (escapes) => {
       try {
         // oxlint-disable-next-line no-restricted-globals
         return decodeURIComponent(escapes)
-      }
-      catch {
+      } catch {
         return escapes
       }
     })

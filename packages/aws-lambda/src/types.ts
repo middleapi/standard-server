@@ -100,7 +100,11 @@ export interface HttpResponseStream extends Writable {
  */
 export interface AwsLambdaGlobal {
   streamifyResponse<TEvent = unknown, TContext = unknown>(
-    handler: (event: TEvent, responseStream: HttpResponseStream, context: TContext) => Promise<void> | void,
+    handler: (
+      event: TEvent,
+      responseStream: HttpResponseStream,
+      context: TContext,
+    ) => Promise<void> | void,
   ): (event: TEvent, responseStream: HttpResponseStream, context: TContext) => Promise<void> | void
 
   HttpResponseStream: {
@@ -110,7 +114,10 @@ export interface AwsLambdaGlobal {
      */
     from(
       responseStream: HttpResponseStream,
-      metadata: { statusCode: number, headers: Record<string, string>, cookies: string[] } & Record<string, unknown>,
+      metadata: { statusCode: number; headers: Record<string, string>; cookies: string[] } & Record<
+        string,
+        unknown
+      >,
     ): HttpResponseStream
   }
 }

@@ -2,7 +2,9 @@ import { toStandardUrl } from './url'
 
 it('toStandardUrl', () => {
   expect(toStandardUrl(new URL('http://localhost:3000/'))).toBe('/')
-  expect(toStandardUrl(new URL('http://localhost:3000/path?param=value#hash'))).toBe('/path?param=value#hash')
+  expect(toStandardUrl(new URL('http://localhost:3000/path?param=value#hash'))).toBe(
+    '/path?param=value#hash',
+  )
 
   const url = new URL('http://localhost:3000/path?param=value#hash')
   url.searchParams.set('!@#$', '%^&%^')

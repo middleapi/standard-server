@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { getOrBind } from './proxy'
 
 describe('getOrBind', () => {

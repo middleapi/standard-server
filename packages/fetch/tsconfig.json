@@ -3,10 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "references": [
-    { "path": "../core" },
-    { "path": "../shared" }
-  ],
+  "references": [{ "path": "../core" }, { "path": "../shared" }],
   "include": ["./package.json", "src"],
   "exclude": [
     "**/*.test.*",

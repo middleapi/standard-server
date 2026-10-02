@@ -1,5 +1,17 @@
-import { encodeEventStreamMessage, ErrorEvent, EventStreamDecoderStream, getEventMeta, unwrapEvent, withEventMeta } from '@standard-server/core'
-import { AsyncIteratorClass, isTypescriptObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
+import {
+  encodeEventStreamMessage,
+  ErrorEvent,
+  EventStreamDecoderStream,
+  getEventMeta,
+  unwrapEvent,
+  withEventMeta,
+} from '@standard-server/core'
+import {
+  AsyncIteratorClass,
+  isTypescriptObject,
+  parseEmptyableJSON,
+  stringifyJSON,
+} from '@standard-server/shared'
 
 export function toAsyncIteratorObject(
   stream: ReadableStream<Uint8Array<ArrayBuffer>> | null,
@@ -10,56 +22,59 @@ export function toAsyncIteratorObject(
 
   const reader = eventStream?.getReader()
 
-  return new AsyncIteratorClass(async () => {
-    while (true) {
-      if (reader === undefined) {
-        return { done: true, value: undefined }
-      }
+  return new AsyncIteratorClass(
+    async () => {
+      while (true) {
+        if (reader === undefined) {
+          return { done: true, value: undefined }
+        }
 
-      const { done, value } = await reader.read()
+        const { done, value } = await reader.read()
 
-      /**
-       * The sender closed the stream without sending a 'close' event.
-       * A read cancelled by `return()` also ends here, and AsyncIteratorClass
-       * resolves it as done either way.
-       */
-      if (done) {
-        return { done: true, value: undefined }
-      }
+        /**
+         * The sender closed the stream without sending a 'close' event.
+         * A read cancelled by `return()` also ends here, and AsyncIteratorClass
+         * resolves it as done either way.
+         */
+        if (done) {
+          return { done: true, value: undefined }
+        }
 
-      switch (value.event) {
-        case 'message': {
-          let message = parseEmptyableJSON(value.data)
+        switch (value.event) {
+          case 'message': {
+            let message = parseEmptyableJSON(value.data)
 
-          if (isTypescriptObject(message)) {
-            message = withEventMeta(message, value)
+            if (isTypescriptObject(message)) {
+              message = withEventMeta(message, value)
+            }
+
+            return { done: false, value: message }
           }
 
-          return { done: false, value: message }
-        }
+          case 'error': {
+            let error = new ErrorEvent(parseEmptyableJSON(value.data))
 
-        case 'error': {
-          let error = new ErrorEvent(parseEmptyableJSON(value.data))
+            error = withEventMeta(error, value)
 
-          error = withEventMeta(error, value)
-
-          throw error
-        }
-
-        case 'close': {
-          let close = parseEmptyableJSON(value.data)
-
-          if (isTypescriptObject(close)) {
-            close = withEventMeta(close, value)
+            throw error
           }
 
-          return { done: true, value: close }
+          case 'close': {
+            let close = parseEmptyableJSON(value.data)
+
+            if (isTypescriptObject(close)) {
+              close = withEventMeta(close, value)
+            }
+
+            return { done: true, value: close }
+          }
         }
       }
-    }
-  }, async () => {
-    await reader?.cancel()
-  })
+    },
+    async () => {
+      await reader?.cancel()
+    },
+  )
 }
 
 export interface ToEventStreamOptions {
@@ -69,50 +84,54 @@ export interface ToEventStreamOptions {
    *
    * @default { enabled: true }
    */
-  initialComment?: undefined | {
-    /**
-     * If true, an initial comment is sent immediately upon stream start to flush headers.
-     * This allows the receiving side to establish the connection without waiting for the first event.
-     *
-     * @default true
-     */
-    enabled?: boolean
+  initialComment?:
+    | undefined
+    | {
+        /**
+         * If true, an initial comment is sent immediately upon stream start to flush headers.
+         * This allows the receiving side to establish the connection without waiting for the first event.
+         *
+         * @default true
+         */
+        enabled?: boolean
 
-    /**
-     * The content of the initial comment sent upon stream start. Must not include newline characters.
-     *
-     * @default ''
-     */
-    comment?: string
-  }
+        /**
+         * The content of the initial comment sent upon stream start. Must not include newline characters.
+         *
+         * @default ''
+         */
+        comment?: string
+      }
 
   /**
    * If enabled, a ping comment is sent periodically to keep the connection alive.
    *
    * @default { enabled: true }
    */
-  keepAlive?: undefined | {
-    /**
-     * If true, a ping comment is sent periodically to keep the connection alive.
-     *
-     * @default true
-     */
-    enabled: boolean
+  keepAlive?:
+    | undefined
+    | {
+        /**
+         * If true, a ping comment is sent periodically to keep the connection alive.
+         *
+         * @default true
+         */
+        enabled: boolean
 
-    /**
-     * Interval (in milliseconds) between ping comments sent after the last event.
-     *
-     * @default 15000
-     */
-    interval?: number
+        /**
+         * Interval (in milliseconds) between ping comments sent after the last event.
+         *
+         * @default 15000
+         */
+        interval?: number
 
-    /**
-     * The content of the ping comment. Must not include newline characters.
-     *
-     * @default ''
-     */
-    comment?: string
-  }
+        /**
+         * The content of the ping comment. Must not include newline characters.
+         *
+         * @default ''
+         */
+        comment?: string
+      }
 }
 
 export function toEventStream(
@@ -131,9 +150,11 @@ export function toEventStream(
   const stream = new ReadableStream<string>({
     start(controller) {
       if (initialCommentEnabled) {
-        controller.enqueue(encodeEventStreamMessage({
-          comments: [initialComment],
-        }))
+        controller.enqueue(
+          encodeEventStreamMessage({
+            comments: [initialComment],
+          }),
+        )
       }
     },
     async pull(controller) {
@@ -142,15 +163,16 @@ export function toEventStream(
       try {
         if (keepAliveEnabled) {
           timeout = setInterval(() => {
-            controller.enqueue(encodeEventStreamMessage({
-              comments: [keepAliveComment],
-            }))
+            controller.enqueue(
+              encodeEventStreamMessage({
+                comments: [keepAliveComment],
+              }),
+            )
           }, keepAliveInterval)
         }
 
         result = await iterator.next()
-      }
-      catch (err) {
+      } catch (err) {
         clearInterval(timeout)
 
         if (cancelled) {
@@ -158,14 +180,15 @@ export function toEventStream(
         }
 
         if (err instanceof ErrorEvent) {
-          controller.enqueue(encodeEventStreamMessage({
-            ...getEventMeta(err),
-            event: 'error',
-            data: stringifyJSON(err.data),
-          }))
+          controller.enqueue(
+            encodeEventStreamMessage({
+              ...getEventMeta(err),
+              event: 'error',
+              data: stringifyJSON(err.data),
+            }),
+          )
           controller.close()
-        }
-        else {
+        } else {
           /**
            * Should treat a non-ErrorEvent as an error.
            */
@@ -184,13 +207,14 @@ export function toEventStream(
       try {
         const [data, meta] = unwrapEvent(result.value)
 
-        controller.enqueue(encodeEventStreamMessage({
-          ...meta,
-          event: result.done ? 'close' : 'message',
-          data: stringifyJSON(data),
-        }))
-      }
-      catch (err) {
+        controller.enqueue(
+          encodeEventStreamMessage({
+            ...meta,
+            event: result.done ? 'close' : 'message',
+            data: stringifyJSON(data),
+          }),
+        )
+      } catch (err) {
         /**
          * The event could not be serialized (e.g. BigInt, circular data, a throwing toJSON).
          * An errored stream never calls `cancel()`, so release the suspended iterator here.
@@ -199,8 +223,7 @@ export function toEventStream(
           if (!result.done) {
             await iterator.return?.()
           }
-        }
-        finally {
+        } finally {
           controller.error(err)
         }
 

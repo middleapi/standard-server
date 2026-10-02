@@ -1,9 +1,10 @@
-import type { Readable } from 'node:stream'
-import type Stream from 'node:stream'
-import type { NodeHttpResponse } from './types'
 import { Buffer } from 'node:buffer'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
+import type { Readable } from 'node:stream'
+import type Stream from 'node:stream'
+
+import type { NodeHttpResponse } from './types'
 
 /**
  * A cancel-safe alternative to `Readable.toWeb`.
@@ -39,32 +40,32 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
 
       if (done) {
         controller.close()
-      }
-      else {
+      } else {
         controller.enqueue(new Uint8Array(readableChunkToBytes(stream, value)))
       }
     },
     cancel(reason) {
       canceled = true
 
-      const isServerRequest = (stream instanceof IncomingMessage && stream.method !== null)
-        || stream instanceof Http2ServerRequest
+      const isServerRequest =
+        (stream instanceof IncomingMessage && stream.method !== null) ||
+        stream instanceof Http2ServerRequest
 
       if (isServerRequest) {
         // Errors mean the request is already torn down (e.g. the client aborted)
         void _drainIterator(iterator).catch(() => {})
-      }
-      else {
+      } else {
         stream.destroy(reason instanceof Error ? reason : undefined)
       }
     },
   })
 }
 
-export function readableChunkToBytes(stream: Readable, chunk: Uint8Array<ArrayBuffer> | string): Uint8Array<ArrayBuffer> {
-  return typeof chunk === 'string'
-    ? Buffer.from(chunk, stream.readableEncoding ?? 'utf8')
-    : chunk
+export function readableChunkToBytes(
+  stream: Readable,
+  chunk: Uint8Array<ArrayBuffer> | string,
+): Uint8Array<ArrayBuffer> {
+  return typeof chunk === 'string' ? Buffer.from(chunk, stream.readableEncoding ?? 'utf8') : chunk
 }
 
 async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
@@ -77,9 +78,11 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
  * Check the response can still be sent.
  */
 export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
-  return !('headersSent' in res && res.headersSent)
-    && !res.writableEnded
-    && !('stream' in res ? res.stream : res).destroyed
+  return (
+    !('headersSent' in res && res.headersSent) &&
+    !res.writableEnded &&
+    !('stream' in res ? res.stream : res).destroyed
+  )
 }
 
 /**

@@ -1,16 +1,9 @@
 {
   "name": "@standard-server/repo",
-  "type": "module",
   "version": "0.10.0",
   "private": true,
   "license": "MIT",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^12.4.1",
-      "onFail": "download"
-    }
-  },
+  "type": "module",
   "scripts": {
     "prepare": "uncheck prepare --pre-commit",
     "check": "uncheck",
@@ -52,5 +45,12 @@
     "uncheck": "^0.0.3",
     "vitest": "^4.1.10",
     "ws": "^8.21.1"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^12.4.1",
+      "onFail": "download"
+    }
   }
 }

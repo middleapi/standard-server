@@ -1,11 +1,13 @@
 import type { IncomingMessage } from 'node:http'
-import type { AddressInfo } from 'node:net'
-import type { ClientServerTest } from './client-server'
 import * as https from 'node:https'
+import type { AddressInfo } from 'node:net'
 import { Readable } from 'node:stream'
+
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { throwIfAborted } from '@standard-server/shared'
+
+import type { ClientServerTest } from './client-server'
 import { generateTlsCert } from './tls'
 
 export function createNodeHttpsClientServerTest(): ClientServerTest {
@@ -23,7 +25,7 @@ export function createNodeHttpsClientServerTest(): ClientServerTest {
       await sendStandardResponse(res, standardResponse)
     })
 
-    await new Promise<void>(resolve => server.listen(0, resolve))
+    await new Promise<void>((resolve) => server.listen(0, resolve))
 
     // fetch cannot trust a custom CA per-request, so requests go through a raw https client
     const agent = new https.Agent({ ca: cert })
@@ -103,13 +105,11 @@ export function createNodeHttpsClientServerTest(): ClientServerTest {
               })
             }
           }
-        }
-        catch (error) {
+        } catch (error) {
           req.destroy(error as Error)
         }
       })()
-    }
-    else {
+    } else {
       req.end()
     }
 

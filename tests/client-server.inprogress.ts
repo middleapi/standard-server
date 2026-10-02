@@ -6,7 +6,10 @@ export function createInprogressClientServerTest(): ClientServerTest {
   })
 
   const request: ClientServerTest['request'] = vi.fn(async (standardRequest) => {
-    const standardResponse = await handler({ ...standardRequest, resolveBody: async () => standardRequest.body })
+    const standardResponse = await handler({
+      ...standardRequest,
+      resolveBody: async () => standardRequest.body,
+    })
     return { ...standardResponse, resolveBody: async () => standardResponse.body }
   })
 

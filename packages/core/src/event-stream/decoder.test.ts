@@ -1,9 +1,9 @@
-import type { EventStreamMessage } from './types'
 import { decodeEventStreamMessage, EventStreamDecoder, EventStreamDecoderStream } from './decoder'
+import type { EventStreamMessage } from './types'
 
 function feedAll(chunks: string[]): EventStreamMessage[] {
   const events: EventStreamMessage[] = []
-  const decoder = new EventStreamDecoder(event => events.push(event))
+  const decoder = new EventStreamDecoder((event) => events.push(event))
 
   for (const chunk of chunks) {
     decoder.feed(chunk)
@@ -24,7 +24,11 @@ describe('decodeEventStreamMessage', () => {
       event: 'message',
     })
 
-    expect(decodeEventStreamMessage('event: message\ndata: hello\ndata: world\nid: 123\nretry: 10000\n\n')).toEqual({
+    expect(
+      decodeEventStreamMessage(
+        'event: message\ndata: hello\ndata: world\nid: 123\nretry: 10000\n\n',
+      ),
+    ).toEqual({
       event: 'message',
       data: 'hello\nworld',
       id: '123',
@@ -40,7 +44,9 @@ describe('decodeEventStreamMessage', () => {
   })
 
   it('collects comments', () => {
-    expect(decodeEventStreamMessage(': hi\n: hello\nevent: message\ndata: hello\ndata: world\n\n')).toEqual({
+    expect(
+      decodeEventStreamMessage(': hi\n: hello\nevent: message\ndata: hello\ndata: world\n\n'),
+    ).toEqual({
       event: 'message',
       data: 'hello\nworld',
       comments: ['hi', 'hello'],
@@ -54,7 +60,9 @@ describe('decodeEventStreamMessage', () => {
       comments: ['hi'],
     })
 
-    expect(decodeEventStreamMessage(':  hi\nevent:  message\ndata:  hello\ndata:  world\n\n')).toEqual({
+    expect(
+      decodeEventStreamMessage(':  hi\nevent:  message\ndata:  hello\ndata:  world\n\n'),
+    ).toEqual({
       event: ' message',
       data: ' hello\n world',
       comments: [' hi'],
@@ -68,7 +76,11 @@ describe('decodeEventStreamMessage', () => {
   })
 
   it('supports LF, CR, and CRLF line endings', () => {
-    expect(decodeEventStreamMessage('event: message\rdata: hello\r\ndata: world\rid: 123\r\nretry: 10000\r\r\n')).toEqual({
+    expect(
+      decodeEventStreamMessage(
+        'event: message\rdata: hello\r\ndata: world\rid: 123\r\nretry: 10000\r\r\n',
+      ),
+    ).toEqual({
       event: 'message',
       data: 'hello\nworld',
       id: '123',
@@ -79,18 +91,30 @@ describe('decodeEventStreamMessage', () => {
   it('treats lines without a colon as fields with empty values', () => {
     expect(decodeEventStreamMessage('data\n\n')).toEqual({ event: 'message', data: '' })
     expect(decodeEventStreamMessage('data:\n\n')).toEqual({ event: 'message', data: '' })
-    expect(decodeEventStreamMessage('data: a\ndata:\ndata: b\n\n')).toEqual({ event: 'message', data: 'a\n\nb' })
+    expect(decodeEventStreamMessage('data: a\ndata:\ndata: b\n\n')).toEqual({
+      event: 'message',
+      data: 'a\n\nb',
+    })
     expect(decodeEventStreamMessage('event\ndata: x\n\n')).toEqual({ event: 'message', data: 'x' })
   })
 
   it('defaults the event type of an unnamed message with data to message', () => {
     expect(decodeEventStreamMessage('data: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
-    expect(decodeEventStreamMessage('event:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
-    expect(decodeEventStreamMessage('event: a\nevent:\ndata: x\n\n')).toStrictEqual({ event: 'message', data: 'x' })
+    expect(decodeEventStreamMessage('event:\ndata: x\n\n')).toStrictEqual({
+      event: 'message',
+      data: 'x',
+    })
+    expect(decodeEventStreamMessage('event: a\nevent:\ndata: x\n\n')).toStrictEqual({
+      event: 'message',
+      data: 'x',
+    })
 
     // an empty data line still counts as data
     expect(decodeEventStreamMessage('data:\n\n')).toStrictEqual({ event: 'message', data: '' })
-    expect(decodeEventStreamMessage('event:\ndata:\n\n')).toStrictEqual({ event: 'message', data: '' })
+    expect(decodeEventStreamMessage('event:\ndata:\n\n')).toStrictEqual({
+      event: 'message',
+      data: '',
+    })
 
     // named messages keep their event type, even without data
     expect(decodeEventStreamMessage('event: close\n\n')).toStrictEqual({ event: 'close' })
@@ -137,7 +161,20 @@ describe('decodeEventStreamMessage', () => {
     expect(decodeEventStreamMessage(`retry: ${'0'.repeat(400)}7\n\n`)).toEqual({ retry: 7 })
 
     // ' 10' has an extra space that survives the single-space strip; '\u0661\u0660' is Arabic-Indic digits
-    for (const value of ['', 'hello', '1.5', '-1', '+10', '1abc', '1e3', '0x10', 'Infinity', '\u0661\u0660', '10 ', ' 10']) {
+    for (const value of [
+      '',
+      'hello',
+      '1.5',
+      '-1',
+      '+10',
+      '1abc',
+      '1e3',
+      '0x10',
+      'Infinity',
+      '\u0661\u0660',
+      '10 ',
+      ' 10',
+    ]) {
       expect(decodeEventStreamMessage(`retry: ${value}\n\n`), JSON.stringify(value)).toEqual({})
     }
 
@@ -186,7 +223,8 @@ describe('eventStreamDecoder', () => {
     })
 
     it('emits the same events regardless of chunk size', () => {
-      const stream = '\n\nevent: a\r\ndata: 1\r\n\r\n\r\n: comment\ndata: 2\ndata: 3\n\n\n\nid: 9\rretry: 50\rdata: 4\r\r\revent: done\ndata: bye\n\n\r\n'
+      const stream =
+        '\n\nevent: a\r\ndata: 1\r\n\r\n\r\n: comment\ndata: 2\ndata: 3\n\n\n\nid: 9\rretry: 50\rdata: 4\r\r\revent: done\ndata: bye\n\n\r\n'
 
       const expected = feedAll([stream])
       expect(expected).toHaveLength(4)
@@ -224,9 +262,7 @@ describe('eventStreamDecoder', () => {
         chunks.push(stream.slice(i, i + 251))
       }
 
-      expect(feedAll(chunks)).toEqual([
-        { event: 'big', data: `${value}\n${value}` },
-      ])
+      expect(feedAll(chunks)).toEqual([{ event: 'big', data: `${value}\n${value}` }])
     })
   })
 
@@ -234,7 +270,18 @@ describe('eventStreamDecoder', () => {
     // Per spec, a blank line with nothing buffered dispatches nothing, so
     // leading and extra blank lines are ignored.
     it('handles every delimiter split at every position', () => {
-      for (const delimiter of ['\n\n', '\r\r', '\n\r', '\n\r\n', '\r\n\n', '\r\n\r\n', '\n\n\n', '\r\r\r', '\r\n\r\n\r\n', '\n\r\n\r\n']) {
+      for (const delimiter of [
+        '\n\n',
+        '\r\r',
+        '\n\r',
+        '\n\r\n',
+        '\r\n\n',
+        '\r\n\r\n',
+        '\n\n\n',
+        '\r\r\r',
+        '\r\n\r\n\r\n',
+        '\n\r\n\r\n',
+      ]) {
         const stream = `${delimiter}data: first${delimiter}data: second${delimiter}`
 
         for (let split = 1; split < stream.length; split++) {
@@ -278,11 +325,7 @@ describe('eventStreamDecoder', () => {
     })
 
     it('ignores blank lines after a delimiter across an empty chunk', () => {
-      const events = feedAll([
-        'data: first\n\r',
-        '',
-        '\n\ndata: second\n\n',
-      ])
+      const events = feedAll(['data: first\n\r', '', '\n\ndata: second\n\n'])
 
       expect(events).toEqual([
         { event: 'message', data: 'first' },
@@ -293,10 +336,7 @@ describe('eventStreamDecoder', () => {
     // Per spec, the '\n' completes the buffered '\r' into a single CRLF line
     // ending, so the following '\n' is a blank line terminating the message.
     it('handles a CRLF+LF delimiter split between the CR and LF', () => {
-      const events = feedAll([
-        'data: first\r',
-        '\n\ndata: second\n\n',
-      ])
+      const events = feedAll(['data: first\r', '\n\ndata: second\n\n'])
 
       expect(events).toEqual([
         { event: 'message', data: 'first' },
@@ -326,30 +366,26 @@ describe('eventStreamDecoder', () => {
 
     it('throws when the stream ends with an incomplete message', () => {
       const events: EventStreamMessage[] = []
-      const decoder = new EventStreamDecoder(event => events.push(event))
+      const decoder = new EventStreamDecoder((event) => events.push(event))
 
       decoder.feed('event: message\ndata: hello1\ndata: world\n\n')
       decoder.feed('event: message\ndata: hello2\ndata: world\nid: 123\nretry: 10000\n')
 
       expect(() => decoder.end()).toThrowError('Event Stream ended before complete')
 
-      expect(events).toEqual([
-        { event: 'message', data: 'hello1\nworld' },
-      ])
+      expect(events).toEqual([{ event: 'message', data: 'hello1\nworld' }])
     })
 
     it('throws when extra blank lines are followed by an incomplete message', () => {
       const events: EventStreamMessage[] = []
-      const decoder = new EventStreamDecoder(event => events.push(event))
+      const decoder = new EventStreamDecoder((event) => events.push(event))
 
       decoder.feed('data: hello\n\n\n\r')
       decoder.feed('\n\rdata: incomplete\n')
 
       expect(() => decoder.end()).toThrowError('Event Stream ended before complete')
 
-      expect(events).toEqual([
-        { event: 'message', data: 'hello' },
-      ])
+      expect(events).toEqual([{ event: 'message', data: 'hello' }])
     })
   })
 })
@@ -370,8 +406,8 @@ describe('eventStreamDecoderStream', () => {
 
     const response = new Response(stream)
 
-    const eventStream = response.body!
-      .pipeThrough(new TextDecoderStream())
+    const eventStream = response
+      .body!.pipeThrough(new TextDecoderStream())
       .pipeThrough(new EventStreamDecoderStream())
 
     const messages: EventStreamMessage[] = []
@@ -420,7 +456,10 @@ describe('eventStreamDecoderStream', () => {
     const module = await import('./decoder')
 
     expect(module.EventStreamDecoderStream).toBeDefined()
-    expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({ event: 'message', data: 'hello' })
+    expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({
+      event: 'message',
+      data: 'hello',
+    })
   })
 
   it('on incomplete message', async () => {
@@ -434,8 +473,8 @@ describe('eventStreamDecoderStream', () => {
 
     const response = new Response(stream)
 
-    const eventStream = response.body!
-      .pipeThrough(new TextDecoderStream())
+    const eventStream = response
+      .body!.pipeThrough(new TextDecoderStream())
       .pipeThrough(new EventStreamDecoderStream())
 
     const messages: EventStreamMessage[] = []

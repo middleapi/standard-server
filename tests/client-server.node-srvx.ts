@@ -1,7 +1,13 @@
-import type { ClientServerTest } from './client-server'
-import { toFetchBody, toFetchHeaders, toFetchResponse, toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
-
+import {
+  toFetchBody,
+  toFetchHeaders,
+  toFetchResponse,
+  toStandardLazyRequest,
+  toStandardLazyResponse,
+} from '@standard-server/fetch'
 import { serve } from 'srvx/node'
+
+import type { ClientServerTest } from './client-server'
 
 export function createNodeSrvxClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

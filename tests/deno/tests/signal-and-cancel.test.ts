@@ -1,6 +1,7 @@
 import { AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
 import { expect } from '@std/expect'
 import { afterAll, beforeEach, describe, it } from '@std/testing/bdd'
+
 import { NOT_FOUND_HANDLER, waitFor } from './client-server'
 import { createDenoFetchClientServerTest } from './client-server.deno-fetch'
 import { createDenoWsClientServerTest } from './client-server.deno-ws'
@@ -70,8 +71,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         if (CLEAN_SIGNAL_AFTER_RESPONSE_ADAPTERS.has(adapter)) {
           // server shouldn't abort if finished successfully
           expect(serverSignal.aborted).toBe(false)
-        }
-        else {
+        } else {
           // legacy behavior: the signal aborts even after a successful response
           expect(serverSignal.aborted).toBe(true)
         }
@@ -96,8 +96,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
             url: '/',
             signal: abortController.signal,
           })
-        }
-        catch (e) {
+        } catch (e) {
           error = e
         }
 
@@ -140,8 +139,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         let error: unknown
         try {
           await responsePromise
-        }
-        catch (e) {
+        } catch (e) {
           error = e
         }
         expect(error).toBeDefined()
@@ -182,14 +180,15 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           signal: controller.signal,
         })
 
-        const actualBody = await response.resolveBody() as AsyncGenerator
+        const actualBody = (await response.resolveBody()) as AsyncGenerator
         expect(isAsyncIteratorObject(actualBody)).toBe(true)
         await actualBody.next()
 
         expect(serverSignal.aborted).toBe(false)
         controller.abort()
 
-        await waitFor(() => { // wait for server receive abort signal
+        await waitFor(() => {
+          // wait for server receive abort signal
           expect(canceled).toBe(true)
           expect(serverSignal.aborted).toBe(true)
           expect(times).toBe(2) // the second chunk is being pulled
@@ -230,7 +229,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           url: '/',
         })
 
-        const actualBody = await response.resolveBody() as AsyncGenerator
+        const actualBody = (await response.resolveBody()) as AsyncGenerator
         expect(isAsyncIteratorObject(actualBody)).toBe(true)
 
         await actualBody.next() // wait for first chunk
@@ -238,7 +237,8 @@ for (const [adapter, createClientServer] of ADAPTERS) {
 
         await actualBody.return(undefined)
 
-        await waitFor(() => { // wait for server receive cancel signal
+        await waitFor(() => {
+          // wait for server receive cancel signal
           expect(serverSignal.aborted).toBe(true)
           expect(canceled).toBe(true)
           expect(times).toBe(2) // the second chunk is being pulled
@@ -277,7 +277,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           url: '/',
         })
 
-        const body = await response.resolveBody() as ReadableStream
+        const body = (await response.resolveBody()) as ReadableStream
         expect(body).toBeInstanceOf(ReadableStream)
         const reader = body.getReader()
 
@@ -286,7 +286,8 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         expect(serverSignal.aborted).toBe(false)
         await reader.cancel()
 
-        await waitFor(() => { // wait for server receive cancel signal
+        await waitFor(() => {
+          // wait for server receive cancel signal
           expect(serverSignal.aborted).toBe(true)
           expect(canceled).toBe(true)
           expect(times).toBe(2) // the second chunk is being pulled
@@ -300,7 +301,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         clientServer.setHandler(async (request) => {
           serverSignal = request.signal!
 
-          const body = await request.resolveBody() as AsyncGenerator
+          const body = (await request.resolveBody()) as AsyncGenerator
           expect(isAsyncIteratorObject(body)).toBe(true)
 
           await body.next() // wait for first chunk
@@ -339,8 +340,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         expect(canceled).toBe(REQUEST_STREAM_CANCEL_ADAPTERS.has(adapter))
         if (CLEAN_SIGNAL_AFTER_RESPONSE_ADAPTERS.has(adapter)) {
           expect(serverSignal.aborted).toBe(false) // DO NOT ABORT IF ONLY CANCEL REQUEST BODY
-        }
-        else {
+        } else {
           // legacy behavior: the signal aborts once the response has been delivered
           expect(serverSignal.aborted).toBe(true)
         }
@@ -354,7 +354,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         clientServer.setHandler(async (request) => {
           serverSignal = request.signal!
 
-          const body = await request.resolveBody() as ReadableStream
+          const body = (await request.resolveBody()) as ReadableStream
           expect(body).toBeInstanceOf(ReadableStream)
 
           const reader = body.getReader()
@@ -392,8 +392,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         expect(canceled).toBe(REQUEST_STREAM_CANCEL_ADAPTERS.has(adapter))
         if (CLEAN_SIGNAL_AFTER_RESPONSE_ADAPTERS.has(adapter)) {
           expect(serverSignal.aborted).toBe(false) // DO NOT ABORT IF ONLY CANCEL REQUEST BODY
-        }
-        else {
+        } else {
           // legacy behavior: the signal aborts once the response has been delivered
           expect(serverSignal.aborted).toBe(true)
         }
@@ -437,7 +436,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           url: '/',
         })
 
-        const body = await response.resolveBody() as ReadableStream
+        const body = (await response.resolveBody()) as ReadableStream
         expect(body).toBeInstanceOf(ReadableStream)
 
         const reader = body.getReader()
@@ -446,8 +445,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         let error: unknown
         try {
           await reader.read()
-        }
-        catch (e) {
+        } catch (e) {
           error = e
         }
         expect(error).toBeDefined()

@@ -1,12 +1,17 @@
-import type { AsyncCleanupFn } from './types'
 import { sequential } from './function'
+import type { AsyncCleanupFn } from './types'
 
 export function isAsyncIteratorObject(maybe: unknown): maybe is AsyncIteratorObject<any, any, any> {
   if (!maybe || typeof maybe !== 'object') {
     return false
   }
 
-  return 'next' in maybe && typeof maybe.next === 'function' && Symbol.asyncIterator in maybe && typeof maybe[Symbol.asyncIterator] === 'function'
+  return (
+    'next' in maybe &&
+    typeof maybe.next === 'function' &&
+    Symbol.asyncIterator in maybe &&
+    typeof maybe[Symbol.asyncIterator] === 'function'
+  )
 }
 
 export interface AsyncIteratorClassNextFn<T, TReturn> {
@@ -15,10 +20,14 @@ export interface AsyncIteratorClassNextFn<T, TReturn> {
 
 const fallbackAsyncDisposeSymbol: unique symbol = Symbol.for('asyncDispose')
 /* v8 ignore start  */
-const asyncDisposeSymbol: typeof Symbol extends { asyncDispose: infer T } ? T : typeof fallbackAsyncDisposeSymbol = (Symbol as any).asyncDispose ?? fallbackAsyncDisposeSymbol
+const asyncDisposeSymbol: typeof Symbol extends { asyncDispose: infer T }
+  ? T
+  : typeof fallbackAsyncDisposeSymbol = (Symbol as any).asyncDispose ?? fallbackAsyncDisposeSymbol
 /* v8 ignore end  */
 
-export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> implements AsyncIteratorObject<T, TReturn, TNext>, AsyncGenerator<T, TReturn, TNext> {
+export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown>
+  implements AsyncIteratorObject<T, TReturn, TNext>, AsyncGenerator<T, TReturn, TNext>
+{
   private isDone = false
   private isExecuteComplete = false
   private readonly cleanup: AsyncCleanupFn
@@ -47,8 +56,7 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> implement
         }
 
         return result
-      }
-      catch (error) {
+      } catch (error) {
         // the consumer stopped reading (e.g. `return()`) while this call was waiting
         if (this.isDone) {
           return { done: true, value: undefined as any }
@@ -58,11 +66,12 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> implement
         this.isDone = true
 
         throw error
-      }
-      finally {
+      } finally {
         if (this.isDone && !this.isExecuteComplete) {
           this.isExecuteComplete = true
-          await this.cleanup(errorRef ? { kind: 'error', error: errorRef.value } : { kind: 'success' })
+          await this.cleanup(
+            errorRef ? { kind: 'error', error: errorRef.value } : { kind: 'success' },
+          )
         }
       }
     })

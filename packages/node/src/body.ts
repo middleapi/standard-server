@@ -1,10 +1,16 @@
-import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
-import type { ToEventStreamOptions } from './event-stream'
-import type { NodeHttpRequest } from './types'
 import { Readable } from 'node:stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+
+import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
+import {
+  generateContentDisposition,
+  getFilenameFromContentDisposition,
+  resolveStandardBodyHint,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
+
+import type { ToEventStreamOptions } from './event-stream'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
+import type { NodeHttpRequest } from './types'
 import { readableChunkToBytes, toWebReadableStream } from './utils'
 
 export interface ToStandardBodyOptions {
@@ -26,12 +32,14 @@ export async function toStandardBody(
     return req.body
   }
 
-  const hint = options?.hint ?? resolveStandardBodyHint({
-    'standard-server': req.headers['standard-server'],
-    'content-type': req.headers['content-type'],
-    'content-length': req.headers['content-length'],
-    'content-disposition': req.headers['content-disposition'],
-  })
+  const hint =
+    options?.hint ??
+    resolveStandardBodyHint({
+      'standard-server': req.headers['standard-server'],
+      'content-type': req.headers['content-type'],
+      'content-length': req.headers['content-length'],
+      'content-disposition': req.headers['content-disposition'],
+    })
 
   if (hint === 'none') {
     return undefined
@@ -64,9 +72,10 @@ export async function toStandardBody(
 
   if (hint === 'file') {
     const contentDisposition = req.headers['content-disposition']
-    const fileName = contentDisposition !== undefined
-      ? getFilenameFromContentDisposition(contentDisposition)
-      : undefined
+    const fileName =
+      contentDisposition !== undefined
+        ? getFilenameFromContentDisposition(contentDisposition)
+        : undefined
 
     return _streamToFile(req, fileName ?? 'blob', contentType ?? '')
   }
@@ -91,10 +100,7 @@ export function toNodeHttpBody(
   body: StandardBody,
   headers: StandardHeaders,
   options: ToNodeHttpBodyOptions = {},
-): [
-  body: Readable | undefined | string,
-  headers: StandardHeaders,
-] {
+): [body: Readable | undefined | string, headers: StandardHeaders] {
   headers = { ...headers }
 
   if (body instanceof ReadableStream) {
@@ -115,7 +121,9 @@ export function toNodeHttpBody(
 
     headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
-    headers['content-disposition'] ??= generateContentDisposition(body instanceof File ? body.name ?? '' : 'blob')
+    headers['content-disposition'] ??= generateContentDisposition(
+      body instanceof File ? (body.name ?? '') : 'blob',
+    )
 
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {
@@ -177,7 +185,11 @@ async function _streamToString(stream: Readable): Promise<string> {
   return string
 }
 
-async function _streamToFile(stream: Readable, fileName: string, contentType: string): Promise<File> {
+async function _streamToFile(
+  stream: Readable,
+  fileName: string,
+  contentType: string,
+): Promise<File> {
   const chunks: Uint8Array<ArrayBuffer>[] = []
 
   for await (const chunk of stream) {

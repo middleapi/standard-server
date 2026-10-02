@@ -1,5 +1,12 @@
-import type { StandardHeaders, StandardMethod, StandardRequest, StandardResponse, StandardUrl } from './types'
 import { isTypescriptObject } from '@standard-server/shared'
+
+import type {
+  StandardHeaders,
+  StandardMethod,
+  StandardRequest,
+  StandardResponse,
+  StandardUrl,
+} from './types'
 
 export function isStandardMethod(maybe: unknown): maybe is StandardMethod {
   return typeof maybe === 'string'
@@ -15,9 +22,10 @@ export function isStandardHeaders(maybe: unknown): maybe is StandardHeaders {
   }
 
   return Object.values(maybe).every(
-    value => value === undefined
-      || typeof value === 'string'
-      || (Array.isArray(value) && value.every(v => typeof v === 'string')),
+    (value) =>
+      value === undefined ||
+      typeof value === 'string' ||
+      (Array.isArray(value) && value.every((v) => typeof v === 'string')),
   )
 }
 
@@ -34,7 +42,9 @@ export function isStandardRequest(maybe: unknown): maybe is StandardRequest {
     return false
   }
 
-  return isStandardMethod(maybe.method) && isStandardUrl(maybe.url) && isStandardHeaders(maybe.headers)
+  return (
+    isStandardMethod(maybe.method) && isStandardUrl(maybe.url) && isStandardHeaders(maybe.headers)
+  )
 }
 
 export function isStandardResponse(maybe: unknown): maybe is StandardResponse {

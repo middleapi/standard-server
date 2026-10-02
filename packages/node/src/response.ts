@@ -1,18 +1,22 @@
 import type { StandardResponse } from '@standard-server/core'
+
 import type { ToNodeHttpBodyOptions } from './body'
-import type { NodeHttpResponse } from './types'
 import { toNodeHttpBody } from './body'
+import type { NodeHttpResponse } from './types'
 import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
 
-export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
-}
+export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
 export async function sendStandardResponse(
   res: NodeHttpResponse,
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, resHeaders] = toNodeHttpBody(standardResponse.body, standardResponse.headers, options)
+  const [resBody, resHeaders] = toNodeHttpBody(
+    standardResponse.body,
+    standardResponse.headers,
+    options,
+  )
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(res)) {
@@ -22,8 +26,7 @@ export async function sendStandardResponse(
 
       if (error) {
         reject(error)
-      }
-      else {
+      } else {
         resolve()
       }
 
@@ -49,11 +52,9 @@ export async function sendStandardResponse(
       if (resBody === undefined) {
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
-      }
-      else if (typeof resBody === 'string') {
+      } else if (typeof resBody === 'string') {
         res.end(resBody)
-      }
-      else {
+      } else {
         connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)
@@ -61,12 +62,11 @@ export async function sendStandardResponse(
         })
 
         // WARNING: errors that occur here are silently ignored and not reported to the Promise
-        resBody.once('error', error => res.destroy(error))
+        resBody.once('error', (error) => res.destroy(error))
 
         resBody.pipe(res)
       }
-    }
-    catch (error) {
+    } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
 
       // Destroy instead of leaving the response half-open: headers/status may be

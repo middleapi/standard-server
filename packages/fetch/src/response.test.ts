@@ -1,5 +1,6 @@
 import type { StandardResponse } from '@standard-server/core'
 import { AsyncIteratorClass } from '@standard-server/shared'
+
 import * as Body from './body'
 import * as Headers from './headers'
 import { toFetchResponse, toStandardLazyResponse } from './response'
@@ -42,7 +43,9 @@ describe('toFetchResponse', () => {
       const next = vi.fn(() => new Promise<never>(() => {}))
       const cleanup = vi.fn()
 
-      expect(() => toFetchResponse({ status: 204, headers: {}, body: new AsyncIteratorClass(next, cleanup) })).toThrow(TypeError)
+      expect(() =>
+        toFetchResponse({ status: 204, headers: {}, body: new AsyncIteratorClass(next, cleanup) }),
+      ).toThrow(TypeError)
 
       // the event stream starts pulling right away, so it must be cancelled to stop
       // the keep-alive interval and release the pending iterator
@@ -53,7 +56,13 @@ describe('toFetchResponse', () => {
     it('stream body when a header is invalid', () => {
       const cancel = vi.fn()
 
-      expect(() => toFetchResponse({ status: 200, headers: { 'x-custom-header': 'a\nb' }, body: new ReadableStream({ cancel }) })).toThrow(TypeError)
+      expect(() =>
+        toFetchResponse({
+          status: 200,
+          headers: { 'x-custom-header': 'a\nb' },
+          body: new ReadableStream({ cancel }),
+        }),
+      ).toThrow(TypeError)
       expect(cancel).toHaveBeenCalledWith(expect.any(TypeError))
     })
 
@@ -131,7 +140,9 @@ describe('toStandardLazyResponse', () => {
     expect(toStandardBodySpy).toBeCalledTimes(0)
 
     const lazyResponse2 = toStandardLazyResponse(response)
-    expect(await lazyResponse2.resolveBody()).toEqual(await toStandardBodySpy.mock.results[0]!.value)
+    expect(await lazyResponse2.resolveBody()).toEqual(
+      await toStandardBodySpy.mock.results[0]!.value,
+    )
     expect(toStandardBodySpy).toBeCalledTimes(1)
   })
 })

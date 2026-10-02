@@ -3,7 +3,7 @@
  * Aborts when the first signal aborts and forwards its reason.
  */
 export function anyAbortSignal(...signals: (AbortSignal | undefined)[]): AbortSignal {
-  const filtered = signals.filter(s => !!s)
+  const filtered = signals.filter((s) => !!s)
 
   /**
    * https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static

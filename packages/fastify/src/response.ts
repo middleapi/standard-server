@@ -1,17 +1,26 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
-import type { AnyFastifyReply } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  toNodeHttpBody,
+} from '@standard-server/node'
 
-export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
-}
+import type { AnyFastifyReply } from './types'
+
+export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
 export async function sendStandardResponse(
   reply: AnyFastifyReply,
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, resHeaders] = toNodeHttpBody(standardResponse.body, standardResponse.headers, options)
+  const [resBody, resHeaders] = toNodeHttpBody(
+    standardResponse.body,
+    standardResponse.headers,
+    options,
+  )
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(reply.raw)) {
@@ -21,8 +30,7 @@ export async function sendStandardResponse(
 
       if (error) {
         reject(error)
-      }
-      else {
+      } else {
         resolve()
       }
 
@@ -53,8 +61,7 @@ export async function sendStandardResponse(
 
       // fastify pipes the stream body itself, no manual piping needed
       reply.send(resBody)
-    }
-    catch (error) {
+    } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
 
       // Don't destroy reply.raw: fastify's error handler can still send a response.

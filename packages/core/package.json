@@ -1,34 +1,41 @@
 {
   "name": "@standard-server/core",
-  "type": "module",
   "version": "0.10.0",
   "description": "The Standard Server contract: transport-agnostic request, response, body, and streaming types with body parsing rules, runtime validators, and SSE helpers shared by every adapter",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "body-parser",
+    "client",
+    "http",
+    "request",
+    "response",
+    "server",
+    "server-sent-events",
+    "sse",
+    "standard-server",
+    "streaming",
+    "transport-agnostic",
+    "typescript",
+    "validator"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/core"
   },
-  "keywords": [
-    "standard-server",
-    "http",
-    "server",
-    "client",
-    "request",
-    "response",
-    "transport-agnostic",
-    "body-parser",
-    "validator",
-    "sse",
-    "server-sent-events",
-    "streaming",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -39,13 +46,6 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prepack": "unbuild"
   },

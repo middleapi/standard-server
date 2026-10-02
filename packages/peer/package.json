@@ -1,32 +1,39 @@
 {
   "name": "@standard-server/peer",
-  "type": "module",
   "version": "0.10.0",
   "description": "Message-based adapter for Standard Server: transport-agnostic requests, responses, and streaming over WebSocket, MessagePort, and custom peer transports",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "adapter",
+    "message-channel",
+    "messageport",
+    "peer",
+    "request",
+    "response",
+    "standard-server",
+    "streaming",
+    "transport",
+    "typescript",
+    "websocket"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/peer"
   },
-  "keywords": [
-    "standard-server",
-    "peer",
-    "websocket",
-    "messageport",
-    "message-channel",
-    "adapter",
-    "transport",
-    "request",
-    "response",
-    "streaming",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -37,13 +44,6 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prepack": "unbuild"
   },

@@ -1,5 +1,6 @@
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
+
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 beforeEach(() => {
@@ -200,7 +201,7 @@ describe('toAsyncIteratorObject', () => {
     const stream = new ReadableStream<string>({
       async pull(controller) {
         controller.enqueue('event: message\ndata: {"order": 1}\nid: id-1\nretry: 10000\n\n')
-        await new Promise(resolve => setTimeout(resolve, 25))
+        await new Promise((resolve) => setTimeout(resolve, 25))
         controller.close()
       },
     }).pipeThrough(new TextEncoderStream())
@@ -231,7 +232,7 @@ describe('toAsyncIteratorObject', () => {
     const stream = new ReadableStream<string>({
       async pull(controller) {
         controller.enqueue('event: message\ndata: {"order": 1}\nid: id-1\nretry: 10000\n\n')
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         controller.error(new Error('Test error'))
       },
     }).pipeThrough(new TextEncoderStream())
@@ -261,16 +262,20 @@ describe('toEventStream', () => {
       return withEventMeta({ order: 4 }, { id: 'id-4', retry: 40000 })
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
-    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'retry: 20000\ndata: {"order":2}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: close\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n' })
-    expect((await reader.read())).toEqual({ done: true })
+    expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
+    expect(await reader.read()).toEqual({
+      done: false,
+      value: 'retry: 20000\ndata: {"order":2}\n\n',
+    })
+    expect(await reader.read()).toEqual({ done: false, value: 'event: message\n\n' })
+    expect(await reader.read()).toEqual({
+      done: false,
+      value: 'event: close\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n',
+    })
+    expect(await reader.read()).toEqual({ done: true })
   })
 
   it('without return', async () => {
@@ -280,16 +285,17 @@ describe('toEventStream', () => {
       yield undefined
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
-    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'retry: 20000\ndata: {"order":2}\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: message\n\n' })
-    expect((await reader.read())).toEqual({ done: false, value: 'event: close\n\n' })
-    expect((await reader.read())).toEqual({ done: true })
+    expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: 'id: id-1\ndata: {"order":1}\n\n' })
+    expect(await reader.read()).toEqual({
+      done: false,
+      value: 'retry: 20000\ndata: {"order":2}\n\n',
+    })
+    expect(await reader.read()).toEqual({ done: false, value: 'event: message\n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: 'event: close\n\n' })
+    expect(await reader.read()).toEqual({ done: true })
   })
 
   it('with non-ErrorEvent error', async () => {
@@ -300,11 +306,9 @@ describe('toEventStream', () => {
       throw withEventMeta(new Error('order-4'), { id: 'id-4', retry: 40000 })
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
-    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
     expect((await reader.read()).value).toEqual('id: id-1\ndata: {"order":1}\n\n')
     expect((await reader.read()).value).toEqual('retry: 20000\ndata: {"order":2}\n\n')
     expect((await reader.read()).value).toEqual('event: message\n\n')
@@ -319,26 +323,38 @@ describe('toEventStream', () => {
       throw withEventMeta(new ErrorEvent({ order: 4 }), { id: 'id-4', retry: 40000 })
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
-    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
     expect((await reader.read()).value).toEqual('id: id-1\ndata: {"order":1}\n\n')
     expect((await reader.read()).value).toEqual('retry: 20000\ndata: {"order":2}\n\n')
     expect((await reader.read()).value).toEqual('event: message\n\n')
-    expect((await reader.read()).value).toEqual('event: error\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n')
+    expect((await reader.read()).value).toEqual(
+      'event: error\nretry: 40000\nid: id-4\ndata: {"order":4}\n\n',
+    )
     expect((await reader.read()).done).toEqual(true)
   })
 
   it.each([
     ['a BigInt', () => ({ big: 1n }), 'BigInt'],
-    ['a circular reference', () => {
-      const value: Record<string, unknown> = {}
-      value.self = value
-      return value
-    }, 'circular'],
-    ['a throwing toJSON', () => ({ toJSON() { throw new Error('toJSON failed') } }), 'toJSON failed'],
+    [
+      'a circular reference',
+      () => {
+        const value: Record<string, unknown> = {}
+        value.self = value
+        return value
+      },
+      'circular',
+    ],
+    [
+      'a throwing toJSON',
+      () => ({
+        toJSON() {
+          throw new Error('toJSON failed')
+        },
+      }),
+      'toJSON failed',
+    ],
   ])('releases the iterator when an event has %s', async (_, value, message) => {
     let hasFinally = false
 
@@ -346,17 +362,14 @@ describe('toEventStream', () => {
       try {
         yield value()
         yield 2
-      }
-      finally {
+      } finally {
         hasFinally = true
       }
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
-    expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
+    expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
     await expect(reader.read()).rejects.toThrow(message)
     expect(hasFinally).toBe(true)
   })
@@ -365,16 +378,13 @@ describe('toEventStream', () => {
     async function* gen() {
       try {
         yield { big: 1n }
-      }
-      finally {
+      } finally {
         // oxlint-disable-next-line no-unsafe-finally
         throw new Error('cleanup')
       }
     }
 
-    const reader = toEventStream(gen())
-      .pipeThrough(new TextDecoderStream())
-      .getReader()
+    const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
 
     await reader.read()
     await expect(reader.read()).rejects.toThrow('BigInt')
@@ -385,12 +395,11 @@ describe('toEventStream', () => {
 
     async function* gen() {
       try {
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         yield 1
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         yield 2
-      }
-      finally {
+      } finally {
         hasFinally = true
       }
     }
@@ -398,10 +407,7 @@ describe('toEventStream', () => {
     const stream = toEventStream(gen())
     const reader = stream.getReader()
 
-    await Promise.all([
-      reader.read(),
-      vi.advanceTimersByTimeAsync(10),
-    ])
+    await Promise.all([reader.read(), vi.advanceTimersByTimeAsync(10)])
 
     reader.read()
     // start waiting for the error
@@ -420,12 +426,11 @@ describe('toEventStream', () => {
 
     async function* gen() {
       try {
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         yield 1
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         throw new Error('something')
-      }
-      finally {
+      } finally {
         hasFinally = true
       }
     }
@@ -434,10 +439,7 @@ describe('toEventStream', () => {
 
     const reader = stream.getReader()
 
-    await Promise.all([
-      reader.read(),
-      vi.advanceTimersByTimeAsync(10),
-    ])
+    await Promise.all([reader.read(), vi.advanceTimersByTimeAsync(10)])
 
     reader.read()
     // start waiting for the error
@@ -457,10 +459,9 @@ describe('toEventStream', () => {
     async function* gen() {
       try {
         yield 1
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         yield 2
-      }
-      finally {
+      } finally {
         hasFinally = true
         // oxlint-disable-next-line no-unsafe-finally
         throw new Error('something')
@@ -473,10 +474,7 @@ describe('toEventStream', () => {
     await reader.read()
 
     // start iterator
-    await Promise.all([
-      reader.read(),
-      vi.advanceTimersByTimeAsync(10),
-    ])
+    await Promise.all([reader.read(), vi.advanceTimersByTimeAsync(10)])
 
     /**
      * This should throw, but because TextEncoderStream not rethrows cancel errors from the source stream,
@@ -489,7 +487,7 @@ describe('toEventStream', () => {
     it('enabled', async () => {
       async function* gen() {
         for (let i = 0; i < 2; i++) {
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise((resolve) => setTimeout(resolve, 100))
           yield 'hello'
         }
       }
@@ -499,9 +497,7 @@ describe('toEventStream', () => {
         keepAlive: { enabled: true, interval: 40, comment: 'ping' },
       })
 
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
+      const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
 
       await Promise.all([
         expect(reader.read()).resolves.toEqual({ done: false, value: ': ping\n\n' }),
@@ -539,9 +535,9 @@ describe('toEventStream', () => {
 
     it('disabled', async () => {
       async function* gen() {
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, 100))
         yield 'hello1'
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, 100))
         yield 'hello2'
       }
 
@@ -550,9 +546,7 @@ describe('toEventStream', () => {
         keepAlive: { enabled: false, interval: 40, comment: 'ping' },
       })
 
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
+      const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
 
       await Promise.all([
         expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello1"\n\n' }),
@@ -581,9 +575,7 @@ describe('toEventStream', () => {
         keepAlive: { enabled: false },
       })
 
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
+      const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
 
       // Initial comment is sent immediately
       await expect(reader.read()).resolves.toEqual({ done: false, value: ': stream-started\n\n' })
@@ -608,9 +600,7 @@ describe('toEventStream', () => {
         keepAlive: { enabled: false },
       })
 
-      const reader = stream
-        .pipeThrough(new TextDecoderStream())
-        .getReader()
+      const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
 
       await Promise.all([
         expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' }),
@@ -623,23 +613,28 @@ describe('toEventStream', () => {
   })
 })
 
-it.each([
-  [[1, 2, 3, 4, 5, 6]],
-  [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 }, { f: 6 }]],
-])('toEventStream + toAsyncIteratorObject: %#', async (...values) => {
-  const iterator = toAsyncIteratorObject(toEventStream((async function* () {
-    for (const value of values) {
-      await new Promise(resolve => setTimeout(resolve, 50))
-      yield value
+it.each([[[1, 2, 3, 4, 5, 6]], [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 }, { f: 6 }]]])(
+  'toEventStream + toAsyncIteratorObject: %#',
+  async (...values) => {
+    const iterator = toAsyncIteratorObject(
+      toEventStream(
+        (async function* () {
+          for (const value of values) {
+            await new Promise((resolve) => setTimeout(resolve, 50))
+            yield value
+          }
+        })(),
+        { keepAlive: { enabled: true, interval: 10 } },
+      ),
+    )
+
+    for (const expectedValue of values) {
+      await Promise.all([
+        expect(iterator.next()).resolves.toEqual({ done: false, value: expectedValue }),
+        vi.advanceTimersByTimeAsync(50),
+      ])
     }
-  })(), { keepAlive: { enabled: true, interval: 10 } }))
 
-  for (const expectedValue of values) {
-    await Promise.all([
-      expect(iterator.next()).resolves.toEqual({ done: false, value: expectedValue }),
-      vi.advanceTimersByTimeAsync(50),
-    ])
-  }
-
-  await iterator.next()
-})
+    await iterator.next()
+  },
+)

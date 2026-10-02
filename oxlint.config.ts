@@ -13,7 +13,8 @@ export default defineConfig({
       },
       {
         property: 'bytes',
-        message: 'Request/Blob/Response/... .bytes is not widely supported, use readAsBuffer instead',
+        message:
+          'Request/Blob/Response/... .bytes is not widely supported, use readAsBuffer instead',
       },
       {
         property: 'throwIfAborted',

@@ -1,6 +1,7 @@
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
+
 import { expectPeerMessages } from './client-server'
 import { createExpressjsClientServerTest } from './client-server.expressjs'
 import { createFastifyClientServerTest } from './client-server.fastify'
@@ -28,7 +29,10 @@ describe.each([
   ['expressjs', () => createExpressjsClientServerTest()],
   ['expressjs-body-parser', () => createExpressjsClientServerTest({ bodyParser: true })],
   ['expressjs4', () => createExpressjsClientServerTest({ version: 4 })],
-  ['expressjs4-body-parser', () => createExpressjsClientServerTest({ version: 4, bodyParser: true })],
+  [
+    'expressjs4-body-parser',
+    () => createExpressjsClientServerTest({ version: 4, bodyParser: true }),
+  ],
   ['inprogress', createInprogressClientServerTest],
   ['inprogress-fetch', createInprogressFetchClientServerTest],
   // ['h3-node-handler', createH3NodeHandlerClientServerTest],
@@ -146,7 +150,10 @@ describe.each([
         const formData = new FormData()
         formData.append('a', 'b')
         formData.append('c', 'd')
-        formData.append('file', new File(['File Inside'], 'test.etc', { type: 'application/octet-stream' }))
+        formData.append(
+          'file',
+          new File(['File Inside'], 'test.etc', { type: 'application/octet-stream' }),
+        )
         return formData
       },
       assertBody: async (body: any) => {
@@ -167,7 +174,7 @@ describe.each([
     {
       name: 'empty-event-stream',
       createBody: () => {
-        return (async function* () {}())
+        return (async function* () {})()
       },
       assertBody: async (body: any) => {
         expect(body).toSatisfy(isAsyncIteratorObject)
@@ -195,8 +202,7 @@ describe.each([
     clientServer.handler.mockImplementationOnce(async (request) => {
       if (assertBody) {
         await assertBody(await request.resolveBody())
-      }
-      else {
+      } else {
         expect(await request.resolveBody()).toEqual(createBody())
       }
 
@@ -220,15 +226,14 @@ describe.each([
 
     if (assertBody) {
       await assertBody(await response.resolveBody())
-    }
-    else {
+    } else {
       expect(await response.resolveBody()).toEqual(createBody())
     }
   })
 
   it('event stream in parallel', async () => {
     clientServer.handler.mockImplementationOnce(async (request) => {
-      const body = await request.resolveBody() as AsyncGenerator
+      const body = (await request.resolveBody()) as AsyncGenerator
       expect(body).toSatisfy(isAsyncIteratorObject)
 
       return {
@@ -252,12 +257,12 @@ describe.each([
         yield withEventMeta({ order: 2 }, { id: 'id-2' })
         await sleep(CHUNK_DELAY)
         return withEventMeta({ order: 3 }, { comments: ['order3'] })
-      }()),
+      })(),
     })
 
     expect(response.status).toEqual(200)
 
-    const body = await response.resolveBody() as AsyncGenerator
+    const body = (await response.resolveBody()) as AsyncGenerator
     expect(body).toSatisfy(isAsyncIteratorObject)
 
     await expect(body.next()).resolves.toSatisfy((result) => {
@@ -307,7 +312,7 @@ describe.each([
 
   it('event stream with error event in parallel', async () => {
     clientServer.handler.mockImplementationOnce(async (request) => {
-      const actualBody = await request.resolveBody() as AsyncGenerator
+      const actualBody = (await request.resolveBody()) as AsyncGenerator
       expect(actualBody).toSatisfy(isAsyncIteratorObject)
 
       return {
@@ -330,11 +335,11 @@ describe.each([
         await sleep(CHUNK_DELAY)
         yield withEventMeta({ order: 2 }, { id: 'id-2' })
         throw withEventMeta(new ErrorEvent({ order: 3 }), { comments: ['order3'] })
-      }()),
+      })(),
     })
 
     expect(response.status).toEqual(200)
-    const body = await response.resolveBody() as AsyncGenerator
+    const body = (await response.resolveBody()) as AsyncGenerator
     expect(body).toSatisfy(isAsyncIteratorObject)
 
     await expect(body.next()).resolves.toSatisfy((result) => {
@@ -389,7 +394,7 @@ describe.each([
       expect(request.method).toEqual('POST')
       expect(request.url).toEqual('/octet-stream')
 
-      const body = await request.resolveBody() as ReadableStream
+      const body = (await request.resolveBody()) as ReadableStream
       expect(body).toBeInstanceOf(ReadableStream)
 
       return {
@@ -425,19 +430,28 @@ describe.each([
 
     expect(response.headers['x-from']).toEqual('server')
     expect(response.status).toEqual(200)
-    const body = await response.resolveBody() as ReadableStream
+    const body = (await response.resolveBody()) as ReadableStream
     expect(body).toBeInstanceOf(ReadableStream)
     const reader = body.getReader()
 
-    await expect(reader.read()).resolves.toEqual({ done: false, value: new TextEncoder().encode('chunk1'.repeat(10)) })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: new TextEncoder().encode('chunk1'.repeat(10)),
+    })
     expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
     start = Date.now()
 
-    await expect(reader.read()).resolves.toEqual({ done: false, value: new TextEncoder().encode('chunk2'.repeat(10)) })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: new TextEncoder().encode('chunk2'.repeat(10)),
+    })
     expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
     start = Date.now()
 
-    await expect(reader.read()).resolves.toEqual({ done: false, value: new TextEncoder().encode('chunk3'.repeat(10)) })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: new TextEncoder().encode('chunk3'.repeat(10)),
+    })
     expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
     start = Date.now()
 

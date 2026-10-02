@@ -1,35 +1,42 @@
 {
   "name": "@standard-server/fetch",
-  "type": "module",
   "version": "0.10.0",
   "description": "Fetch API adapter for Standard Server: transport-agnostic requests, responses, and streaming for browsers, workers, Deno, Bun, and any Fetch-based runtime",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "adapter",
+    "browser",
+    "bun",
+    "deno",
+    "fetch",
+    "http",
+    "request",
+    "response",
+    "server",
+    "service-worker",
+    "sse",
+    "standard-server",
+    "streaming",
+    "typescript"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/fetch"
   },
-  "keywords": [
-    "standard-server",
-    "fetch",
-    "adapter",
-    "http",
-    "server",
-    "request",
-    "response",
-    "streaming",
-    "sse",
-    "browser",
-    "service-worker",
-    "deno",
-    "bun",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -40,13 +47,6 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prepack": "unbuild"
   },

@@ -1,16 +1,20 @@
 import type { StandardLazyResponse, StandardResponse } from '@standard-server/core'
+
 import type { ToFetchBodyOptions } from './body'
 import { toFetchBody, toStandardBody } from './body'
 import { toFetchHeaders, toStandardHeaders } from './headers'
 
-export interface ToFetchResponseOptions extends ToFetchBodyOptions {
-}
+export interface ToFetchResponseOptions extends ToFetchBodyOptions {}
 
 export function toFetchResponse(
   standardResponse: StandardResponse,
   options: ToFetchResponseOptions = {},
 ): Response {
-  const [body, standardHeaders] = toFetchBody(standardResponse.body, standardResponse.headers, options)
+  const [body, standardHeaders] = toFetchBody(
+    standardResponse.body,
+    standardResponse.headers,
+    options,
+  )
 
   try {
     const response = new Response(body, {
@@ -22,8 +26,7 @@ export function toFetchResponse(
     void response.body
 
     return response
-  }
-  catch (error) {
+  } catch (error) {
     if (body instanceof ReadableStream) {
       body.cancel(error).catch(() => {})
     }
@@ -32,11 +35,9 @@ export function toFetchResponse(
   }
 }
 
-export function toStandardLazyResponse(
-  response: Response,
-): StandardLazyResponse {
+export function toStandardLazyResponse(response: Response): StandardLazyResponse {
   return {
-    resolveBody: hint => toStandardBody(response, { hint }),
+    resolveBody: (hint) => toStandardBody(response, { hint }),
     status: response.status,
     get headers() {
       // lazy headers to improve performance

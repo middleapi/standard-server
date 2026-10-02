@@ -1,9 +1,11 @@
-import type { StandardResponse } from '@standard-server/core'
-import type { HttpResponseStream } from './types'
 import { Buffer } from 'node:buffer'
 import Stream from 'node:stream'
+
+import type { StandardResponse } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
+
 import { sendStandardResponse } from './response'
+import type { HttpResponseStream } from './types'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
 
@@ -59,18 +61,26 @@ describe('sendStandardResponse', () => {
     const responseStream = createResponseStream()
 
     const options = { eventStream: { keepAlive: { enabled: true } } }
-    await sendStandardResponse(responseStream, {
-      status: 207,
-      headers: {
-        'x-custom-header': 'custom-value',
+    await sendStandardResponse(
+      responseStream,
+      {
+        status: 207,
+        headers: {
+          'x-custom-header': 'custom-value',
+        },
+        body: undefined,
       },
-      body: undefined,
-    }, options)
+      options,
+    )
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(undefined, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      undefined,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(fromSpy).toBeCalledTimes(1)
     expect(metadataOf(responseStream)).toEqual({
@@ -132,7 +142,9 @@ describe('sendStandardResponse', () => {
       },
     })
 
-    expect(bodyOf(responseStream)).toBe(': \n\ndata: "foo"\n\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n')
+    expect(bodyOf(responseStream)).toBe(
+      ': \n\ndata: "foo"\n\ndata: "bar"\n\nevent: close\ndata: "baz"\n\n',
+    )
     expect(responseStream.writableEnded).toBe(true)
   })
 
@@ -192,11 +204,13 @@ describe('sendStandardResponse', () => {
       },
     })
 
-    await expect(sendStandardResponse(responseStream, {
-      status: 200,
-      headers: {},
-      body: stream,
-    })).rejects.toThrow('TEST')
+    await expect(
+      sendStandardResponse(responseStream, {
+        status: 200,
+        headers: {},
+        body: stream,
+      }),
+    ).rejects.toThrow('TEST')
 
     expect(responseStream.destroyed).toBe(true)
     expect(responseStream.errored).toBe(error)
@@ -210,12 +224,11 @@ describe('sendStandardResponse', () => {
       body: (async function* () {
         try {
           yield 1
-          await new Promise(r => setTimeout(r, 100))
+          await new Promise((r) => setTimeout(r, 100))
           yield 2
-          await new Promise(r => setTimeout(r, 9999999))
+          await new Promise((r) => setTimeout(r, 9999999))
           yield 3
-        }
-        finally {
+        } finally {
           clean = true
         }
       })(),
@@ -223,7 +236,9 @@ describe('sendStandardResponse', () => {
       status: 200,
     }
 
-    const sendPromise = expect(sendStandardResponse(responseStream, standardResponse)).rejects.toThrow('test')
+    const sendPromise = expect(
+      sendStandardResponse(responseStream, standardResponse),
+    ).rejects.toThrow('test')
 
     await vi.waitFor(() => {
       expect(bodyOf(responseStream)).toContain('data: 1')
@@ -246,12 +261,11 @@ describe('sendStandardResponse', () => {
       body: (async function* () {
         try {
           yield 1
-          await new Promise(r => setTimeout(r, 100))
+          await new Promise((r) => setTimeout(r, 100))
           yield 2
-          await new Promise(r => setTimeout(r, 9999999))
+          await new Promise((r) => setTimeout(r, 9999999))
           yield 3
-        }
-        finally {
+        } finally {
           clean = true
         }
       })(),
@@ -275,19 +289,28 @@ describe('sendStandardResponse', () => {
   })
 
   it.each([
-    ['`from` throws', () => {
-      fromSpy.mockImplementationOnce(() => {
-        throw new Error('Cannot set content-type, too late.')
-      })
-    }],
-    ['the first write throws', (responseStream: HttpResponseStream) => {
-      responseStream.write = () => {
-        throw new Error('write failed')
-      }
-    }],
-    ['the `awslambda` global is missing', () => {
-      vi.unstubAllGlobals()
-    }],
+    [
+      '`from` throws',
+      () => {
+        fromSpy.mockImplementationOnce(() => {
+          throw new Error('Cannot set content-type, too late.')
+        })
+      },
+    ],
+    [
+      'the first write throws',
+      (responseStream: HttpResponseStream) => {
+        responseStream.write = () => {
+          throw new Error('write failed')
+        }
+      },
+    ],
+    [
+      'the `awslambda` global is missing',
+      () => {
+        vi.unstubAllGlobals()
+      },
+    ],
   ])('rejects, destroys the response stream and the body when %s', async (_, setup) => {
     const responseStream = createResponseStream()
     setup(responseStream)
@@ -296,7 +319,7 @@ describe('sendStandardResponse', () => {
       status: 200,
       headers: {},
       body: new Blob(['foo']),
-    }).catch(error => error)
+    }).catch((error) => error)
 
     expect(error).toBeInstanceOf(Error)
     expect(responseStream.errored).toBe(error)
@@ -319,8 +342,7 @@ describe('sendStandardResponse', () => {
         body: (async function* () {
           try {
             yield 1
-          }
-          finally {
+          } finally {
             clean = true
           }
         })(),
@@ -346,11 +368,13 @@ describe('sendStandardResponse', () => {
         expect(responseStream.closed).toBe(true)
       })
 
-      await expect(sendStandardResponse(responseStream, {
-        status: 200,
-        headers: {},
-        body: { foo: 'bar' },
-      })).rejects.toThrow('test')
+      await expect(
+        sendStandardResponse(responseStream, {
+          status: 200,
+          headers: {},
+          body: { foo: 'bar' },
+        }),
+      ).rejects.toThrow('test')
 
       expect(fromSpy).not.toHaveBeenCalled()
     })

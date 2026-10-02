@@ -1,5 +1,5 @@
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { serve } from '@hono/node-server'
+import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { toFetchResponse, toStandardLazyRequest } from '@standard-server/fetch'
 
 async function main(request: StandardLazyRequest): Promise<StandardResponse> {
@@ -11,17 +11,20 @@ async function main(request: StandardLazyRequest): Promise<StandardResponse> {
 
       while (true) {
         yield `now:${new Date()}`
-        await new Promise(r => setTimeout(r, 1000))
+        await new Promise((r) => setTimeout(r, 1000))
       }
-    }()),
+    })(),
   }
 }
 
-serve({
-  async fetch(request, env) {
-    const response = await main(toStandardLazyRequest(request))
-    return toFetchResponse(response)
+serve(
+  {
+    async fetch(request, env) {
+      const response = await main(toStandardLazyRequest(request))
+      return toFetchResponse(response)
+    },
   },
-}, (info) => {
-  console.log(`Listening on http://localhost:${info.port}`)
-})
+  (info) => {
+    console.log(`Listening on http://localhost:${info.port}`)
+  },
+)

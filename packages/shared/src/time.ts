@@ -22,10 +22,14 @@ export function sleep(ms: number, { signal }: SleepOptions = {}): Promise<void> 
     }, ms)
 
     if (signal) {
-      signal.addEventListener('abort', abortListener = () => {
-        clearTimeout(timeout)
-        reject(signal?.reason)
-      }, { once: true })
+      signal.addEventListener(
+        'abort',
+        (abortListener = () => {
+          clearTimeout(timeout)
+          reject(signal?.reason)
+        }),
+        { once: true },
+      )
     }
   })
 }

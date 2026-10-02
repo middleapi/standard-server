@@ -4,9 +4,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"]
   },
-  "references": [
-    { "path": "../node" }
-  ],
+  "references": [{ "path": "../node" }],
   "include": ["./package.json", "src"],
   "exclude": [
     "**/*.test.*",

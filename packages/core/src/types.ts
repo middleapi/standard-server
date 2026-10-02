@@ -1,28 +1,41 @@
-export type StandardMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS' | 'HEAD' | 'QUERY' | (string & {})
+export type StandardMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'DELETE'
+  | 'PATCH'
+  | 'OPTIONS'
+  | 'HEAD'
+  | 'QUERY'
+  | (string & {})
 
-export type StandardUrl = `/${string}` | `/${string}?${string}` | `/${string}#${string}` | `/${string}?${string}#${string}`
+export type StandardUrl =
+  | `/${string}`
+  | `/${string}?${string}`
+  | `/${string}#${string}`
+  | `/${string}?${string}#${string}`
 
 export interface StandardHeaders {
   [key: string]: string | string[] | undefined
 }
 
-export type StandardBodyHint
-  = | 'json' // application/json
-    | 'form-data' // multipart/form-data
-    | 'url-search-params' // application/x-www-form-urlencoded
-    | 'event-stream' // text/event-stream
-    | 'octet-stream' // generic binary stream (any content-type)
-    | 'file' // binary - file is also a blob (any content-type)
-    | 'none' // undefined (any content-type)
+export type StandardBodyHint =
+  | 'json' // application/json
+  | 'form-data' // multipart/form-data
+  | 'url-search-params' // application/x-www-form-urlencoded
+  | 'event-stream' // text/event-stream
+  | 'octet-stream' // generic binary stream (any content-type)
+  | 'file' // binary - file is also a blob (any content-type)
+  | 'none' // undefined (any content-type)
 
-export type StandardBody
-  = | unknown // application/json
-    | URLSearchParams // x-www-form-urlencoded
-    | FormData // multipart/form-data
-    | AsyncIterator<unknown | void, unknown | void, undefined> // text/event-stream
-    | ReadableStream<Uint8Array<ArrayBuffer>> // generic binary stream (any content-type)
-    | Blob // binary - file is also a blob (any content-type)
-    | undefined // empty (any content-type)
+export type StandardBody =
+  | unknown // application/json
+  | URLSearchParams // x-www-form-urlencoded
+  | FormData // multipart/form-data
+  | AsyncIterator<unknown | void, unknown | void, undefined> // text/event-stream
+  | ReadableStream<Uint8Array<ArrayBuffer>> // generic binary stream (any content-type)
+  | Blob // binary - file is also a blob (any content-type)
+  | undefined // empty (any content-type)
 
 export interface StandardRequest {
   /**

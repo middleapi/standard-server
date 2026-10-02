@@ -1,6 +1,5 @@
 {
   "name": "@standard-server/deno",
-  "type": "module",
   "version": "0.10.0",
   "license": "MIT",
   "repository": {
@@ -11,6 +10,7 @@
   "files": [
     "dist"
   ],
+  "type": "module",
   "scripts": {
     "test": "deno test --no-check --unstable-sloppy-imports --allow-net tests/"
   },

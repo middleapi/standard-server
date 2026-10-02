@@ -1,5 +1,5 @@
-import type { EventStreamMessage } from './types'
 import { EventStreamEncoderError } from './error'
+import type { EventStreamMessage } from './types'
 
 const EVENT_STREAM_LINE_ENDING_REGEX = /\r\n|[\n\r]/
 const EVENT_STREAM_LINE_ENDING_GLOBAL_REGEX = /\r\n|[\n\r]/g
@@ -25,25 +25,31 @@ export function isEventStreamMessageComment(maybe: unknown): maybe is string {
 
 export function assertEventStreamMessageId(id: string): void {
   if (!isEventStreamMessageId(id)) {
-    throw new EventStreamEncoderError('Event\'s id must not contain a carriage return, newline or NULL character')
+    throw new EventStreamEncoderError(
+      "Event's id must not contain a carriage return, newline or NULL character",
+    )
   }
 }
 
 export function assertEventStreamMessageName(event: string): void {
   if (containsEventStreamLineBreak(event)) {
-    throw new EventStreamEncoderError('Event\'s event must not contain a carriage return or newline character')
+    throw new EventStreamEncoderError(
+      "Event's event must not contain a carriage return or newline character",
+    )
   }
 }
 
 export function assertEventStreamMessageRetry(retry: number): void {
   if (!isEventStreamMessageRetry(retry)) {
-    throw new EventStreamEncoderError('Event\'s retry must be a integer and >= 0')
+    throw new EventStreamEncoderError("Event's retry must be a integer and >= 0")
   }
 }
 
 export function assertEventStreamMessageComment(comment: string): void {
   if (!isEventStreamMessageComment(comment)) {
-    throw new EventStreamEncoderError('Event\'s comment must not contain a carriage return or newline character')
+    throw new EventStreamEncoderError(
+      "Event's comment must not contain a carriage return or newline character",
+    )
   }
 }
 

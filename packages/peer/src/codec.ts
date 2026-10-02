@@ -1,5 +1,6 @@
-import type { PeerMessage } from './types'
 import { stringifyJSON } from '@standard-server/shared'
+
+import type { PeerMessage } from './types'
 import { isPeerMessage } from './validators'
 
 /**
@@ -8,7 +9,7 @@ import { isPeerMessage } from './validators'
  * 0xFF is guaranteed not to appear in UTF-8 encoded JSON because `TextEncoder`
  * never emits this value, making the boundary unambiguous.
  */
-const JSON_BINARY_DELIMITER = 0xFF
+const JSON_BINARY_DELIMITER = 0xff
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -43,18 +44,14 @@ export async function encodePeerMessage(
 
   const jsonPart = stringifyJSON({ ...message, binary: undefined })
 
-  const textBytes = textEncoder.encode(
-    options.prefix ? options.prefix + jsonPart : jsonPart,
-  )
+  const textBytes = textEncoder.encode(options.prefix ? options.prefix + jsonPart : jsonPart)
 
-  const binaryBytes
-    = message.binary instanceof Blob
+  const binaryBytes =
+    message.binary instanceof Blob
       ? new Uint8Array(await message.binary.arrayBuffer())
       : message.binary
 
-  const output = new Uint8Array(
-    textBytes.length + 1 + binaryBytes.length,
-  )
+  const output = new Uint8Array(textBytes.length + 1 + binaryBytes.length)
 
   output.set(textBytes, 0)
   output[textBytes.length] = JSON_BINARY_DELIMITER
@@ -79,9 +76,9 @@ export interface DecodePeerMessageOptions {
  *   (typically due to a prefix mismatch).
  * - `matched: true` indicates successful decoding of a {@link PeerMessage}.
  */
-export type DecodePeerMessageResult
-  = | { matched: false, message?: undefined }
-    | { matched: true, message: PeerMessage }
+export type DecodePeerMessageResult =
+  | { matched: false; message?: undefined }
+  | { matched: true; message: PeerMessage }
 
 /**
  * Decodes a wire-encoded {@link PeerMessage}.
@@ -154,8 +151,7 @@ export function decodePeerMessage(
 
     message.binary = binaryBytes
     return { matched: true, message }
-  }
-  catch {
+  } catch {
     return { matched: false }
   }
 }

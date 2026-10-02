@@ -1,8 +1,8 @@
 {
   "name": "@standard-server/node-http-playground",
-  "type": "module",
   "version": "0.10.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx --watch src/main.ts",
     "type:check": "tsc --noEmit"

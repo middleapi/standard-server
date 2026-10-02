@@ -1,7 +1,8 @@
-import type { ClientServerTest } from './client-server'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { fromNodeHandler, H3, serve } from 'h3'
+
+import type { ClientServerTest } from './client-server'
 
 export function createH3NodeHandlerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -10,12 +11,15 @@ export function createH3NodeHandlerClientServerTest(): ClientServerTest {
 
   const app = new H3()
 
-  app.all('/*', fromNodeHandler(async (req, res) => {
-    const standardRequest = toStandardLazyRequest(req, res)
-    const standardResponse = await handler(standardRequest)
+  app.all(
+    '/*',
+    fromNodeHandler(async (req, res) => {
+      const standardRequest = toStandardLazyRequest(req, res)
+      const standardResponse = await handler(standardRequest)
 
-    await sendStandardResponse(res, standardResponse)
-  }))
+      await sendStandardResponse(res, standardResponse)
+    }),
+  )
 
   const server = serve(app, { port: 0 })
 

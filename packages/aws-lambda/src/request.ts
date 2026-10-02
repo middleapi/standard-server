@@ -1,8 +1,9 @@
 import type { StandardLazyRequest } from '@standard-server/core'
-import type { AnyAPIGatewayProxyEvent, HttpResponseStream } from './types'
 import { toAbortSignal } from '@standard-server/node'
+
 import { toStandardBody } from './body'
 import { toStandardHeaders } from './headers'
+import type { AnyAPIGatewayProxyEvent, HttpResponseStream } from './types'
 import { toStandardUrl } from './url'
 
 /**
@@ -28,7 +29,7 @@ export function toStandardLazyRequest(
     set headers(value) {
       Object.defineProperty(this, 'headers', { value, writable: true })
     },
-    resolveBody: hint => toStandardBody(event, { hint }),
+    resolveBody: (hint) => toStandardBody(event, { hint }),
     signal,
   }
 }

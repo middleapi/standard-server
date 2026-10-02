@@ -1,7 +1,8 @@
-import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
-import type { PeerEventStreamMessage } from './types'
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 import { AsyncIteratorClass, isTypescriptObject } from '@standard-server/shared'
+
+import type { PeerEventStreamMessage } from './types'
 
 export function toAsyncIteratorObject(
   queue: Queue<PeerEventStreamMessage>,
@@ -25,10 +26,7 @@ export function toAsyncIteratorObject(
 
         case 'error': {
           // Error events are surfaced by throwing a special error type
-          throw withEventMeta(
-            new ErrorEvent(json.data),
-            json,
-          )
+          throw withEventMeta(new ErrorEvent(json.data), json)
         }
 
         case 'close': {
@@ -52,8 +50,7 @@ export class EventStreamTransmitter {
     private readonly iterator: AsyncIterator<unknown>,
     private readonly messageId: string,
     private readonly send: (message: PeerEventStreamMessage) => Promise<void>,
-  ) {
-  }
+  ) {}
 
   async cancel(): Promise<void> {
     if (!this.isDone) {
@@ -82,8 +79,7 @@ export class EventStreamTransmitter {
             id: this.messageId,
             json: { ...meta, event: item.done ? 'close' : undefined, data },
           })
-        }
-        catch (error) {
+        } catch (error) {
           await this.cancel()
           throw error
         }
@@ -91,8 +87,7 @@ export class EventStreamTransmitter {
         if (this.isDone) {
           return
         }
-      }
-      catch (error) {
+      } catch (error) {
         // ErrorEvent is part of event-stream protocol
         if (error instanceof ErrorEvent) {
           if (!this.isDone) {

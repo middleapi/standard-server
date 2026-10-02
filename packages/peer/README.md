@@ -85,15 +85,15 @@ async function handle(request: StandardLazyRequest): Promise<StandardResponse> {
 const { port1, port2 } = new MessageChannel()
 
 const clientPeer = new ClientPeer(async (message) => {
-  port1.postMessage(await encodePeerMessage(message, { /** options */ }))
+  port1.postMessage(await encodePeerMessage(message, {/** options */}))
 })
 
 const serverPeer = new ServerPeer(async (message) => {
-  port2.postMessage(await encodePeerMessage(message, { /** options */ }))
+  port2.postMessage(await encodePeerMessage(message, {/** options */}))
 })
 
 port1.addEventListener('message', async (event) => {
-  const decoded = decodePeerMessage(event.data, { /** options */ })
+  const decoded = decodePeerMessage(event.data, {/** options */})
 
   if (decoded.matched && isServerPeerSendMessage(decoded.message)) {
     await clientPeer.message(decoded.message)
@@ -101,7 +101,7 @@ port1.addEventListener('message', async (event) => {
 })
 
 port2.addEventListener('message', async (event) => {
-  const decoded = decodePeerMessage(event.data, { /** options */ })
+  const decoded = decodePeerMessage(event.data, {/** options */})
 
   if (decoded.matched && isClientPeerSendMessage(decoded.message)) {
     await serverPeer.message(decoded.message, handle)

@@ -1,4 +1,3 @@
-import type { EventStreamMessage } from './types'
 import { decodeEventStreamMessage } from './decoder'
 import {
   assertEventStreamMessageComment,
@@ -12,6 +11,7 @@ import {
   isEventStreamMessageId,
   isEventStreamMessageRetry,
 } from './encoder'
+import type { EventStreamMessage } from './types'
 
 describe('predicates', () => {
   it('accept valid values', () => {
@@ -59,29 +59,33 @@ describe('assertions', () => {
 
   it('reject ids containing line breaks or NULL', () => {
     for (const char of ['\n', '\r', '\r\n', '\0']) {
-      expect(() => assertEventStreamMessageId(`hi${char}`))
-        .toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
+      expect(() => assertEventStreamMessageId(`hi${char}`)).toThrow(
+        "Event's id must not contain a carriage return, newline or NULL character",
+      )
     }
   })
 
   it('reject event names containing line breaks', () => {
     for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => assertEventStreamMessageName(`hi${lineBreak}`))
-        .toThrow('Event\'s event must not contain a carriage return or newline character')
+      expect(() => assertEventStreamMessageName(`hi${lineBreak}`)).toThrow(
+        "Event's event must not contain a carriage return or newline character",
+      )
     }
   })
 
   it('reject comments containing line breaks', () => {
     for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => assertEventStreamMessageComment(`hi${lineBreak}`))
-        .toThrow('Event\'s comment must not contain a carriage return or newline character')
+      expect(() => assertEventStreamMessageComment(`hi${lineBreak}`)).toThrow(
+        "Event's comment must not contain a carriage return or newline character",
+      )
     }
   })
 
   it('reject non-integer or negative retry values', () => {
     for (const retry of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
-      expect(() => assertEventStreamMessageRetry(retry))
-        .toThrow('Event\'s retry must be a integer and >= 0')
+      expect(() => assertEventStreamMessageRetry(retry)).toThrow(
+        "Event's retry must be a integer and >= 0",
+      )
     }
   })
 })
@@ -103,9 +107,15 @@ describe('encodeEventStreamMessageData', () => {
   })
 
   it('preserves trailing line endings as an empty data field', () => {
-    expect(encodeEventStreamMessageData('hello\nworld\n')).toBe('data: hello\ndata: world\ndata: \n')
-    expect(encodeEventStreamMessageData('hello\rworld\r')).toBe('data: hello\ndata: world\ndata: \n')
-    expect(encodeEventStreamMessageData('hello\r\nworld\r\n')).toBe('data: hello\ndata: world\ndata: \n')
+    expect(encodeEventStreamMessageData('hello\nworld\n')).toBe(
+      'data: hello\ndata: world\ndata: \n',
+    )
+    expect(encodeEventStreamMessageData('hello\rworld\r')).toBe(
+      'data: hello\ndata: world\ndata: \n',
+    )
+    expect(encodeEventStreamMessageData('hello\r\nworld\r\n')).toBe(
+      'data: hello\ndata: world\ndata: \n',
+    )
   })
 })
 
@@ -121,8 +131,9 @@ describe('encodeEventStreamMessageComments', () => {
   })
 
   it('rejects comments containing line breaks', () => {
-    expect(() => encodeEventStreamMessageComments(['hi\n']))
-      .toThrow('Event\'s comment must not contain a carriage return or newline character')
+    expect(() => encodeEventStreamMessageComments(['hi\n'])).toThrow(
+      "Event's comment must not contain a carriage return or newline character",
+    )
   })
 })
 
@@ -132,25 +143,37 @@ describe('encodeEventStreamMessage', () => {
   })
 
   it('encodes fields in order: comments, event, retry, id, data', () => {
-    expect(encodeEventStreamMessage({ event: 'close', data: 'hello\nworld' }))
-      .toBe('event: close\ndata: hello\ndata: world\n\n')
+    expect(encodeEventStreamMessage({ event: 'close', data: 'hello\nworld' })).toBe(
+      'event: close\ndata: hello\ndata: world\n\n',
+    )
 
-    expect(encodeEventStreamMessage({ event: 'message', id: '123', retry: 10000 }))
-      .toBe('event: message\nretry: 10000\nid: 123\n\n')
+    expect(encodeEventStreamMessage({ event: 'message', id: '123', retry: 10000 })).toBe(
+      'event: message\nretry: 10000\nid: 123\n\n',
+    )
 
-    expect(encodeEventStreamMessage({ event: 'close', id: '123', retry: 10000, data: 'hello', comments: ['hello', 'world'] }))
-      .toBe(': hello\n: world\nevent: close\nretry: 10000\nid: 123\ndata: hello\n\n')
+    expect(
+      encodeEventStreamMessage({
+        event: 'close',
+        id: '123',
+        retry: 10000,
+        data: 'hello',
+        comments: ['hello', 'world'],
+      }),
+    ).toBe(': hello\n: world\nevent: close\nretry: 10000\nid: 123\ndata: hello\n\n')
   })
 
   it('omits the default message event type when the message has data', () => {
     expect(encodeEventStreamMessage({ event: 'message', data: 'hello' })).toBe('data: hello\n\n')
     expect(encodeEventStreamMessage({ event: 'message', data: '' })).toBe('data: \n\n')
-    expect(encodeEventStreamMessage({ event: 'message', id: '123', data: 'hello', comments: ['hi'] }))
-      .toBe(': hi\nid: 123\ndata: hello\n\n')
+    expect(
+      encodeEventStreamMessage({ event: 'message', id: '123', data: 'hello', comments: ['hi'] }),
+    ).toBe(': hi\nid: 123\ndata: hello\n\n')
 
     // kept without data, so it is not mistaken for a comment
     expect(encodeEventStreamMessage({ event: 'message' })).toBe('event: message\n\n')
-    expect(encodeEventStreamMessage({ event: 'message', comments: ['hi'] })).toBe(': hi\nevent: message\n\n')
+    expect(encodeEventStreamMessage({ event: 'message', comments: ['hi'] })).toBe(
+      ': hi\nevent: message\n\n',
+    )
   })
 
   it('round-trips through decodeEventStreamMessage', () => {
@@ -172,29 +195,33 @@ describe('encodeEventStreamMessage', () => {
 
   it('rejects an invalid event name', () => {
     for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => encodeEventStreamMessage({ event: `hi${lineBreak}` }))
-        .toThrow('Event\'s event must not contain a carriage return or newline character')
+      expect(() => encodeEventStreamMessage({ event: `hi${lineBreak}` })).toThrow(
+        "Event's event must not contain a carriage return or newline character",
+      )
     }
   })
 
   it('rejects an invalid id', () => {
     for (const char of ['\n', '\r', '\r\n', '\0']) {
-      expect(() => encodeEventStreamMessage({ event: 'message', id: `hi${char}` }))
-        .toThrow('Event\'s id must not contain a carriage return, newline or NULL character')
+      expect(() => encodeEventStreamMessage({ event: 'message', id: `hi${char}` })).toThrow(
+        "Event's id must not contain a carriage return, newline or NULL character",
+      )
     }
   })
 
   it('rejects an invalid retry', () => {
     for (const retry of [Number.NaN, -1, 1.5]) {
-      expect(() => encodeEventStreamMessage({ event: 'message', retry }))
-        .toThrow('Event\'s retry must be a integer and >= 0')
+      expect(() => encodeEventStreamMessage({ event: 'message', retry })).toThrow(
+        "Event's retry must be a integer and >= 0",
+      )
     }
   })
 
   it('rejects an invalid comment', () => {
     for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => encodeEventStreamMessage({ event: 'message', comments: [`hi${lineBreak}`] }))
-        .toThrow('Event\'s comment must not contain a carriage return or newline character')
+      expect(() =>
+        encodeEventStreamMessage({ event: 'message', comments: [`hi${lineBreak}`] }),
+      ).toThrow("Event's comment must not contain a carriage return or newline character")
     }
   })
 })

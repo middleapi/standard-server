@@ -1,4 +1,9 @@
-import type { StandardLazyRequest, StandardLazyResponse, StandardRequest, StandardResponse } from '@standard-server/core'
+import type {
+  StandardLazyRequest,
+  StandardLazyResponse,
+  StandardRequest,
+  StandardResponse,
+} from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
 export interface ClientServer {
@@ -46,8 +51,7 @@ async function drainBody(body: unknown): Promise<void> {
           break
         }
       }
-    }
-    finally {
+    } finally {
       reader.releaseLock()
     }
     return

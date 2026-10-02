@@ -1,8 +1,26 @@
-import { isStandardHeaders, isStandardMethod, isStandardRequest, isStandardResponse, isStandardStatus, isStandardUrl } from './validators'
+import {
+  isStandardHeaders,
+  isStandardMethod,
+  isStandardRequest,
+  isStandardResponse,
+  isStandardStatus,
+  isStandardUrl,
+} from './validators'
 
 describe('isStandardMethod', () => {
   it('accepts standard & custom HTTP verbs', () => {
-    for (const method of ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD', 'QUERY', 'CUSTOM', 'anything']) {
+    for (const method of [
+      'GET',
+      'POST',
+      'PUT',
+      'DELETE',
+      'PATCH',
+      'OPTIONS',
+      'HEAD',
+      'QUERY',
+      'CUSTOM',
+      'anything',
+    ]) {
       expect(isStandardMethod(method)).toBe(true)
     }
   })
@@ -96,11 +114,13 @@ describe('isStandardRequest', () => {
   })
 
   it('accepts request with body and signal', () => {
-    expect(isStandardRequest({
-      ...valid,
-      body: undefined,
-      signal: new AbortController().signal,
-    })).toBe(true)
+    expect(
+      isStandardRequest({
+        ...valid,
+        body: undefined,
+        signal: new AbortController().signal,
+      }),
+    ).toBe(true)
   })
 
   it('rejects when method is invalid', () => {

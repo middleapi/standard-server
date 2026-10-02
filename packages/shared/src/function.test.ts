@@ -5,7 +5,7 @@ describe('sequential', () => {
     let time = 0
     const fn = vi.fn(async () => {
       const result = time++
-      await new Promise(resolve => setTimeout(resolve, 10))
+      await new Promise((resolve) => setTimeout(resolve, 10))
       return result
     })
 
@@ -26,7 +26,7 @@ describe('sequential', () => {
         throw new Error('Forced error')
       }
 
-      await new Promise(resolve => setTimeout(resolve, 10))
+      await new Promise((resolve) => setTimeout(resolve, 10))
       return result
     })
 

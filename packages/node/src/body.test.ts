@@ -1,22 +1,27 @@
-import type { StandardBody } from '@standard-server/core'
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { NodeHttpRequest } from './types'
 import { Buffer } from 'node:buffer'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import http2 from 'node:http2'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
+
+import type { StandardBody } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import request from 'supertest'
+
 import { toNodeHttpBody, toStandardBody } from './body'
 import * as EventStreamModule from './event-stream'
+import type { NodeHttpRequest } from './types'
 import * as UtilsModule from './utils'
 
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
 const toWebReadableStreamSpy = vi.spyOn(UtilsModule, 'toWebReadableStream')
 const generateContentDispositionSpy = vi.spyOn(StandardServerModule, 'generateContentDisposition')
-const getFilenameFromContentDispositionSpy = vi.spyOn(StandardServerModule, 'getFilenameFromContentDisposition')
+const getFilenameFromContentDispositionSpy = vi.spyOn(
+  StandardServerModule,
+  'getFilenameFromContentDisposition',
+)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -29,7 +34,10 @@ describe('toStandardBody', () => {
     await request(async (req: IncomingMessage, res: ServerResponse) => {
       standardBody = await toStandardBody(req)
       res.end()
-    }).post('/').type('application/json').send('')
+    })
+      .post('/')
+      .type('application/json')
+      .send('')
 
     expect(standardBody).toEqual(undefined)
   })
@@ -54,7 +62,9 @@ describe('toStandardBody', () => {
     expect(await standardBody.text()).toBe('{"value":123}')
 
     expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledTimes(1)
-    expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledWith('attachment; filename="foo.pdf"')
+    expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledWith(
+      'attachment; filename="foo.pdf"',
+    )
   })
 
   describe('body hint', () => {
@@ -216,15 +226,18 @@ describe('toStandardBody', () => {
         req.body = {}
         standardBody = await toStandardBody(req)
         res.end()
-      })
-        .get('/')
+      }).get('/')
 
       expect(standardBody).toBe(undefined)
     })
   })
 
   describe('handle utf-8 characters split across stream chunks', () => {
-    function createChunkedIncomingMessage(method: string, contentType: string, chunks: Buffer[]): IncomingMessage {
+    function createChunkedIncomingMessage(
+      method: string,
+      contentType: string,
+      chunks: Buffer[],
+    ): IncomingMessage {
       const request = Readable.from(chunks) as IncomingMessage
       request.method = method
       request.headers = {
@@ -248,7 +261,11 @@ describe('toStandardBody', () => {
       const splitAt = Buffer.from('emoji=').length + 1 // one byte into the emoji codepoint
       const chunks = [bytes.subarray(0, splitAt), bytes.subarray(splitAt)]
 
-      const incomingMessage = createChunkedIncomingMessage('POST', 'application/x-www-form-urlencoded', chunks)
+      const incomingMessage = createChunkedIncomingMessage(
+        'POST',
+        'application/x-www-form-urlencoded',
+        chunks,
+      )
       const result = await toStandardBody(incomingMessage)
       expect(result).toEqual(new URLSearchParams('emoji=😀'))
     })
@@ -257,7 +274,11 @@ describe('toStandardBody', () => {
       const bytes = Buffer.from('emoji=😀', 'utf-8')
       const chunks = [bytes.subarray(0, bytes.length - 1)] // emoji missing last byte
 
-      const incomingMessage = createChunkedIncomingMessage('POST', 'application/x-www-form-urlencoded', chunks)
+      const incomingMessage = createChunkedIncomingMessage(
+        'POST',
+        'application/x-www-form-urlencoded',
+        chunks,
+      )
       const result = await toStandardBody(incomingMessage)
       expect(result).toEqual(new URLSearchParams('emoji=�'))
     })
@@ -308,15 +329,14 @@ describe('toStandardBody', () => {
           if (standardBody instanceof ReadableStream) {
             streamedBytes = new Uint8Array(await new Response(standardBody).arrayBuffer())
           }
-        }
-        catch (e) {
+        } catch (e) {
           error = e
         }
         res.end()
       })
-      onTestFinished(() => new Promise<any>(r => server.close(r)))
+      onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
-      await new Promise<void>(r => server.listen(0, r))
+      await new Promise<void>((r) => server.listen(0, r))
       const port = (server.address() as any).port
 
       const client = http2.connect(`http://localhost:${port}`)
@@ -359,23 +379,27 @@ describe('toStandardBody', () => {
     })
 
     it('form-data', async ({ onTestFinished }) => {
-      const [result] = await http2Roundtrip(
+      const [result] = (await http2Roundtrip(
         onTestFinished,
         { 'content-type': 'multipart/form-data; boundary=X' },
         Buffer.from('--X\r\nContent-Disposition: form-data; name="emoji"\r\n\r\n😀\r\n--X--\r\n'),
-      ) as [FormData, undefined]
+      )) as [FormData, undefined]
 
       expect(result).toBeInstanceOf(FormData)
       expect(result.get('emoji')).toBe('😀')
     })
 
     it('file', async ({ onTestFinished }) => {
-      const body = Buffer.from([0xDE, 0xAD, 0xBE, 0xEF])
+      const body = Buffer.from([0xde, 0xad, 0xbe, 0xef])
 
-      const [result] = await http2Roundtrip(onTestFinished, {
-        'content-type': 'application/pdf',
-        'content-disposition': 'attachment; filename="foo.pdf"',
-      }, body) as [File, undefined]
+      const [result] = (await http2Roundtrip(
+        onTestFinished,
+        {
+          'content-type': 'application/pdf',
+          'content-disposition': 'attachment; filename="foo.pdf"',
+        },
+        body,
+      )) as [File, undefined]
 
       expect(result).toBeInstanceOf(File)
       expect(result.name).toBe('foo.pdf')
@@ -383,7 +407,7 @@ describe('toStandardBody', () => {
     })
 
     it('octet-stream', async ({ onTestFinished }) => {
-      const body = Buffer.from([0xDE, 0xAD, 0xBE, 0xEF])
+      const body = Buffer.from([0xde, 0xad, 0xbe, 0xef])
 
       const [result, streamedBytes] = await http2Roundtrip(
         onTestFinished,
@@ -411,7 +435,9 @@ describe('toStandardBody', () => {
         .post('/')
         .send({ foo: 'bar' })
 
-      await expect(toStandardBody(req!)).rejects.toThrow('Failed to read body: body stream already read')
+      await expect(toStandardBody(req!)).rejects.toThrow(
+        'Failed to read body: body stream already read',
+      )
       expect(await toStandardBody(req!, { hint: 'none' })).toBe(undefined)
     })
 
@@ -430,7 +456,9 @@ describe('toStandardBody', () => {
       expect(standardBody).toBeInstanceOf(ReadableStream)
       expect(toWebReadableStreamSpy).toHaveBeenCalledTimes(1)
       expect(standardBody).toBe(toWebReadableStreamSpy.mock.results[0]!.value)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'hello' })
     })
 
@@ -596,7 +624,11 @@ describe('toNodeHttpBody', () => {
 
     generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
 
-    const [body, headers] = toNodeHttpBody(file, { ...baseHeaders, 'content-type': 'application/octet-stream' }, {})
+    const [body, headers] = toNodeHttpBody(
+      file,
+      { ...baseHeaders, 'content-type': 'application/octet-stream' },
+      {},
+    )
 
     expect(body).toBeInstanceOf(Readable)
     expect(headers).toEqual({
@@ -686,7 +718,9 @@ describe('toNodeHttpBody', () => {
       'x-custom-header': 'custom-value',
     })
 
-    const reader = Readable.toWeb((body as Readable)).pipeThrough(new TextDecoderStream()).getReader()
+    const reader = Readable.toWeb(body as Readable)
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
 
     expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
     expect(await reader.read()).toEqual({ done: false, value: 'data: 123\n\n' })
@@ -712,7 +746,9 @@ describe('toNodeHttpBody', () => {
       'standard-server': 'octet-stream',
     })
 
-    const reader = Readable.toWeb((body as Readable)).pipeThrough(new TextDecoderStream()).getReader()
+    const reader = Readable.toWeb(body as Readable)
+      .pipeThrough(new TextDecoderStream())
+      .getReader()
 
     expect(await reader.read()).toEqual({ done: false, value: 'order1' })
     expect(await reader.read()).toEqual({ done: false, value: 'order2' })

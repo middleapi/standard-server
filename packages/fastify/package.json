@@ -1,31 +1,38 @@
 {
   "name": "@standard-server/fastify",
-  "type": "module",
   "version": "0.10.0",
   "description": "Fastify adapter for Standard Server: transport-agnostic requests, responses, and streaming on top of Fastify's request and reply objects",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "adapter",
+    "fastify",
+    "http",
+    "request",
+    "response",
+    "server",
+    "sse",
+    "standard-server",
+    "streaming",
+    "typescript"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/fastify"
   },
-  "keywords": [
-    "standard-server",
-    "fastify",
-    "adapter",
-    "http",
-    "server",
-    "request",
-    "response",
-    "streaming",
-    "sse",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -36,23 +43,8 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prepack": "unbuild"
-  },
-  "peerDependencies": {
-    "fastify": ">=5.6.1"
-  },
-  "peerDependenciesMeta": {
-    "fastify": {
-      "optional": true
-    }
   },
   "dependencies": {
     "@standard-server/core": "workspace:*",
@@ -64,5 +56,13 @@
     "@types/supertest": "^7.2.1",
     "fastify": "^5.11.0",
     "supertest": "^7.1.4"
+  },
+  "peerDependencies": {
+    "fastify": ">=5.6.1"
+  },
+  "peerDependenciesMeta": {
+    "fastify": {
+      "optional": true
+    }
   }
 }
