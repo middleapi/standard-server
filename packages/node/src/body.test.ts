@@ -284,7 +284,9 @@ describe('toStandardBody', () => {
     })
   })
 
-  describe.each(['utf8', 'base64'] as const)('request with %s encoding set', (encoding) => {
+  const encodings = ['utf8', 'base64', 'hex', 'latin1'] as const
+
+  describe.each(encodings)('request with %s encoding set', (encoding) => {
     let standardBody: any
 
     async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -304,6 +306,21 @@ describe('toStandardBody', () => {
 
       expect(standardBody).toBeInstanceOf(File)
       expect(await standardBody.text()).toBe('emoji=😀')
+    })
+
+    it('form-data', async () => {
+      // valid utf8 ('é' + NUL), since utf8 decoding replaces invalid bytes before we read them
+      const fileBytes = new Uint8Array([0xc3, 0xa9, 0x00])
+
+      await request(handler)
+        .post('/')
+        .set('standard-server', 'form-data')
+        .field('héllo', 'wörld 😀')
+        .attach('file', Buffer.from(fileBytes), 'file.bin')
+
+      expect(standardBody).toBeInstanceOf(FormData)
+      expect(standardBody.get('héllo')).toBe('wörld 😀')
+      expect(new Uint8Array(await standardBody.get('file').arrayBuffer())).toEqual(fileBytes)
     })
   })
 

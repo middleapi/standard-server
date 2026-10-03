@@ -162,9 +162,9 @@ export function toNodeHttpBody(
 }
 
 function _streamToFormData(stream: Readable, contentType: string | undefined): Promise<FormData> {
-  const response = new Response(stream, {
+  const response = new Response(toWebReadableStream(stream), {
     headers: {
-      'content-type': contentType,
+      'content-type': contentType ?? '',
     },
   })
 
