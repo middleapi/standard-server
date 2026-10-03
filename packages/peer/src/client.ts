@@ -28,10 +28,17 @@ interface ClientPeerRequestStateInternal {
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
   removeAbortListener?: (() => void) | undefined
   /**
-   * A cancel must not overtake the request message (the server ignores cancels for unknown ids),
-   * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
+   * Set once the request message is handed to `send`, so a cancel can follow it right away.
+   * A transport can resolve `send` only after the server handled the message,
+   * so waiting for it would hold the cancel back for as long as the handler runs.
    */
-  requestSent?: boolean | undefined
+  requestDispatched?: boolean | undefined
+  /**
+   * A cancel sent while the request message is in flight can still overtake it
+   * (e.g. while a transport reads a blob body to encode it), and the server ignores cancels for unknown ids,
+   * so transmitRequest sends it again once the request message is sent.
+   */
+  cancelSent?: boolean | undefined
   streamCancelled?: boolean | undefined
 }
 
@@ -91,8 +98,9 @@ export class ClientPeer {
         return
       }
 
-      // PeerRequestMessage must be sent before stream messages
-      await this.send({
+      // PeerRequestMessage must be handed to `send` before stream messages
+      state.requestDispatched = true
+      const sending = this.send({
         id,
         kind: 'request',
         json: {
@@ -105,43 +113,54 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
-      state.requestSent = true
 
-      // The request can already be settled/cancelled while was in flight
-      if (this.requests.get(id) !== state) {
-        if (request.signal?.aborted) {
-          await this.send({ id, kind: 'cancel' })
+      let transmitting: Promise<void> | undefined
+
+      /**
+       * Stream the body without waiting for `send` to resolve: a transport can resolve it only after
+       * the server handled the request, and the handler may be waiting for this body.
+       * A stream body leaves the request message without binary, so encoding it never takes longer
+       * than encoding the chunks that follow it.
+       *
+       * The request can already be settled/cancelled while it was handed to `send`.
+       */
+      if (this.requests.get(id) === state && !state.streamCancelled) {
+        untransmittedBody = undefined
+
+        if (isAsyncIteratorObject(request.body)) {
+          const transmitter = new EventStreamTransmitter(request.body, id, this.send)
+          state.eventStreamTransmitter = transmitter
+          transmitting = transmitter.transmit().catch((error) => {
+            if (state.eventStreamTransmitter) {
+              return this.abortById(id, error)
+            }
+          })
+        } else if (request.body instanceof ReadableStream) {
+          const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
+          state.octetStreamTransmitter = transmitter
+          transmitting = transmitter.transmit().catch((error) => {
+            if (state.octetStreamTransmitter) {
+              return this.abortById(id, error)
+            }
+          })
         }
-
-        return
       }
 
-      if (state.streamCancelled) {
-        return
-      }
+      await Promise.all([
+        (async () => {
+          await sending
 
-      untransmittedBody = undefined
-
-      if (isAsyncIteratorObject(request.body)) {
-        const transmitter = new EventStreamTransmitter(request.body, id, this.send)
-        state.eventStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.eventStreamTransmitter) {
-            return this.abortById(id, error)
+          // repeat a cancel that could have overtaken the in-flight request message
+          if (state.cancelSent) {
+            await this.send({ id, kind: 'cancel' })
           }
-        })
-      } else if (request.body instanceof ReadableStream) {
-        const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
-        state.octetStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.octetStreamTransmitter) {
-            return this.abortById(id, error)
-          }
-        })
-      }
+        })(),
+        transmitting,
+      ])
     } catch (reason) {
       failure = reason
-      await this.closeById(id, reason)
+      // the request keeps its own outcome, so a body that fails to clean up is ignored
+      await this.closeById(id, reason).catch(() => {})
     } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
@@ -258,7 +277,7 @@ export class ClientPeer {
 
     const promises = [
       state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
+      state.octetStreamTransmitter?.cancel(reason),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
@@ -289,10 +308,12 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
+    // the server cannot know the request before its message is handed to `send`
+    state.cancelSent = state.requestDispatched
     const promises = [
-      state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
+      state.cancelSent ? this.send({ id, kind: 'cancel' }) : undefined,
       state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
+      state.octetStreamTransmitter?.cancel(reason),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined

@@ -271,12 +271,12 @@ describe('clientPeer', () => {
       const error = new Error('aborted during send')
       controller.abort(error)
 
-      // the request settles right away, but the cancel must not overtake the request message
+      // the request settles and the cancel follows the in-flight request message right away
       await expect(promise).rejects.toBe(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      await bodyCancelled.promise
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
 
-      // the unsent body is released last, after any cancel message
-      return { id, releaseRequest, bodyCancelled: bodyCancelled.promise }
+      return { id, releaseRequest }
     }
 
     it('throws immediately if signal already aborted', async () => {
@@ -360,9 +360,11 @@ describe('clientPeer', () => {
         'aborted during send',
       )
 
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+      // the cancel is sent again once the request message is sent, in case it overtook it
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3))
       const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
       expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+      expect(send).toHaveBeenNthCalledWith(3, { id, kind: 'cancel' })
     })
 
     it('rejects when send throws', async () => {
@@ -449,25 +451,27 @@ describe('clientPeer', () => {
       ).rejects.toBe(error)
       await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce())
       expect(cancel).toHaveBeenCalledWith(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+      await vi.waitFor(() =>
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel', 'cancel']),
+      )
     })
 
-    it('sends the cancel message once the in-flight request message is sent', async () => {
-      const { id, releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+    it('sends the cancel message again once the in-flight request message is sent', async () => {
+      const { id, releaseRequest } = await abortWhileSendingRequest()
 
+      // the first cancel could have overtaken the request message, which the server ignores
       releaseRequest.resolve()
-      await bodyCancelled
-      expect(send).toHaveBeenCalledTimes(2)
-      expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3))
+      expect(send).toHaveBeenNthCalledWith(3, { id, kind: 'cancel' })
     })
 
-    it('does not send a cancel message when the in-flight request message fails to send', async () => {
-      const { releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+    it('does not send the cancel message again when the in-flight request message fails to send', async () => {
+      const { releaseRequest } = await abortWhileSendingRequest()
 
-      // the server never received the request, so there is nothing to cancel there
+      // the server never received the request, so there is nothing more to cancel there
       releaseRequest.reject(new Error('transport down'))
-      await bodyCancelled
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
     it('rejects pending request on server abort', async () => {
@@ -604,6 +608,32 @@ describe('clientPeer', () => {
         await peer.message(makeResponseMessage(id, 'ok'))
         const response = await promise
         expect(await response.resolveBody()).toBe('ok')
+      })
+
+      it('transmits the event-stream request body while the request message is still being sent', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // simulate a transport that resolves only after the server handled the request
+            await releaseRequest.promise
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: makeAsyncIter(['a']) }),
+        )
+
+        await vi.waitFor(() =>
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual([
+            'request',
+            'event-stream',
+            'event-stream',
+          ]),
+        )
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        releaseRequest.resolve()
+        expect(await (await promise).resolveBody()).toBe('ok')
       })
 
       it('send cancel message and reject request on non-protocol error', async () => {
@@ -783,6 +813,30 @@ describe('clientPeer', () => {
         expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'cancel' }))
       })
 
+      it('cancel request right away when canceling iterator while the request message is still being sent', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // simulate a transport that resolves only after the server handled the request
+            await releaseRequest.promise
+          }
+        })
+
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'event-stream'))
+
+        const iter = (await (await promise).resolveBody()) as AsyncIterator<unknown>
+        await iter.return?.()
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+
+        // the first cancel could have overtaken the request message, which the server ignores
+        releaseRequest.resolve()
+        await vi.waitFor(() =>
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel', 'cancel']),
+        )
+      })
+
       it('iterator error if receive cancel message', async () => {
         const { id, promise } = await requestAndGetId()
         await peer.message(makeStreamingResponse(id, 'event-stream'))
@@ -884,6 +938,53 @@ describe('clientPeer', () => {
         await peer.message(makeResponseMessage(id, 'ok'))
         const response = await promise
         expect(await response.resolveBody()).toBe('ok')
+      })
+
+      it('transmits the octet-stream request body while the request message is still being sent', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // simulate a transport that resolves only after the server handled the request
+            await releaseRequest.promise
+          }
+        })
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2]))
+            controller.close()
+          },
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: stream }),
+        )
+
+        await vi.waitFor(() =>
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual([
+            'request',
+            'octet-stream',
+            'octet-stream',
+          ]),
+        )
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        releaseRequest.resolve()
+        expect(await (await promise).resolveBody()).toBe('ok')
+      })
+
+      it('ignores an octet-stream request body that fails to clean up after the request message failed to send', async () => {
+        const error = new Error('send failed')
+        send.mockRejectedValueOnce(error)
+        const cancel = vi.fn(() => {
+          throw new Error('cleanup failed')
+        })
+
+        // the request keeps its own outcome, and the failed release is not an unhandled rejection
+        await expect(
+          peer.request(makeRequest({ body: new ReadableStream({ cancel }) })),
+        ).rejects.toBe(error)
+        await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(error))
       })
 
       it('send cancel message and reject request on stream error', async () => {

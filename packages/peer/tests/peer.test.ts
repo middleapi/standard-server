@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
 import {
@@ -355,6 +355,180 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     })
 
     await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+  })
+
+  describe('when send resolves only after the remote handled the message', () => {
+    function endlessEvents(finished: () => void) {
+      return (async function* () {
+        try {
+          while (true) {
+            yield 'tick'
+            await sleep(1)
+          }
+        } finally {
+          finished()
+        }
+      })()
+    }
+
+    it('uploads an event-stream request body that the handler reads before responding', async () => {
+      const { client } = connect(
+        async (request) => {
+          const received: unknown[] = []
+          for await (const value of (await request.resolveBody()) as AsyncIterable<unknown>) {
+            received.push(value)
+          }
+          return { status: 200, headers: {}, body: received }
+        },
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({
+        url: '/ingest',
+        method: 'POST',
+        headers: {},
+        body: (async function* () {
+          yield 'a'
+          yield 'b'
+        })(),
+      })
+
+      expect(await response.resolveBody()).toEqual(['a', 'b'])
+    })
+
+    it('uploads an octet-stream request body that the handler reads before responding', async () => {
+      const { client } = connect(
+        async (request) => {
+          const received: number[] = []
+          for await (const chunk of (await request.resolveBody()) as ReadableStream<Uint8Array>) {
+            received.push(...chunk)
+          }
+          return { status: 200, headers: {}, body: received }
+        },
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({
+        url: '/upload',
+        method: 'POST',
+        headers: {},
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2]))
+            controller.enqueue(new Uint8Array([3]))
+            controller.close()
+          },
+        }),
+      })
+
+      expect(await response.resolveBody()).toEqual([1, 2, 3])
+    })
+
+    it('propagates a client abort to a handler that has not responded yet', async () => {
+      let serverSignal: AbortSignal | undefined
+
+      const { client } = connect(
+        async (request) => {
+          serverSignal = request.signal
+          // the handler only settles once aborted
+          return new Promise((_, reject) => {
+            request.signal?.addEventListener('abort', () => reject(request.signal?.reason))
+          })
+        },
+        { waitForRemote: true },
+      )
+
+      const controller = new AbortController()
+      const promise = client.request({
+        url: '/slow',
+        method: 'GET',
+        headers: {},
+        signal: controller.signal,
+      })
+
+      await vi.waitFor(() => expect(serverSignal).toBeDefined())
+      controller.abort(new Error('user navigated away'))
+
+      await expect(promise).rejects.toThrow('user navigated away')
+      await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+    })
+
+    it('propagates a client abort to an endless event-stream response', async () => {
+      const finished = promiseWithResolvers<void>()
+      let serverSignal: AbortSignal | undefined
+
+      const { client } = connect(
+        async (request) => {
+          serverSignal = request.signal
+          return { status: 200, headers: {}, body: endlessEvents(finished.resolve) }
+        },
+        { waitForRemote: true },
+      )
+
+      const controller = new AbortController()
+      const response = await client.request({
+        url: '/ticks',
+        method: 'GET',
+        headers: {},
+        signal: controller.signal,
+      })
+      const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'tick' })
+
+      controller.abort(new Error('user navigated away'))
+
+      await finished.promise
+      expect(serverSignal!.aborted).toBe(true)
+    })
+
+    it('cancels an endless event-stream response when the client stops iterating', async () => {
+      const finished = promiseWithResolvers<void>()
+      let serverSignal: AbortSignal | undefined
+
+      const { client } = connect(
+        async (request) => {
+          serverSignal = request.signal
+          return { status: 200, headers: {}, body: endlessEvents(finished.resolve) }
+        },
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({ url: '/ticks', method: 'GET', headers: {} })
+      const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 'tick' })
+
+      await iterator.return?.()
+
+      await finished.promise
+      expect(serverSignal!.aborted).toBe(true)
+    })
+
+    it('cancels an endless octet-stream response when the client cancels the stream', async () => {
+      const cancelled = promiseWithResolvers<void>()
+
+      const { client } = connect(
+        async () => ({
+          status: 200,
+          headers: {},
+          body: new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              await sleep(1)
+              controller.enqueue(new Uint8Array([1]))
+            },
+            cancel: () => cancelled.resolve(),
+          }),
+        }),
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({ url: '/bytes', method: 'GET', headers: {} })
+      const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+      await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([1]) })
+
+      await reader.cancel()
+
+      await cancelled.promise
+    })
   })
 
   it('propagates client aborts to the server handler signal', async () => {
