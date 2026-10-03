@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { PassThrough, Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
@@ -649,6 +649,19 @@ describe('toWebReadableStream', () => {
     expect(crashes).toEqual([])
     expect(read).toBeGreaterThanOrEqual(256 * 1024)
     expect(source.destroyed).toBe(true) // cancellation still tears the source down
+  })
+
+  it('does not throw when cancelled with an error before the first read', async () => {
+    const source = new PassThrough()
+    const error = new Error('test')
+
+    const crashes = await recordUncaught(async () => {
+      await toWebReadableStream(source).cancel(error)
+    })
+
+    expect(crashes).toEqual([])
+    expect(source.destroyed).toBe(true)
+    expect(source.errored).toBe(error)
   })
 
   it('keeps an aborted HTTP/1 upload from crashing the process', async () => {

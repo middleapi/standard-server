@@ -55,6 +55,9 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
         // Errors mean the request is already torn down (e.g. the client aborted)
         void _drainIterator(iterator).catch(() => {})
       } else {
+        // The iterator only listens for `error` once pulled, so cancelling before
+        // the first read would leave the `error` from `destroy` unhandled
+        stream.on('error', () => {})
         stream.destroy(reason instanceof Error ? reason : undefined)
       }
     },
