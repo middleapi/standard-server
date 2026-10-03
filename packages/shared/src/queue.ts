@@ -6,7 +6,10 @@ export class Queue<T> {
   /** Items before `head` have already been pulled. */
   private readonly items: (T | undefined)[] = []
   private head = 0
-  private readonly pendingPulls: (readonly [resolve: (item: T) => void, reject: (err: unknown) => void])[] = []
+  private readonly pendingPulls: (readonly [
+    resolve: (item: T) => void,
+    reject: (err: unknown) => void,
+  ])[] = []
   private closed: undefined | { reason: unknown }
 
   /**
@@ -22,8 +25,7 @@ export class Queue<T> {
 
     if (pendingPull) {
       pendingPull[0](item)
-    }
-    else {
+    } else {
       this.items.push(item)
     }
   }
@@ -42,8 +44,7 @@ export class Queue<T> {
       if (this.head >= COMPACT_THRESHOLD && this.head * 2 >= this.items.length) {
         if (this.head === this.items.length) {
           this.items.length = 0
-        }
-        else {
+        } else {
           this.items.splice(0, this.head)
         }
 

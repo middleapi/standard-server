@@ -1,8 +1,14 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
-import type { AwsLambdaGlobal, HttpResponseStream } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toNodeHttpBody } from '@standard-server/node'
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  toNodeHttpBody,
+} from '@standard-server/node'
+
 import { toLambdaHeaders } from './headers'
+import type { AwsLambdaGlobal, HttpResponseStream } from './types'
 
 /**
  * Injected by the Lambda runtime when response streaming is enabled.
@@ -10,8 +16,7 @@ import { toLambdaHeaders } from './headers'
  */
 declare const awslambda: AwsLambdaGlobal
 
-export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {
-}
+export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
 /**
  * Send a standard response through the stream `awslambda.streamifyResponse` provides.
@@ -23,7 +28,11 @@ export async function sendStandardResponse(
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, resHeaders] = toNodeHttpBody(standardResponse.body, standardResponse.headers, options)
+  const [resBody, resHeaders] = toNodeHttpBody(
+    standardResponse.body,
+    standardResponse.headers,
+    options,
+  )
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(responseStream)) {
@@ -33,8 +42,7 @@ export async function sendStandardResponse(
 
       if (error) {
         reject(error)
-      }
-      else {
+      } else {
         resolve()
       }
 
@@ -62,23 +70,20 @@ export async function sendStandardResponse(
       if (resBody === undefined) {
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
-      }
-      else if (typeof resBody === 'string') {
+      } else if (typeof resBody === 'string') {
         res.end(resBody)
-      }
-      else {
+      } else {
         res.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)
           }
         })
 
-        resBody.once('error', error => res.destroy(error))
+        resBody.once('error', (error) => res.destroy(error))
 
         resBody.pipe(res)
       }
-    }
-    catch (error) {
+    } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
 
       // Destroy instead of leaving the response half-open:

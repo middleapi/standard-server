@@ -1,4 +1,9 @@
-import type { StandardLazyRequest, StandardLazyResponse, StandardRequest, StandardResponse } from '@standard-server/core'
+import type {
+  StandardLazyRequest,
+  StandardLazyResponse,
+  StandardRequest,
+  StandardResponse,
+} from '@standard-server/core'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '@standard-server/peer'
 import type { Mock } from 'vitest'
 
@@ -18,7 +23,7 @@ export interface ClientServerTest {
  */
 export function expectPeerMessages(
   clientServer: ClientServerTest,
-  expected: { client: Record<string, unknown>[], server: Record<string, unknown>[] },
+  expected: { client: Record<string, unknown>[]; server: Record<string, unknown>[] },
 ): void {
   const { sendClientPeerMessage, sendServerPeerMessage } = clientServer
 
@@ -26,8 +31,10 @@ export function expectPeerMessages(
     return
   }
 
-  expect(sendClientPeerMessage.mock.calls.map(([message]) => message))
-    .toEqual(expected.client.map(message => expect.objectContaining(message)))
-  expect(sendServerPeerMessage.mock.calls.map(([message]) => message))
-    .toEqual(expected.server.map(message => expect.objectContaining(message)))
+  expect(sendClientPeerMessage.mock.calls.map(([message]) => message)).toEqual(
+    expected.client.map((message) => expect.objectContaining(message)),
+  )
+  expect(sendServerPeerMessage.mock.calls.map(([message]) => message)).toEqual(
+    expected.server.map((message) => expect.objectContaining(message)),
+  )
 }

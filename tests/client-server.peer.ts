@@ -1,9 +1,11 @@
-import type { StandardLazyRequest, StandardRequest, StandardResponse } from '@standard-server/core'
-import type { ClientPeer, PeerMessage, ServerPeer } from '@standard-server/peer'
 import type { BlobPart } from 'node:buffer'
-import type { ClientServerTest } from './client-server'
+
+import type { StandardLazyRequest, StandardRequest, StandardResponse } from '@standard-server/core'
 import { toFetchBody, toFetchHeaders, toStandardBody } from '@standard-server/fetch'
+import type { ClientPeer, PeerMessage, ServerPeer } from '@standard-server/peer'
 import { encodePeerMessage } from '@standard-server/peer'
+
+import type { ClientServerTest } from './client-server'
 
 export const peerPrefix = '__PREFIX__'
 
@@ -32,7 +34,9 @@ export async function randomEncodePeerMessage(message: PeerMessage) {
 /**
  * Normalizes the possible `ws` message data shapes into what `decodePeerMessage` accepts.
  */
-export async function wsMessageDataToEncoded(data: unknown): Promise<string | Uint8Array<ArrayBuffer>> {
+export async function wsMessageDataToEncoded(
+  data: unknown,
+): Promise<string | Uint8Array<ArrayBuffer>> {
   if (typeof data === 'string') {
     return data
   }
@@ -42,8 +46,8 @@ export async function wsMessageDataToEncoded(data: unknown): Promise<string | Ui
   }
 
   if (Array.isArray(data)) {
-    // eslint-disable-next-line ban/ban
-    return (new Blob(data as BlobPart[])).bytes()
+    // oxlint-disable-next-line no-restricted-properties
+    return new Blob(data as BlobPart[]).bytes()
   }
 
   const view = data as Uint8Array
@@ -56,20 +60,24 @@ export async function wsMessageDataToEncoded(data: unknown): Promise<string | Ui
 export function wrapFetchStreamedServerHandler(
   handler: ClientServerTest['handler'],
 ): (request: StandardLazyRequest) => Promise<StandardResponse> {
-  return async request => handler({
-    ...request,
-    resolveBody: async (hint) => {
-      // peer adapter does not support body-hint, but I still put it there :V
-      const stream = await request.resolveBody('octet-stream')
+  return async (request) =>
+    handler({
+      ...request,
+      resolveBody: async (hint) => {
+        // peer adapter does not support body-hint, but I still put it there :V
+        const stream = await request.resolveBody('octet-stream')
 
-      if (stream instanceof ReadableStream) {
-        const body = await toStandardBody(new Response(stream, { headers: toFetchHeaders(request.headers) }), { hint })
-        return body
-      }
+        if (stream instanceof ReadableStream) {
+          const body = await toStandardBody(
+            new Response(stream, { headers: toFetchHeaders(request.headers) }),
+            { hint },
+          )
+          return body
+        }
 
-      return stream
-    },
-  })
+        return stream
+      },
+    })
 }
 
 /**
@@ -89,7 +97,10 @@ export function toFetchStreamedStandardRequest(standardRequest: StandardRequest)
   }
 }
 
-export function expectPeerRequestsCleanedUpAfterEach(clientPeer: ClientPeer, serverPeer: ServerPeer): void {
+export function expectPeerRequestsCleanedUpAfterEach(
+  clientPeer: ClientPeer,
+  serverPeer: ServerPeer,
+): void {
   afterEach(() => {
     // ensure all resource is cleaned up correctly
     expect((clientPeer as any).requests.size).toBe(0)

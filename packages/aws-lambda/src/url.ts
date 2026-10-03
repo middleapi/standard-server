@@ -1,6 +1,7 @@
 import type { StandardUrl } from '@standard-server/core'
-import type { AnyAPIGatewayProxyEvent } from './types'
 import { safeEncodeURIComponent } from '@standard-server/shared'
+
+import type { AnyAPIGatewayProxyEvent } from './types'
 
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
 
@@ -49,5 +50,5 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
 function toPathname(path: string): `/${string}` {
   const encoded = path.replace(UNENCODED_PATH_CHAR_RE, safeEncodeURIComponent)
 
-  return encoded.startsWith('/') ? encoded as `/${string}` : `/${encoded}`
+  return encoded.startsWith('/') ? (encoded as `/${string}`) : `/${encoded}`
 }

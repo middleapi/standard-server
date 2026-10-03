@@ -1,4 +1,5 @@
 import type { StandardHeaders } from '@standard-server/core'
+
 import { toFetchHeaders, toStandardHeaders } from './headers'
 
 it('toStandardHeaders', () => {
@@ -61,7 +62,5 @@ it('toFetchHeaders skips http2 pseudo-headers', () => {
 
   const fetchHeaders = toFetchHeaders(standardHeaders)
 
-  expect([...fetchHeaders]).toEqual([
-    ['content-type', 'application/json'],
-  ])
+  expect([...fetchHeaders]).toEqual([['content-type', 'application/json']])
 })

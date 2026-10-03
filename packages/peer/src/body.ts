@@ -1,10 +1,20 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
+import {
+  flattenStandardHeader,
+  generateContentDisposition,
+  getFilenameFromContentDisposition,
+} from '@standard-server/core'
 import type { AsyncCleanupFn } from '@standard-server/shared'
-import type { PeerEventStreamMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage } from './types'
-import { flattenStandardHeader, generateContentDisposition, getFilenameFromContentDisposition } from '@standard-server/core'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
+
 import { toAsyncIteratorObject } from './event-stream'
 import { toOctetStream } from './octet-stream'
+import type {
+  PeerEventStreamMessage,
+  PeerOctetStreamMessage,
+  PeerRequestMessage,
+  PeerResponseMessage,
+} from './types'
 
 export interface ToStandardBodyResult {
   resolveBody: () => Promise<StandardBody>
@@ -25,7 +35,7 @@ export function toStandardBody(
 
   if (message.json.body === undefined && message.binary === undefined) {
     // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
-    if (rawContentType === undefined && bodyHint === 'event-stream' satisfies StandardBodyHint) {
+    if (rawContentType === undefined && bodyHint === ('event-stream' satisfies StandardBodyHint)) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
         resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
@@ -47,7 +57,7 @@ export function toStandardBody(
 
     try {
       if (message.binary) {
-        if (bodyHint === 'form-data' satisfies StandardBodyHint) {
+        if (bodyHint === ('form-data' satisfies StandardBodyHint)) {
           const headers: { 'content-type'?: string } = {}
 
           if (contentType !== undefined) {
@@ -62,10 +72,13 @@ export function toStandardBody(
           return form
         }
 
-        const contentDisposition = flattenStandardHeader(message.json.headers?.['content-disposition'])
-        const filename = contentDisposition !== undefined
-          ? getFilenameFromContentDisposition(contentDisposition)
-          : undefined
+        const contentDisposition = flattenStandardHeader(
+          message.json.headers?.['content-disposition'],
+        )
+        const filename =
+          contentDisposition !== undefined
+            ? getFilenameFromContentDisposition(contentDisposition)
+            : undefined
 
         const file = new File([message.binary], filename ?? 'blob', {
           type: contentType ?? 'application/octet-stream',
@@ -73,7 +86,7 @@ export function toStandardBody(
         return file
       }
 
-      if (bodyHint === 'url-search-params' satisfies StandardBodyHint) {
+      if (bodyHint === ('url-search-params' satisfies StandardBodyHint)) {
         if (typeof message.json.body !== 'string') {
           throw new TypeError('Expected body to be a string for url-search-params bodyHint')
         }
@@ -82,13 +95,11 @@ export function toStandardBody(
       }
 
       return message.json.body // undefined | json body
-    }
-    catch (error) {
+    } catch (error) {
       errorRef = { value: error }
       throw error
-    }
-    finally {
-    // The body is fully loaded, so we can clean up immediately.
+    } finally {
+      // The body is fully loaded, so we can clean up immediately.
       await cleanup(errorRef ? { kind: 'error', error: errorRef.value } : { kind: 'success' })
     }
   }
@@ -126,7 +137,7 @@ export async function encodeAtomicStandardBody(
     headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
     headers['content-disposition'] ??= generateContentDisposition(
-      body instanceof File ? body.name ?? '' : 'blob',
+      body instanceof File ? (body.name ?? '') : 'blob',
     )
 
     // BunS3 can use NaN for the size

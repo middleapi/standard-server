@@ -1,16 +1,18 @@
+import { afterAll, describe, expect, it } from 'bun:test'
+
 import { ErrorEvent } from '@standard-server/core'
 import { toFetchResponse } from '@standard-server/fetch'
-import { afterAll, describe, expect, it } from 'bun:test'
 
 let createBody: () => AsyncGenerator
 
 const server = Bun.serve({
   port: 0,
-  fetch: () => toFetchResponse({
-    status: 200,
-    headers: {},
-    body: createBody(),
-  }),
+  fetch: () =>
+    toFetchResponse({
+      status: 200,
+      headers: {},
+      body: createBody(),
+    }),
 })
 
 afterAll(() => server.stop(true))
@@ -18,9 +20,9 @@ afterAll(() => server.stop(true))
 /**
  * Listens with EventSource until a close or error event arrives.
  */
-function receive(): Promise<{ event: string, data: string }[]> {
+function receive(): Promise<{ event: string; data: string }[]> {
   const source = new EventSource(server.url)
-  const received: { event: string, data: string }[] = []
+  const received: { event: string; data: string }[] = []
 
   return new Promise((resolve) => {
     for (const event of ['message', 'close', 'error']) {

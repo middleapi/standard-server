@@ -1,4 +1,5 @@
 import type { StandardLazyRequest } from '@standard-server/core'
+
 import { toStandardBody } from './body'
 import { toStandardHeaders } from './headers'
 import { toStandardUrl } from './url'
@@ -21,7 +22,7 @@ export function toStandardLazyRequest(request: Request): StandardLazyRequest {
     set headers(value) {
       Object.defineProperty(this, 'headers', { value, writable: true })
     },
-    resolveBody: hint => toStandardBody(request, { hint }),
+    resolveBody: (hint) => toStandardBody(request, { hint }),
     signal: request.signal,
   }
 }

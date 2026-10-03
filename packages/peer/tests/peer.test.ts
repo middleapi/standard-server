@@ -1,9 +1,15 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
-import type { ClientPeer, ServerPeer } from '../src'
-import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
 import { promiseWithResolvers } from '@standard-server/shared'
-import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, ServerPeer as ServerPeerClass } from '../src'
+
+import type { ClientPeer, ServerPeer } from '../src'
+import {
+  ClientPeer as ClientPeerClass,
+  decodePeerMessage,
+  encodePeerMessage,
+  ServerPeer as ServerPeerClass,
+} from '../src'
+import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 
 /**
  * Wires a ClientPeer and a ServerPeer together through the real codec,
@@ -16,9 +22,9 @@ import { ClientPeer as ClientPeerClass, decodePeerMessage, encodePeerMessage, Se
 function connect(
   handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
   { waitForRemote = false } = {},
-): { client: ClientPeer, server: ServerPeer } {
+): { client: ClientPeer; server: ServerPeer } {
   const prefix = 'peer:'
-  const wire = {} as { client: ClientPeer, server: ServerPeer }
+  const wire = {} as { client: ClientPeer; server: ServerPeer }
 
   wire.client = new ClientPeerClass(async (message) => {
     const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
@@ -28,8 +34,7 @@ function connect(
     const handled = wire.server.message(decoded.message as ClientPeerSendMessage, handler)
     if (waitForRemote) {
       await handled
-    }
-    else {
+    } else {
       void handled.catch(() => {})
     }
   })
@@ -50,7 +55,7 @@ function connect(
 
 describe('peer integration (client <-> server over encoded wire)', () => {
   it('completes a JSON request/response cycle', async () => {
-    const { client } = connect(async request => ({
+    const { client } = connect(async (request) => ({
       status: 201,
       headers: { 'x-served-by': 'peer' },
       body: { echo: await request.resolveBody(), url: request.url, method: request.method },
@@ -65,15 +70,22 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     expect(response.status).toBe(201)
     expect(response.headers['x-served-by']).toBe('peer')
-    expect(await response.resolveBody()).toEqual({ echo: { name: 'Alice' }, url: '/greet', method: 'PUT' })
+    expect(await response.resolveBody()).toEqual({
+      echo: { name: 'Alice' },
+      url: '/greet',
+      method: 'PUT',
+    })
   })
 
   it('completes when the transport waits for full remote processing before send resolves', async () => {
-    const { client } = connect(async request => ({
-      status: 200,
-      headers: {},
-      body: { pong: request.url },
-    }), { waitForRemote: true })
+    const { client } = connect(
+      async (request) => ({
+        status: 200,
+        headers: {},
+        body: { pong: request.url },
+      }),
+      { waitForRemote: true },
+    )
 
     const response = await client.request({ url: '/ping', method: 'GET', headers: {} })
     expect(response.status).toBe(200)
@@ -81,27 +93,31 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 
   it('handles multiple concurrent requests over the same connection', async () => {
-    const { client } = connect(async request => ({
+    const { client } = connect(async (request) => ({
       status: 200,
       headers: {},
       body: `served:${request.url}`,
     }))
 
-    const responses = await Promise.all((['/a', '/b', '/c'] as const).map(async (url) => {
-      const response = await client.request({ url, method: 'GET', headers: {} })
-      return response.resolveBody()
-    }))
+    const responses = await Promise.all(
+      (['/a', '/b', '/c'] as const).map(async (url) => {
+        const response = await client.request({ url, method: 'GET', headers: {} })
+        return response.resolveBody()
+      }),
+    )
 
     expect(responses).toEqual(['served:/a', 'served:/b', 'served:/c'])
   })
 
   it('uploads and downloads files with binary content intact', async () => {
     const { client } = connect(async (request) => {
-      const file = await request.resolveBody() as File
+      const file = (await request.resolveBody()) as File
       return {
         status: 200,
         headers: {},
-        body: new File([await file.text(), ' (served)'], `served-${file.name}`, { type: file.type }),
+        body: new File([await file.text(), ' (served)'], `served-${file.name}`, {
+          type: file.type,
+        }),
       }
     })
 
@@ -112,7 +128,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       body: new File(['hello'], 'hello.txt', { type: 'text/plain' }),
     })
 
-    const body = await response.resolveBody() as File
+    const body = (await response.resolveBody()) as File
     expect(body).toBeInstanceOf(File)
     expect(body.name).toBe('served-hello.txt')
     expect(body.type).toBe('text/plain')
@@ -120,10 +136,10 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 
   it('round-trips multipart form data including file entries', async () => {
-    const { client } = connect(async request => ({
+    const { client } = connect(async (request) => ({
       status: 200,
       headers: {},
-      body: await request.resolveBody() as FormData,
+      body: (await request.resolveBody()) as FormData,
     }))
 
     const form = new FormData()
@@ -131,7 +147,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     form.append('attachment', new File(['data'], 'a.txt', { type: 'text/plain' }))
 
     const response = await client.request({ url: '/form', method: 'POST', headers: {}, body: form })
-    const received = await response.resolveBody() as FormData
+    const received = (await response.resolveBody()) as FormData
 
     expect(received).toBeInstanceOf(FormData)
     expect(received.get('note')).toBe('hello')
@@ -141,10 +157,10 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 
   it('round-trips URLSearchParams', async () => {
-    const { client } = connect(async request => ({
+    const { client } = connect(async (request) => ({
       status: 200,
       headers: {},
-      body: await request.resolveBody() as URLSearchParams,
+      body: (await request.resolveBody()) as URLSearchParams,
     }))
 
     const response = await client.request({
@@ -154,7 +170,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       body: new URLSearchParams('a=1&b=hello world'),
     })
 
-    const received = await response.resolveBody() as URLSearchParams
+    const received = (await response.resolveBody()) as URLSearchParams
     expect(received).toBeInstanceOf(URLSearchParams)
     expect(received.get('a')).toBe('1')
     expect(received.get('b')).toBe('hello world')
@@ -172,7 +188,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     }))
 
     const response = await client.request({ url: '/events', method: 'GET', headers: {} })
-    const iterator = await response.resolveBody() as AsyncIterator<unknown>
+    const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
 
     const first = await iterator.next()
     expect(first.done).toBe(false)
@@ -199,7 +215,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     }))
 
     const response = await client.request({ url: '/events', method: 'GET', headers: {} })
-    const iterator = await response.resolveBody() as AsyncIterator<unknown>
+    const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
 
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ok' })
     await expect(iterator.next()).rejects.toSatisfy((error: ErrorEvent) => {
@@ -213,7 +229,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     const received: unknown[] = []
 
     const { client } = connect(async (request) => {
-      const iterator = await request.resolveBody() as AsyncIterator<unknown>
+      const iterator = (await request.resolveBody()) as AsyncIterator<unknown>
       let result = await iterator.next()
       while (!result.done) {
         received.push(result.value)
@@ -250,7 +266,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     }))
 
     const response = await client.request({ url: '/download', method: 'GET', headers: {} })
-    const stream = await response.resolveBody() as ReadableStream<Uint8Array>
+    const stream = (await response.resolveBody()) as ReadableStream<Uint8Array>
     expect(stream).toBeInstanceOf(ReadableStream)
 
     const reader = stream.getReader()
@@ -318,11 +334,14 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 
   it('does not upload a request body the server cancelled while the request message was still being sent', async () => {
-    const { client } = connect(async (request) => {
-      await (await request.resolveBody() as ReadableStream).cancel()
-      // a streamed response keeps the request open after the request `send` resolves
-      return { status: 200, headers: {}, body: (async function* () {})() }
-    }, { waitForRemote: true })
+    const { client } = connect(
+      async (request) => {
+        await ((await request.resolveBody()) as ReadableStream).cancel()
+        // a streamed response keeps the request open after the request `send` resolves
+        return { status: 200, headers: {}, body: (async function* () {})() }
+      },
+      { waitForRemote: true },
+    )
 
     const cancel = vi.fn()
     await client.request({
@@ -330,7 +349,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       method: 'POST',
       headers: {},
       body: new ReadableStream<Uint8Array>({
-        start: controller => controller.enqueue(new Uint8Array([1, 2])),
+        start: (controller) => controller.enqueue(new Uint8Array([1, 2])),
         cancel,
       }),
     })
@@ -347,7 +366,12 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     })
 
     const controller = new AbortController()
-    const promise = client.request({ url: '/slow', method: 'GET', headers: {}, signal: controller.signal })
+    const promise = client.request({
+      url: '/slow',
+      method: 'GET',
+      headers: {},
+      signal: controller.signal,
+    })
 
     await vi.waitFor(() => expect(serverSignal).toBeDefined())
     controller.abort(new Error('user navigated away'))
@@ -376,7 +400,13 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     })
 
     const controller = new AbortController()
-    const promise = client.request({ url: '/upload', method: 'POST', headers: {}, body: file, signal: controller.signal })
+    const promise = client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: {},
+      body: file,
+      signal: controller.signal,
+    })
 
     await encodeStarted.promise
     controller.abort(new Error('user navigated away'))
@@ -390,16 +420,23 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     let serverBody: Record<string, unknown> | undefined
 
     const { client } = connect(async (request) => {
-      serverBody = await request.resolveBody() as Record<string, unknown>
+      serverBody = (await request.resolveBody()) as Record<string, unknown>
       return { status: 200, headers: {}, body: serverBody }
     })
 
     const maliciousBody = JSON.parse('{"user":"alice","__proto__":{"isAdmin":true}}')
-    const response = await client.request({ url: '/login', method: 'POST', headers: {}, body: maliciousBody })
-    const echoed = await response.resolveBody() as Record<string, unknown>
+    const response = await client.request({
+      url: '/login',
+      method: 'POST',
+      headers: {},
+      body: maliciousBody,
+    })
+    const echoed = (await response.resolveBody()) as Record<string, unknown>
 
     expect(serverBody!.user).toBe('alice')
-    expect(Object.getOwnPropertyDescriptor(serverBody, '__proto__')?.value).toEqual({ isAdmin: true })
+    expect(Object.getOwnPropertyDescriptor(serverBody, '__proto__')?.value).toEqual({
+      isAdmin: true,
+    })
     expect(Object.getOwnPropertyDescriptor(echoed, '__proto__')?.value).toEqual({ isAdmin: true })
     expect(({} as any).isAdmin).toBeUndefined()
     expect(Object.getPrototypeOf(serverBody)).toBe(Object.prototype)

@@ -1,6 +1,6 @@
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { createServer } from 'node:http'
 
+import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 
 async function main(request: StandardLazyRequest): Promise<StandardResponse> {
@@ -12,9 +12,9 @@ async function main(request: StandardLazyRequest): Promise<StandardResponse> {
 
       while (true) {
         yield `now:${new Date()}`
-        await new Promise(r => setTimeout(r, 1000))
+        await new Promise((r) => setTimeout(r, 1000))
       }
-    }()),
+    })(),
   }
 }
 

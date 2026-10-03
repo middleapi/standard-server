@@ -1,10 +1,16 @@
-import type { StandardBody, StandardBodyHint } from '@standard-server/core'
-import type { AnyAPIGatewayProxyEvent } from './types'
 import { Buffer } from 'node:buffer'
-import { flattenStandardHeader, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+
+import type { StandardBody, StandardBodyHint } from '@standard-server/core'
+import {
+  flattenStandardHeader,
+  getFilenameFromContentDisposition,
+  resolveStandardBodyHint,
+} from '@standard-server/core'
 import { toAsyncIteratorObject } from '@standard-server/fetch'
 import { parseEmptyableJSON } from '@standard-server/shared'
+
 import { toStandardHeaders } from './headers'
+import type { AnyAPIGatewayProxyEvent } from './types'
 
 export interface ToStandardBodyOptions {
   /**
@@ -27,11 +33,12 @@ export async function toStandardBody(
     return undefined
   }
 
-  const bytes: Uint8Array<ArrayBuffer> = typeof event.body !== 'string'
-    ? new Uint8Array()
-    : event.isBase64Encoded
-      ? new Uint8Array(Buffer.from(event.body, 'base64'))
-      : new TextEncoder().encode(event.body)
+  const bytes: Uint8Array<ArrayBuffer> =
+    typeof event.body !== 'string'
+      ? new Uint8Array()
+      : event.isBase64Encoded
+        ? new Uint8Array(Buffer.from(event.body, 'base64'))
+        : new TextEncoder().encode(event.body)
 
   if (hint === 'json') {
     return parseEmptyableJSON(new TextDecoder().decode(bytes))
@@ -53,9 +60,10 @@ export async function toStandardBody(
 
   if (hint === 'file') {
     const contentDisposition = flattenStandardHeader(headers['content-disposition'])
-    const fileName = contentDisposition !== undefined
-      ? getFilenameFromContentDisposition(contentDisposition)
-      : undefined
+    const fileName =
+      contentDisposition !== undefined
+        ? getFilenameFromContentDisposition(contentDisposition)
+        : undefined
 
     return new File([bytes], fileName ?? 'blob', { type: contentType ?? '' })
   }
@@ -63,7 +71,10 @@ export async function toStandardBody(
   return _bytesToReadableStream(bytes)
 }
 
-function _bytesToFormData(bytes: Uint8Array<ArrayBuffer>, contentType: string | undefined): Promise<FormData> {
+function _bytesToFormData(
+  bytes: Uint8Array<ArrayBuffer>,
+  contentType: string | undefined,
+): Promise<FormData> {
   const response = new Response(bytes, {
     headers: {
       'content-type': contentType ?? '',
@@ -73,7 +84,9 @@ function _bytesToFormData(bytes: Uint8Array<ArrayBuffer>, contentType: string | 
   return response.formData()
 }
 
-function _bytesToReadableStream(bytes: Uint8Array<ArrayBuffer>): ReadableStream<Uint8Array<ArrayBuffer>> {
+function _bytesToReadableStream(
+  bytes: Uint8Array<ArrayBuffer>,
+): ReadableStream<Uint8Array<ArrayBuffer>> {
   return new ReadableStream({
     start(controller) {
       controller.enqueue(bytes)

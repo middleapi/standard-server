@@ -1,6 +1,11 @@
-import type { EventMeta } from './types'
 import { getOrBind, isTypescriptObject } from '@standard-server/shared'
-import { assertEventStreamMessageComment, assertEventStreamMessageId, assertEventStreamMessageRetry } from './encoder'
+
+import {
+  assertEventStreamMessageComment,
+  assertEventStreamMessageId,
+  assertEventStreamMessageRetry,
+} from './encoder'
+import type { EventMeta } from './types'
 
 const EVENT_META_SYMBOL = Symbol.for('STANDARD_SERVER_EVENT_META')
 const EVENT_SOURCE_SYMBOL = Symbol.for('STANDARD_SERVER_EVENT_SOURCE')
@@ -59,7 +64,8 @@ export function unwrapEvent<T>(container: T): [data: T, meta: EventMeta | undefi
   }
 
   const meta = (container as Record<symbol, unknown>)[EVENT_META_SYMBOL] as EventMeta | undefined
-  const target = (container as Record<symbol, unknown>)[EVENT_SOURCE_SYMBOL] as T | undefined ?? container
+  const target =
+    ((container as Record<symbol, unknown>)[EVENT_SOURCE_SYMBOL] as T | undefined) ?? container
 
   return [target, meta]
 }

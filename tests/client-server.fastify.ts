@@ -1,7 +1,8 @@
-import type { ClientServerTest } from './client-server'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/fastify'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import Fastify from 'fastify'
+
+import type { ClientServerTest } from './client-server'
 
 export function createFastifyClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

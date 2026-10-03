@@ -1,5 +1,5 @@
-import type { PeerMessage } from './types'
 import { decodePeerMessage, encodePeerMessage } from './codec'
+import type { PeerMessage } from './types'
 
 describe('codec', () => {
   it('handles simple message (JSON only)', async () => {
@@ -16,7 +16,7 @@ describe('codec', () => {
     const prefix = 'PRE:'
     const message = { id: '1', kind: 'request', payload: 'test' }
 
-    const encoded = await encodePeerMessage(message, { prefix }) as string
+    const encoded = (await encodePeerMessage(message, { prefix })) as string
     expect(encoded).toBeTypeOf('string')
     expect(encoded.startsWith(prefix)).toBe(true)
 
@@ -28,7 +28,7 @@ describe('codec', () => {
     const binary = new Uint8Array([1, 2, 3, 4])
     const message = { id: '1', kind: 'x', binary }
 
-    const encoded = await encodePeerMessage(message) as Uint8Array<ArrayBuffer>
+    const encoded = (await encodePeerMessage(message)) as Uint8Array<ArrayBuffer>
     expect(encoded).toBeInstanceOf(Uint8Array)
 
     const decoded = decodePeerMessage(encoded)
@@ -40,7 +40,7 @@ describe('codec', () => {
     const blob = new Blob([binaryData])
     const message = { id: '2', kind: 'x', binary: blob }
 
-    const encoded = await encodePeerMessage(message) as Uint8Array<ArrayBuffer>
+    const encoded = (await encodePeerMessage(message)) as Uint8Array<ArrayBuffer>
     expect(encoded).toBeInstanceOf(Uint8Array)
 
     const decoded = decodePeerMessage(encoded)
@@ -52,7 +52,7 @@ describe('codec', () => {
     const binary = new Uint8Array([5, 6])
     const message = { id: '3', kind: 'x', binary }
 
-    const encoded = await encodePeerMessage(message, { prefix }) as Uint8Array<ArrayBuffer>
+    const encoded = (await encodePeerMessage(message, { prefix })) as Uint8Array<ArrayBuffer>
     expect(encoded).toBeInstanceOf(Uint8Array)
     expect(new TextDecoder().decode(encoded).startsWith(prefix)).toBe(true)
 
@@ -84,13 +84,13 @@ describe('codec', () => {
     const binary = new Uint8Array([7, 8, 9])
     const message = { id: '6', kind: 'x', binary }
 
-    const encoded = await encodePeerMessage(message, { prefix }) as Uint8Array<ArrayBuffer>
+    const encoded = (await encodePeerMessage(message, { prefix })) as Uint8Array<ArrayBuffer>
     const decoded = decodePeerMessage(encoded, { prefix })
     expect(decoded).toEqual({ matched: true, message })
   })
 
   it('preserves delimiter bytes (0xFF) inside the binary payload', async () => {
-    const binary = new Uint8Array([0xFF, 0x00, 0xFF, 0x42])
+    const binary = new Uint8Array([0xff, 0x00, 0xff, 0x42])
     const message = { id: '7', kind: 'x', binary }
 
     const encoded = await encodePeerMessage(message)
@@ -131,7 +131,7 @@ describe('codec', () => {
     })
 
     it('returns matched: false for invalid peer message', async () => {
-      const encoded = await encodePeerMessage({ id: '1' } as any) as string // missing `kind`
+      const encoded = (await encodePeerMessage({ id: '1' } as any)) as string // missing `kind`
       expect(decodePeerMessage(encoded)).toEqual({ matched: false })
       expect(decodePeerMessage(new TextEncoder().encode(encoded))).toEqual({ matched: false })
     })
@@ -143,13 +143,16 @@ describe('codec', () => {
 
     it('returns matched: false when the payload is shorter than the prefix', () => {
       expect(decodePeerMessage('{', { prefix: 'LONG-PREFIX:' })).toEqual({ matched: false })
-      expect(decodePeerMessage(new TextEncoder().encode('{'), { prefix: 'LONG-PREFIX:' })).toEqual({ matched: false })
+      expect(decodePeerMessage(new TextEncoder().encode('{'), { prefix: 'LONG-PREFIX:' })).toEqual({
+        matched: false,
+      })
     })
   })
 
   describe('security', () => {
     it('does not pollute Object.prototype when decoding __proto__ keys', () => {
-      const payload = '{"id":"1","kind":"request","json":{"url":"/admin","__proto__":{"isAdmin":true}},"__proto__":{"polluted":true}}'
+      const payload =
+        '{"id":"1","kind":"request","json":{"url":"/admin","__proto__":{"isAdmin":true}},"__proto__":{"polluted":true}}'
 
       for (const encoded of [payload, new TextEncoder().encode(payload)] as const) {
         const result = decodePeerMessage(encoded)
@@ -159,7 +162,9 @@ describe('codec', () => {
         expect(({} as any).isAdmin).toBeUndefined()
         expect(Object.getPrototypeOf(result.message)).toBe(Object.prototype)
         // the malicious key stays an inert own property
-        expect(Object.getOwnPropertyDescriptor(result.message, '__proto__')?.value).toEqual({ polluted: true })
+        expect(Object.getOwnPropertyDescriptor(result.message, '__proto__')?.value).toEqual({
+          polluted: true,
+        })
       }
     })
 

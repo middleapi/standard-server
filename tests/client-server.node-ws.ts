@@ -1,10 +1,26 @@
+import {
+  ClientPeer,
+  decodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+import { WebSocket, WebSocketServer } from 'ws'
+
 import type { ClientServerTest } from './client-server'
 import type { PeerClientServerTestOptions } from './client-server.peer'
-import { ClientPeer, decodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
-import { WebSocket, WebSocketServer } from 'ws'
-import { expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler, wsMessageDataToEncoded } from './client-server.peer'
+import {
+  expectPeerRequestsCleanedUpAfterEach,
+  peerPrefix,
+  randomEncodePeerMessage,
+  toFetchStreamedStandardRequest,
+  wrapFetchStreamedServerHandler,
+  wsMessageDataToEncoded,
+} from './client-server.peer'
 
-export function createNodeWsClientServerTest(options: PeerClientServerTestOptions = {}): ClientServerTest {
+export function createNodeWsClientServerTest(
+  options: PeerClientServerTestOptions = {},
+): ClientServerTest {
   const wss = new WebSocketServer({ port: 0 })
   const port = wss.address() as WebSocket.AddressInfo
   const wsc = new WebSocket(`ws://localhost:${port.port}`)
@@ -25,13 +41,17 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
     })
   })
 
-  const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(async (message) => {
-    await untilReady
-    wsc.send(await randomEncodePeerMessage(message))
-  })
+  const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(
+    async (message) => {
+      await untilReady
+      wsc.send(await randomEncodePeerMessage(message))
+    },
+  )
   const clientPeer = new ClientPeer(sendClientPeerMessage)
   wsc.addEventListener('message', async (event) => {
-    const { matched, message } = decodePeerMessage(await wsMessageDataToEncoded(event.data), { prefix: peerPrefix })
+    const { matched, message } = decodePeerMessage(await wsMessageDataToEncoded(event.data), {
+      prefix: peerPrefix,
+    })
 
     if (!matched || !isServerPeerSendMessage(message)) {
       return
@@ -46,16 +66,20 @@ export function createNodeWsClientServerTest(options: PeerClientServerTestOption
   const serverHandler = options.fetchStreamed ? wrapFetchStreamedServerHandler(handler) : handler
 
   let sendServerPeerInternal: (message: any) => void
-  const sendServerPeerMessage: NonNullable<ClientServerTest['sendServerPeerMessage']> = vi.fn(async (message) => {
-    sendServerPeerInternal(await randomEncodePeerMessage(message))
-  })
+  const sendServerPeerMessage: NonNullable<ClientServerTest['sendServerPeerMessage']> = vi.fn(
+    async (message) => {
+      sendServerPeerInternal(await randomEncodePeerMessage(message))
+    },
+  )
   const serverPeer = new ServerPeer(sendServerPeerMessage)
 
   wss.on('connection', (ws) => {
     sendServerPeerInternal = ws.send.bind(ws)
 
     ws.addEventListener('message', async (event) => {
-      const { matched, message } = decodePeerMessage(await wsMessageDataToEncoded(event.data), { prefix: peerPrefix })
+      const { matched, message } = decodePeerMessage(await wsMessageDataToEncoded(event.data), {
+        prefix: peerPrefix,
+      })
 
       if (!matched || !isClientPeerSendMessage(message)) {
         return

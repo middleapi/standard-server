@@ -1,6 +1,5 @@
 {
   "name": "@standard-server/bun",
-  "type": "module",
   "version": "0.10.0",
   "license": "MIT",
   "repository": {
@@ -11,8 +10,8 @@
   "files": [
     "dist"
   ],
+  "type": "module",
   "scripts": {
-    "type:check": "tsc -b",
     "test": "bun test"
   },
   "devDependencies": {

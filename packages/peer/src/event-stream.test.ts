@@ -1,7 +1,8 @@
-import type { PeerEventStreamMessage } from './types'
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
+
 import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream'
+import type { PeerEventStreamMessage } from './types'
 
 describe('toAsyncIteratorObject', () => {
   it('yields message events', async () => {
@@ -125,7 +126,11 @@ describe('toAsyncIteratorObject', () => {
     const iter = toAsyncIteratorObject(queue, cleanup)
 
     // a malicious peer attempts SSE-style injection through the event id
-    queue.push({ id: '1', kind: 'event-stream', json: { data: { val: 1 }, id: 'evil\nid: injected' } })
+    queue.push({
+      id: '1',
+      kind: 'event-stream',
+      json: { data: { val: 1 }, id: 'evil\nid: injected' },
+    })
 
     await expect(iter.next()).rejects.toThrow()
     expect(cleanup).toHaveBeenCalledWith({ kind: 'error', error: expect.any(Error) })
@@ -137,12 +142,15 @@ describe('eventStreamTransmitter', () => {
     const send = vi.fn(async () => {})
     const items = ['a', 'b']
     let index = 0
-    const iter = new AsyncIteratorClass<string>(async () => {
-      if (index < items.length) {
-        return { done: false, value: items[index++]! }
-      }
-      return { done: true, value: undefined as any }
-    }, async () => {})
+    const iter = new AsyncIteratorClass<string>(
+      async () => {
+        if (index < items.length) {
+          return { done: false, value: items[index++]! }
+        }
+        return { done: true, value: undefined as any }
+      },
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     await transmitter.transmit()
@@ -168,7 +176,10 @@ describe('eventStreamTransmitter', () => {
   it('unwraps event metadata on transmission', async () => {
     const send = vi.fn(async () => {})
     const value = withEventMeta({ x: 1 }, { id: 'meta-id' })
-    const iter = new AsyncIteratorClass(async () => ({ done: true, value }), async () => {})
+    const iter = new AsyncIteratorClass(
+      async () => ({ done: true, value }),
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     await transmitter.transmit()
@@ -182,24 +193,32 @@ describe('eventStreamTransmitter', () => {
 
   it('sends error event for ErrorEvent', async () => {
     const send = vi.fn(async () => {})
-    const iter = new AsyncIteratorClass(async () => {
-      throw new ErrorEvent({ reason: 'fail' })
-    }, async () => {})
+    const iter = new AsyncIteratorClass(
+      async () => {
+        throw new ErrorEvent({ reason: 'fail' })
+      },
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     await transmitter.transmit()
 
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'event-stream',
-      json: expect.objectContaining({ event: 'error', data: { reason: 'fail' } }),
-    }))
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'event-stream',
+        json: expect.objectContaining({ event: 'error', data: { reason: 'fail' } }),
+      }),
+    )
   })
 
   it('rethrows non-protocol errors', async () => {
     const send = vi.fn(async () => {})
-    const iter = new AsyncIteratorClass(async () => {
-      throw new Error('__TEST__')
-    }, async () => {})
+    const iter = new AsyncIteratorClass(
+      async () => {
+        throw new Error('__TEST__')
+      },
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     await expect(transmitter.transmit()).rejects.toThrow('__TEST__')
@@ -254,11 +273,14 @@ describe('eventStreamTransmitter', () => {
 
   it('does not send success-event after cancel', async () => {
     const send = vi.fn(async () => {})
-    const iter = new AsyncIteratorClass(async () => {
-      // simulate slow iterator so cancel happens mid-stream
-      await sleep(50)
-      return { done: false, value: 'data' }
-    }, async () => {})
+    const iter = new AsyncIteratorClass(
+      async () => {
+        // simulate slow iterator so cancel happens mid-stream
+        await sleep(50)
+        return { done: false, value: 'data' }
+      },
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     const transmitPromise = transmitter.transmit()
@@ -274,11 +296,14 @@ describe('eventStreamTransmitter', () => {
 
   it('does not send error-event after cancel', async () => {
     const send = vi.fn(async () => {})
-    const iter = new AsyncIteratorClass(async () => {
-      // simulate slow iterator so cancel happens mid-stream
-      await sleep(50)
-      throw new ErrorEvent({ reason: 'fail' })
-    }, async () => {})
+    const iter = new AsyncIteratorClass(
+      async () => {
+        // simulate slow iterator so cancel happens mid-stream
+        await sleep(50)
+        throw new ErrorEvent({ reason: 'fail' })
+      },
+      async () => {},
+    )
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     const transmitPromise = transmitter.transmit()

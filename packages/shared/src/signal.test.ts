@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+
 import { anyAbortSignal, throwIfAborted } from './signal'
 
 /**
@@ -10,8 +11,7 @@ function withFallback<T>(fn: () => T): T {
   AbortSignal.any = undefined
   try {
     return fn()
-  }
-  finally {
+  } finally {
     AbortSignal.any = originalAny
   }
 }
@@ -30,10 +30,7 @@ describe('anyAbortSignal', () => {
   describe('fallback implementation', () => {
     it('returns non-aborted signal when no inputs are aborted', () => {
       withFallback(() => {
-        const combined = anyAbortSignal(
-          new AbortController().signal,
-          new AbortController().signal,
-        )
+        const combined = anyAbortSignal(new AbortController().signal, new AbortController().signal)
         expect(combined.aborted).toBe(false)
       })
     })
@@ -87,8 +84,12 @@ describe('anyAbortSignal', () => {
         const listeners: Array<() => void> = []
 
         const fakeSignal = {
-          get aborted() { return controller.signal.aborted },
-          get reason() { return controller.signal.reason },
+          get aborted() {
+            return controller.signal.aborted
+          },
+          get reason() {
+            return controller.signal.reason
+          },
           addEventListener(_type: string, listener: () => void, options: { once?: boolean }) {
             listeners.push(listener)
             controller.signal.addEventListener('abort', listener, options)

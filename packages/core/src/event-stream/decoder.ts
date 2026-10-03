@@ -1,6 +1,6 @@
-import type { EventStreamMessage } from './types'
 import { isEventStreamMessageId, isEventStreamMessageRetry } from './encoder'
 import { EventStreamDecoderError } from './error'
+import type { EventStreamMessage } from './types'
 
 // A line ending is CR, LF or CRLF.
 const LINE_ENDING_REGEX = /\r\n?|\n/
@@ -19,8 +19,8 @@ const ASCII_DIGITS_REGEX = /^\d+$/
 const MAX_DELIMITER_OVERLAP = 2
 
 const SPACE = 0x20
-const LF = 0x0A
-const CR = 0x0D
+const LF = 0x0a
+const CR = 0x0d
 
 export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
   const message: EventStreamMessage = {}
@@ -34,12 +34,12 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
 
     // The value may be prefixed by a single space
     // https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
-    const value = index === -1
-      ? ''
-      : line.slice(line.charCodeAt(index + 1) === SPACE ? index + 2 : index + 1)
+    const value =
+      index === -1 ? '' : line.slice(line.charCodeAt(index + 1) === SPACE ? index + 2 : index + 1)
 
-    if (index === 0) { // comment starting with ':'
-      (message.comments ??= []).push(value)
+    if (index === 0) {
+      // comment starting with ':'
+      ;(message.comments ??= []).push(value)
       continue
     }
 
@@ -47,9 +47,7 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
       case 'data':
         // data can be sent in multiple lines if containing newlines
         // https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation
-        message.data = message.data === undefined
-          ? value
-          : `${message.data}\n${value}`
+        message.data = message.data === undefined ? value : `${message.data}\n${value}`
         break
 
       case 'event':
@@ -81,8 +79,7 @@ export function decodeEventStreamMessage(encoded: string): EventStreamMessage {
   if (!message.event) {
     if (message.data === undefined) {
       delete message.event
-    }
-    else {
+    } else {
       message.event = 'message'
     }
   }
@@ -98,10 +95,7 @@ export class EventStreamDecoder {
   // next chunk so a delimiter straddling the boundary is still found.
   private tail: string = ''
 
-  constructor(
-    private readonly onEvent: (event: EventStreamMessage) => void,
-  ) {
-  }
+  constructor(private readonly onEvent: (event: EventStreamMessage) => void) {}
 
   feed(chunk: string): void {
     // Line endings between messages are extra blank lines (or the '\n' of a

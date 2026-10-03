@@ -1,4 +1,3 @@
-// eslint-disable-next-line ts/no-unsafe-function-type
 const GET_OR_BIND_CACHE = new WeakMap<Function, WeakMap<object, Function>>()
 
 export interface GetOrBindOptions {

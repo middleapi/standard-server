@@ -1,6 +1,8 @@
-import type { StandardLazyRequest } from '@standard-server/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+
+import type { StandardLazyRequest } from '@standard-server/core'
 import request from 'supertest'
+
 import * as Body from './body'
 import { toStandardLazyRequest } from './request'
 import * as Signal from './signal'
@@ -31,12 +33,13 @@ describe('toStandardLazyRequest', () => {
         expect(toAbortSignalSpy).toBeCalledTimes(1)
         expect(toAbortSignalSpy).toBeCalledWith(res)
         res.end()
-      }
-      catch (e) {
+      } catch (e) {
         console.error(e)
         throw e
       }
-    }).post('/hello?foo=bar').send({ foo: 'bar' })
+    })
+      .post('/hello?foo=bar')
+      .send({ foo: 'bar' })
 
     expect(standardRequest.url).toEqual('/hello?foo=bar')
     expect(standardRequest.method).toBe('POST')

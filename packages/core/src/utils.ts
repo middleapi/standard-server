@@ -1,5 +1,11 @@
+import {
+  isAsyncIteratorObject,
+  safeDecodeURIComponent,
+  safeEncodeURIComponent,
+  toArray,
+} from '@standard-server/shared'
+
 import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
-import { isAsyncIteratorObject, safeDecodeURIComponent, safeEncodeURIComponent, toArray } from '@standard-server/shared'
 
 const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
 const QUOTED_STRING_SPECIAL_CHAR_REGEX = /[\\"]/g
@@ -13,16 +19,22 @@ const EXT_VALUE_ALLOWED_ESCAPE_REGEX = /%(7C|60|5E)/g
 const EXT_VALUE_REGEX = /^([^']*)'[^']*'(.*)$/
 const EXT_VALUE_SUPPORTED_CHARSET_REGEX = /^(?:utf-8|us-ascii)$/i
 
-const CONTENT_DISPOSITION_PARAM_REGEX = /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
+const CONTENT_DISPOSITION_PARAM_REGEX =
+  /[\s;]*([^;=]*)(?:=\s*(?:"((?:\\.|[^"\\])*)"[^;]*|"[\s\S]*|([^;]*)))?/y
 
-export function generateContentDisposition(filename: string, type: 'inline' | 'attachment' = 'inline'): string {
+export function generateContentDisposition(
+  filename: string,
+  type: 'inline' | 'attachment' = 'inline',
+): string {
   const encodedFilename = filename
     .replace(FALLBACK_FILENAME_UNSAFE_CHAR_REGEX, '_')
     .replace(QUOTED_STRING_SPECIAL_CHAR_REGEX, '\\$&')
 
   const encodedFilenameStar = safeEncodeURIComponent(filename)
-    .replace(EXT_VALUE_RESERVED_CHAR_REGEX, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(EXT_VALUE_ALLOWED_ESCAPE_REGEX, (str, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(EXT_VALUE_RESERVED_CHAR_REGEX, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(EXT_VALUE_ALLOWED_ESCAPE_REGEX, (str, hex) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    )
 
   return `${type}; filename="${encodedFilename}"; filename*=utf-8''${encodedFilenameStar}`
 }
@@ -31,7 +43,8 @@ function getContentDispositionParam(contentDisposition: string, name: string): s
   CONTENT_DISPOSITION_PARAM_REGEX.lastIndex = 0
 
   while (CONTENT_DISPOSITION_PARAM_REGEX.lastIndex < contentDisposition.length) {
-    const [, paramName = '', quoted, token] = CONTENT_DISPOSITION_PARAM_REGEX.exec(contentDisposition)!
+    const [, paramName = '', quoted, token] =
+      CONTENT_DISPOSITION_PARAM_REGEX.exec(contentDisposition)!
 
     if (paramName.trimEnd().toLowerCase() === name) {
       return quoted !== undefined
@@ -53,15 +66,16 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
     if (EXT_VALUE_SUPPORTED_CHARSET_REGEX.test(charset)) {
       return safeDecodeURIComponent(encodedFilename)
     }
-  }
-  else if (extValue) {
+  } else if (extValue) {
     return safeDecodeURIComponent(extValue)
   }
 
   return getContentDispositionParam(contentDisposition, 'filename')
 }
 
-export function flattenStandardHeader(header: string | readonly string[] | undefined): string | undefined {
+export function flattenStandardHeader(
+  header: string | readonly string[] | undefined,
+): string | undefined {
   if (typeof header === 'string' || header === undefined) {
     return header
   }
@@ -100,10 +114,16 @@ export function resolveStandardBodyHint(headers: {
   }
 
   // media types are case-insensitive, the hint is our own header so it stays exact
-  const mimeType = flattenStandardHeader(headers['content-type'])?.split(';')[0]?.trim().toLowerCase()
+  const mimeType = flattenStandardHeader(headers['content-type'])
+    ?.split(';')[0]
+    ?.trim()
+    .toLowerCase()
   const contentLength = flattenStandardHeader(headers['content-length'])
   const contentDisposition = flattenStandardHeader(headers['content-disposition'])
-  const fileName = contentDisposition !== undefined ? getFilenameFromContentDisposition(contentDisposition) : undefined
+  const fileName =
+    contentDisposition !== undefined
+      ? getFilenameFromContentDisposition(contentDisposition)
+      : undefined
 
   if (mimeType === undefined && (contentLength === undefined || contentLength === '0')) {
     return 'none'
@@ -139,8 +159,7 @@ export function resolveStandardBodyHint(headers: {
 export async function cancelStandardBody(body: StandardBody, reason?: unknown): Promise<void> {
   if (body instanceof ReadableStream) {
     await body.cancel(reason)
-  }
-  else if (isAsyncIteratorObject(body)) {
+  } else if (isAsyncIteratorObject(body)) {
     await body.return?.()
   }
 }
@@ -156,19 +175,18 @@ export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): St
     const aValue = a[key]
     const bValue = b[key]
 
-    merged[key] = aValue === undefined || bValue === undefined
-      ? aValue ?? bValue
-      : [...toArray(aValue), ...toArray(bValue)]
+    merged[key] =
+      aValue === undefined || bValue === undefined
+        ? (aValue ?? bValue)
+        : [...toArray(aValue), ...toArray(bValue)]
   }
 
   return merged
 }
 
-export function parseStandardUrl(url: StandardUrl): [
-  pathname: `/${string}`,
-  search: `?${string}` | undefined,
-  hash: `#${string}` | undefined,
-] {
+export function parseStandardUrl(
+  url: StandardUrl,
+): [pathname: `/${string}`, search: `?${string}` | undefined, hash: `#${string}` | undefined] {
   const hashStart = url.indexOf('#')
   const searchStart = url.indexOf('?')
 
@@ -177,8 +195,10 @@ export function parseStandardUrl(url: StandardUrl): [
   const searchEnd = hashStart !== -1 ? hashStart : url.length
 
   const pathname = url.slice(0, pathnameEnd) as `/${string}`
-  const search = hasSearchBeforeHash ? url.slice(searchStart, searchEnd) as `?${string}` : undefined
-  const hash = hashStart !== -1 ? url.slice(hashStart) as `#${string}` : undefined
+  const search = hasSearchBeforeHash
+    ? (url.slice(searchStart, searchEnd) as `?${string}`)
+    : undefined
+  const hash = hashStart !== -1 ? (url.slice(hashStart) as `#${string}`) : undefined
 
   return [pathname, search, hash]
 }

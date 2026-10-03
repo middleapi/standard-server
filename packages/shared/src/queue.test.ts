@@ -24,7 +24,7 @@ describe('queue', () => {
 
   it('keeps order across internal compaction, including undefined items', async () => {
     const queue = new Queue<number | undefined>()
-    const value = (i: number) => i % 3 === 0 ? undefined : i
+    const value = (i: number) => (i % 3 === 0 ? undefined : i)
 
     // Splices the pulled half at 1024, then fully drains the remaining 1024.
     for (let i = 0; i < 2048; i++) {

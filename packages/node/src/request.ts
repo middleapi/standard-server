@@ -1,8 +1,9 @@
 import type { StandardLazyRequest } from '@standard-server/core'
-import type { NodeHttpRequest, NodeHttpResponse } from './types'
+
 import { toStandardBody } from './body'
 import { toStandardMethod } from './method'
 import { toAbortSignal } from './signal'
+import type { NodeHttpRequest, NodeHttpResponse } from './types'
 import { toStandardUrl } from './url'
 
 export function toStandardLazyRequest(
@@ -17,7 +18,7 @@ export function toStandardLazyRequest(
     url: toStandardUrl(req),
     method: toStandardMethod(req.method),
     headers: req.headers,
-    resolveBody: hint => toStandardBody(req, { hint }),
+    resolveBody: (hint) => toStandardBody(req, { hint }),
     signal,
   }
 }

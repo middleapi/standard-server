@@ -1,12 +1,19 @@
 import type { StandardBody, StandardLazyRequest, StandardResponse } from '@standard-server/core'
-import type { Queue } from '@standard-server/shared'
-import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, PeerResponseMessage, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
+import type { Queue } from '@standard-server/shared'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard-server/shared'
+
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { OctetStreamTransmitter } from './octet-stream'
+import type {
+  ClientPeerSendMessage,
+  PeerEventStreamMessage,
+  PeerOctetStreamMessage,
+  PeerResponseMessage,
+  ServerPeerSendMessage,
+} from './types'
 
 interface ServerPeerRequestStateInternal {
   controller?: AbortController | undefined
@@ -19,10 +26,7 @@ interface ServerPeerRequestStateInternal {
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
 
-  constructor(
-    private readonly send: (message: ServerPeerSendMessage) => Promise<void>,
-  ) {
-  }
+  constructor(private readonly send: (message: ServerPeerSendMessage) => Promise<void>) {}
 
   /**
    * Handle a message from client
@@ -48,7 +52,8 @@ export class ServerPeer {
       return
     }
 
-    if (this.requests.has(id)) { // duplicate request message
+    if (this.requests.has(id)) {
+      // duplicate request message
       return
     }
 
@@ -66,7 +71,8 @@ export class ServerPeer {
          * Drop the queues so late stream messages are ignored instead of
          * buffered forever.
          */
-        const streamActive = state.eventStreamMessageQueue !== undefined || state.octetStreamMessageQueue !== undefined
+        const streamActive =
+          state.eventStreamMessageQueue !== undefined || state.octetStreamMessageQueue !== undefined
 
         if (kind === 'cancelled' && streamActive) {
           state.eventStreamMessageQueue?.abort(error)
@@ -110,7 +116,9 @@ export class ServerPeer {
         kind: 'response',
         json: {
           status: response.status === 200 ? undefined : response.status,
-          headers: hasAnyDefinedValue(encodedAtomicBody.headers) ? encodedAtomicBody.headers : undefined,
+          headers: hasAnyDefinedValue(encodedAtomicBody.headers)
+            ? encodedAtomicBody.headers
+            : undefined,
           body: encodedAtomicBody.jsonBody,
         },
         binary: encodedAtomicBody.binary,
@@ -130,12 +138,10 @@ export class ServerPeer {
         if (response.body instanceof HibernationAsyncIteratorClass) {
           try {
             await response.body['~callback']?.(id)
-          }
-          finally {
+          } finally {
             await response.body.return()
           }
-        }
-        else {
+        } else {
           const transmitter = new EventStreamTransmitter(response.body, id, this.send)
           state.eventStreamTransmitter = transmitter
           await transmitter.transmit().catch(async (reason) => {
@@ -147,8 +153,7 @@ export class ServerPeer {
             // WARNING: errors that occur here are silently ignored.
           })
         }
-      }
-      else if (response.body instanceof ReadableStream) {
+      } else if (response.body instanceof ReadableStream) {
         const transmitter = new OctetStreamTransmitter(response.body, id, this.send)
         state.octetStreamTransmitter = transmitter
         await transmitter.transmit().catch(async (reason) => {
@@ -164,12 +169,10 @@ export class ServerPeer {
       // close without aborting, because the request is finished successfully
       state.controller = undefined
       await this.closeById(id)
-    }
-    catch (reason) {
+    } catch (reason) {
       await this.cancelById(id, reason)
       throw reason
-    }
-    finally {
+    } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, signal.reason)
       }
@@ -179,15 +182,14 @@ export class ServerPeer {
   async close(reason?: unknown): Promise<void> {
     reason ??= new AbortError('Peer was closed')
 
-    await Promise.all(
-      Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
-    )
+    await Promise.all(Array.from(this.requests.keys()).map((id) => this.closeById(id, reason)))
   }
 
   private async closeById(id: string, reason?: unknown): Promise<void> {
     const state = this.requests.get(id)
 
-    if (!state) { // already closed or aborted
+    if (!state) {
+      // already closed or aborted
       return
     }
 

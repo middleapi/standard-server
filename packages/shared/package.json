@@ -1,26 +1,33 @@
 {
   "name": "@standard-server/shared",
-  "type": "module",
   "version": "0.10.0",
   "description": "Internal types and utilities shared across the Standard Server ecosystem",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "internal",
+    "standard-server",
+    "typescript",
+    "utilities",
+    "utils"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/shared"
   },
-  "keywords": [
-    "standard-server",
-    "utils",
-    "utilities",
-    "internal",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -31,15 +38,7 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
-    "prepack": "unbuild",
-    "type:check": "tsc -b"
+    "prepack": "unbuild"
   }
 }

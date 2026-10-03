@@ -1,6 +1,8 @@
 import http2 from 'node:http2'
 import Stream from 'node:stream'
+
 import { AbortError } from '@standard-server/shared'
+
 import { toAbortSignal } from './signal'
 
 describe('toAbortSignal', async () => {
@@ -17,7 +19,7 @@ describe('toAbortSignal', async () => {
 
     stream.end('test')
 
-    await new Promise(r => setTimeout(r, 100))
+    await new Promise((r) => setTimeout(r, 100))
 
     expect(signal.aborted).toBe(false)
   })
@@ -46,8 +48,7 @@ describe('toAbortSignal', async () => {
 
   it('on writableFinished=false', async () => {
     const stream = new Stream.Writable({
-      write(chunk, encoding, callback) {
-      },
+      write(chunk, encoding, callback) {},
     })
 
     const signal = toAbortSignal(stream)
@@ -59,7 +60,9 @@ describe('toAbortSignal', async () => {
 
     await vi.waitFor(() => {
       expect(signal.aborted).toEqual(true)
-      expect(signal.reason).toEqual(new AbortError('Writable stream closed before it finished writing'))
+      expect(signal.reason).toEqual(
+        new AbortError('Writable stream closed before it finished writing'),
+      )
     })
   })
 
@@ -83,8 +86,7 @@ describe('toAbortSignal', async () => {
 
   it('on already closed before finished', async () => {
     const stream = new Stream.Writable({
-      write(chunk, encoding, callback) {
-      },
+      write(chunk, encoding, callback) {},
     })
 
     stream.write('test')
@@ -93,33 +95,36 @@ describe('toAbortSignal', async () => {
     const signal = toAbortSignal(stream)
 
     expect(signal.aborted).toBe(true)
-    expect(signal.reason).toEqual(new AbortError('Writable stream closed before it finished writing'))
+    expect(signal.reason).toEqual(
+      new AbortError('Writable stream closed before it finished writing'),
+    )
   })
 
   it('on http2 response with underlying stream already closed', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
           // simulate a procedure still running when the client disconnects
-          await new Promise<void>(r => res.stream.once('close', () => r()))
+          await new Promise<void>((r) => res.stream.once('close', () => r()))
 
           const signal = toAbortSignal(res)
 
           expect(signal.aborted).toBe(true)
-          expect(signal.reason).toEqual(new AbortError('Writable stream closed before it finished writing'))
+          expect(signal.reason).toEqual(
+            new AbortError('Writable stream closed before it finished writing'),
+          )
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -136,7 +141,7 @@ describe('toAbortSignal', async () => {
 
   it('on http2 response with underlying stream already errored', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const error = new Error('test')
 
@@ -147,7 +152,7 @@ describe('toAbortSignal', async () => {
           res.stream.once('error', () => {})
           res.stream.destroy(error)
 
-          await new Promise<void>(r => res.stream.once('close', () => r()))
+          await new Promise<void>((r) => res.stream.once('close', () => r()))
 
           const signal = toAbortSignal(res)
 
@@ -155,14 +160,13 @@ describe('toAbortSignal', async () => {
           expect(signal.reason).toBe(error)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -175,7 +179,7 @@ describe('toAbortSignal', async () => {
   describe('on http2 HEAD response, whose stream Node already ended', () => {
     it('without abort', async ({ onTestFinished }) => {
       const server = http2.createServer()
-      onTestFinished(() => new Promise<any>(r => server.close(r)))
+      onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
       const handled = new Promise<void>((resolve, reject) => {
         server.on('request', async (req, res) => {
@@ -185,19 +189,18 @@ describe('toAbortSignal', async () => {
             expect(signal.aborted).toBe(false)
 
             res.end()
-            await new Promise<void>(r => res.stream.once('close', () => r()))
+            await new Promise<void>((r) => res.stream.once('close', () => r()))
 
             expect(signal.aborted).toBe(false)
 
             resolve()
-          }
-          catch (error) {
+          } catch (error) {
             reject(error)
           }
         })
       })
 
-      await new Promise<void>(r => server.listen(0, r))
+      await new Promise<void>((r) => server.listen(0, r))
       const port = (server.address() as any).port
 
       const client = http2.connect(`http://localhost:${port}`)
@@ -210,7 +213,7 @@ describe('toAbortSignal', async () => {
 
     it('aborted by client before the response ends', async ({ onTestFinished }) => {
       const server = http2.createServer()
-      onTestFinished(() => new Promise<any>(r => server.close(r)))
+      onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
       const handled = new Promise<void>((resolve, reject) => {
         server.on('request', async (req, res) => {
@@ -219,20 +222,21 @@ describe('toAbortSignal', async () => {
 
             expect(signal.aborted).toBe(false)
 
-            await new Promise<void>(r => res.stream.once('close', () => r()))
+            await new Promise<void>((r) => res.stream.once('close', () => r()))
 
             expect(signal.aborted).toBe(true)
-            expect(signal.reason).toEqual(new AbortError('Writable stream closed before it finished writing'))
+            expect(signal.reason).toEqual(
+              new AbortError('Writable stream closed before it finished writing'),
+            )
 
             resolve()
-          }
-          catch (error) {
+          } catch (error) {
             reject(error)
           }
         })
       })
 
-      await new Promise<void>(r => server.listen(0, r))
+      await new Promise<void>((r) => server.listen(0, r))
       const port = (server.address() as any).port
 
       const client = http2.connect(`http://localhost:${port}`)

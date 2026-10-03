@@ -1,4 +1,9 @@
-import type { StandardLazyRequest, StandardLazyResponse, StandardRequest, StandardResponse } from '@standard-server/core'
+import type {
+  StandardLazyRequest,
+  StandardLazyResponse,
+  StandardRequest,
+  StandardResponse,
+} from '@standard-server/core'
 import { sleep } from '@standard-server/shared'
 
 export type ClientServerHandler = (request: StandardLazyRequest) => Promise<StandardResponse>
@@ -18,14 +23,16 @@ export const NOT_FOUND_HANDLER: ClientServerHandler = async () => {
  * Waits until `assertion` stops throwing.
  * Prefer this over a fixed `sleep` so tests continue as soon as the condition holds.
  */
-export async function waitFor<T>(assertion: () => T | Promise<T>, { timeout = 2000, interval = 10 } = {}): Promise<T> {
+export async function waitFor<T>(
+  assertion: () => T | Promise<T>,
+  { timeout = 2000, interval = 10 } = {},
+): Promise<T> {
   const start = Date.now()
 
   for (;;) {
     try {
       return await assertion()
-    }
-    catch (error) {
+    } catch (error) {
       if (Date.now() - start >= timeout) {
         throw error
       }

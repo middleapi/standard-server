@@ -1,7 +1,15 @@
 import type { AddressInfo } from 'node:net'
-import type { ClientServerTest } from './client-server'
+
 import { serve } from '@hono/node-server'
-import { toFetchBody, toFetchHeaders, toFetchResponse, toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
+import {
+  toFetchBody,
+  toFetchHeaders,
+  toFetchResponse,
+  toStandardLazyRequest,
+  toStandardLazyResponse,
+} from '@standard-server/fetch'
+
+import type { ClientServerTest } from './client-server'
 
 export function createHonoFetchClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

@@ -1,14 +1,31 @@
+import {
+  ClientPeer,
+  decodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+
 import type { ClientServerTest } from './client-server'
 import type { PeerClientServerTestOptions } from './client-server.peer'
-import { ClientPeer, decodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
-import { expectPeerRequestsCleanedUpAfterEach, peerPrefix, randomEncodePeerMessage, toFetchStreamedStandardRequest, wrapFetchStreamedServerHandler } from './client-server.peer'
+import {
+  expectPeerRequestsCleanedUpAfterEach,
+  peerPrefix,
+  randomEncodePeerMessage,
+  toFetchStreamedStandardRequest,
+  wrapFetchStreamedServerHandler,
+} from './client-server.peer'
 
-export function createMessagePortClientServerTest(options: PeerClientServerTestOptions = {}): ClientServerTest {
+export function createMessagePortClientServerTest(
+  options: PeerClientServerTestOptions = {},
+): ClientServerTest {
   const { port1, port2 } = new MessageChannel()
 
-  const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(async (message) => {
-    port1.postMessage(await randomEncodePeerMessage(message))
-  })
+  const sendClientPeerMessage: NonNullable<ClientServerTest['sendClientPeerMessage']> = vi.fn(
+    async (message) => {
+      port1.postMessage(await randomEncodePeerMessage(message))
+    },
+  )
   const clientPeer = new ClientPeer(sendClientPeerMessage)
   port1.addEventListener('message', async (event) => {
     const { matched, message } = decodePeerMessage(event.data, { prefix: peerPrefix })
@@ -26,9 +43,11 @@ export function createMessagePortClientServerTest(options: PeerClientServerTestO
   })
   const serverHandler = options.fetchStreamed ? wrapFetchStreamedServerHandler(handler) : handler
 
-  const sendServerPeerMessage: NonNullable<ClientServerTest['sendServerPeerMessage']> = vi.fn(async (message) => {
-    port2.postMessage(await randomEncodePeerMessage(message))
-  })
+  const sendServerPeerMessage: NonNullable<ClientServerTest['sendServerPeerMessage']> = vi.fn(
+    async (message) => {
+      port2.postMessage(await randomEncodePeerMessage(message))
+    },
+  )
   const serverPeer = new ServerPeer(sendServerPeerMessage)
   port2.addEventListener('message', async (event) => {
     const { matched, message } = decodePeerMessage(event.data, { prefix: peerPrefix })

@@ -1,5 +1,13 @@
+import {
+  ClientPeer,
+  decodePeerMessage,
+  encodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+
 import type { ClientServerHandler, ClientServerTest } from './client-server'
-import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 
 export function createDenoWsClientServerTest(): ClientServerTest {
@@ -24,7 +32,7 @@ export function createDenoWsClientServerTest(): ClientServerTest {
         return
       }
 
-      await serverPeer.message(message, async request => handler(request))
+      await serverPeer.message(message, async (request) => handler(request))
     })
 
     return response
@@ -57,7 +65,7 @@ export function createDenoWsClientServerTest(): ClientServerTest {
     setHandler: (next) => {
       handler = next
     },
-    request: standardRequest => clientPeer.request(standardRequest),
+    request: (standardRequest) => clientPeer.request(standardRequest),
     close: async () => {
       wsc.close()
       await server.shutdown()

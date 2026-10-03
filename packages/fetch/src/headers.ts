@@ -11,11 +11,9 @@ export function toStandardHeaders(headers: Headers): StandardHeaders {
   headers.forEach((value, key) => {
     if (Array.isArray(standardHeaders[key])) {
       standardHeaders[key].push(value)
-    }
-    else if (standardHeaders[key] !== undefined) {
+    } else if (standardHeaders[key] !== undefined) {
       standardHeaders[key] = [standardHeaders[key], value]
-    }
-    else {
+    } else {
       standardHeaders[key] = value
     }
   })
@@ -43,8 +41,7 @@ export function toFetchHeaders(standardHeaders: StandardHeaders): Headers {
       for (const v of value) {
         headers.append(key, v)
       }
-    }
-    else if (value !== undefined) {
+    } else if (value !== undefined) {
       headers.append(key, value)
     }
   }

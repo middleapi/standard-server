@@ -1,33 +1,40 @@
 {
   "name": "@standard-server/node",
-  "type": "module",
   "version": "0.10.0",
   "description": "Node.js HTTP and HTTP/2 adapter for Standard Server: transport-agnostic requests, responses, and streaming on top of IncomingMessage and ServerResponse",
-  "license": "MIT",
-  "funding": [
-    "https://github.com/sponsors/dinwwwh",
-    "https://opencollective.com/middleapi"
+  "keywords": [
+    "adapter",
+    "http",
+    "http2",
+    "node",
+    "nodejs",
+    "request",
+    "response",
+    "server",
+    "sse",
+    "standard-server",
+    "streaming",
+    "typescript"
   ],
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/middleapi/standard-server.git",
     "directory": "packages/node"
   },
-  "keywords": [
-    "standard-server",
-    "node",
-    "nodejs",
-    "http",
-    "http2",
-    "adapter",
-    "server",
-    "request",
-    "response",
-    "streaming",
-    "sse",
-    "typescript"
+  "funding": [
+    "https://github.com/sponsors/dinwwwh",
+    "https://opencollective.com/middleapi"
   ],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
   "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts"
+  },
   "publishConfig": {
     "exports": {
       "./package.json": "./package.json",
@@ -38,16 +45,8 @@
       }
     }
   },
-  "exports": {
-    "./package.json": "./package.json",
-    ".": "./src/index.ts"
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
-    "prepack": "unbuild",
-    "type:check": "tsc -b"
+    "prepack": "unbuild"
   },
   "dependencies": {
     "@standard-server/core": "workspace:*",

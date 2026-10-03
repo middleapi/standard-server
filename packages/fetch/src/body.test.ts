@@ -1,11 +1,15 @@
 import * as StandardServerModule from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
+
 import { toFetchBody, toStandardBody } from './body'
 import * as EventStreamModule from './event-stream'
 import { toFetchHeaders } from './headers'
 
 const generateContentDispositionSpy = vi.spyOn(StandardServerModule, 'generateContentDisposition')
-const getFilenameFromContentDispositionSpy = vi.spyOn(StandardServerModule, 'getFilenameFromContentDisposition')
+const getFilenameFromContentDispositionSpy = vi.spyOn(
+  StandardServerModule,
+  'getFilenameFromContentDisposition',
+)
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
 
 beforeEach(() => {
@@ -38,14 +42,16 @@ describe('toStandardBody', () => {
 
     getFilenameFromContentDispositionSpy.mockReturnValueOnce('__name__')
 
-    const standardFile = await toStandardBody(request) as any
+    const standardFile = (await toStandardBody(request)) as any
     expect(standardFile).toBeInstanceOf(File)
     expect(standardFile.name).toBe('__name__')
     expect(standardFile.type).toBe('plain/text')
     expect(await standardFile.text()).toBe('{"value":123}')
 
     expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledTimes(1)
-    expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledWith('attachment; filename="foo.pdf"')
+    expect(getFilenameFromContentDispositionSpy).toHaveBeenCalledWith(
+      'attachment; filename="foo.pdf"',
+    )
   })
 
   describe('body hint', () => {
@@ -103,7 +109,7 @@ describe('toStandardBody', () => {
         duplex: 'half',
       })
 
-      const standardBody = await toStandardBody(request) as any
+      const standardBody = (await toStandardBody(request)) as any
       expect(standardBody).toSatisfy(isAsyncIteratorObject)
 
       expect(await standardBody.next()).toEqual({ done: false, value: 123 })
@@ -180,7 +186,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request)
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'hello' })
       expect(await reader.read()).toEqual({ done: true, value: undefined })
     })
@@ -196,7 +204,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request)
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: true, value: undefined })
     })
   })
@@ -222,7 +232,9 @@ describe('toStandardBody', () => {
       })
 
       expect(await toStandardBody(request)).toEqual({ foo: 'bar' })
-      await expect(toStandardBody(request)).rejects.toThrow('Failed to read body: body stream already read')
+      await expect(toStandardBody(request)).rejects.toThrow(
+        'Failed to read body: body stream already read',
+      )
       expect(await toStandardBody(request, { hint: 'none' })).toBe(undefined)
     })
 
@@ -237,7 +249,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request, { hint: 'octet-stream' })
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'hello' })
       expect(await reader.read()).toEqual({ done: true, value: undefined })
     })
@@ -253,7 +267,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request)
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'raw data' })
     })
 
@@ -268,7 +284,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request)
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'raw data' })
     })
 
@@ -283,7 +301,9 @@ describe('toStandardBody', () => {
 
       const standardBody = await toStandardBody(request, { hint: 'octet-stream' })
       expect(standardBody).toBeInstanceOf(ReadableStream)
-      const reader = (standardBody as ReadableStream).pipeThrough(new TextDecoderStream()).getReader()
+      const reader = (standardBody as ReadableStream)
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
       expect(await reader.read()).toEqual({ done: false, value: 'raw data' })
     })
   })
@@ -397,7 +417,11 @@ describe('toFetchBody', () => {
   it('file with existing content-disposition header', () => {
     const blob = new File(['foo'], 'foo.pdf', { type: 'application/pdf' })
 
-    const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'content-disposition': 'attachment; filename="bar.pdf"' }, {})
+    const [body, headers] = toFetchBody(
+      blob,
+      { ...baseHeaders, 'content-disposition': 'attachment; filename="bar.pdf"' },
+      {},
+    )
 
     expect(body).toBe(blob)
     expect(headers).toEqual({
@@ -416,7 +440,11 @@ describe('toFetchBody', () => {
 
     generateContentDispositionSpy.mockReturnValue('inline; filename="__mocked__"')
 
-    const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': 'application/octet-stream' }, {})
+    const [body, headers] = toFetchBody(
+      file,
+      { ...baseHeaders, 'content-type': 'application/octet-stream' },
+      {},
+    )
 
     expect(body).toBe(file)
     expect(headers).toEqual({
@@ -588,33 +616,47 @@ it.each([
   },
   {
     name: 'octet-stream',
-    createBody: () => new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('order1'))
-        controller.enqueue(new TextEncoder().encode('order2'))
-        controller.enqueue(new TextEncoder().encode('order3'))
-        controller.close()
-      },
-    }),
+    createBody: () =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('order1'))
+          controller.enqueue(new TextEncoder().encode('order2'))
+          controller.enqueue(new TextEncoder().encode('order3'))
+          controller.close()
+        },
+      }),
     assertBody: async (iterator: any) => {
       expect(iterator).toBeInstanceOf(ReadableStream)
       const reader = iterator.getReader()
-      await expect(reader.read()).resolves.toEqual({ value: new TextEncoder().encode('order1'), done: false })
-      await expect(reader.read()).resolves.toEqual({ value: new TextEncoder().encode('order2'), done: false })
-      await expect(reader.read()).resolves.toEqual({ value: new TextEncoder().encode('order3'), done: false })
+      await expect(reader.read()).resolves.toEqual({
+        value: new TextEncoder().encode('order1'),
+        done: false,
+      })
+      await expect(reader.read()).resolves.toEqual({
+        value: new TextEncoder().encode('order2'),
+        done: false,
+      })
+      await expect(reader.read()).resolves.toEqual({
+        value: new TextEncoder().encode('order3'),
+        done: false,
+      })
       await expect(reader.read()).resolves.toEqual({ value: undefined, done: true })
     },
   },
-])('toFetchBody + toStandardBody without standard-server header: $name', async ({ name, createBody, assertBody }) => {
-  const [body, headers] = toFetchBody(createBody(), {})
-  const standardBody = await toStandardBody(new Response(body, {
-    headers: toFetchHeaders({ ...headers, 'standard-server': undefined }), // delete standard-server header
-  }))
+])(
+  'toFetchBody + toStandardBody without standard-server header: $name',
+  async ({ name, createBody, assertBody }) => {
+    const [body, headers] = toFetchBody(createBody(), {})
+    const standardBody = await toStandardBody(
+      new Response(body, {
+        headers: toFetchHeaders({ ...headers, 'standard-server': undefined }), // delete standard-server header
+      }),
+    )
 
-  if (assertBody) {
-    await assertBody(standardBody)
-  }
-  else {
-    expect(standardBody).toEqual(createBody())
-  }
-})
+    if (assertBody) {
+      await assertBody(standardBody)
+    } else {
+      expect(standardBody).toEqual(createBody())
+    }
+  },
+)

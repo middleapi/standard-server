@@ -1,7 +1,9 @@
+import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
+
 import type { StandardHeaders } from '@standard-server/core'
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
-import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
+
 import { NOT_FOUND_HANDLER } from './client-server'
 import { createBunFetchClientServerTest } from './client-server.bun-fetch'
 import { createBunWsClientServerTest } from './client-server.bun-ws'
@@ -36,11 +38,15 @@ for (const [adapter, createClientServer] of ADAPTERS) {
       ['/hi%2F', 'DELETE', { h3: 'v3' }, 500],
     ] as const) {
       it(`url=${url}, method=${method}, status=${status}`, async () => {
-        const receivedRequests: { url: string, method: string, headers: StandardHeaders }[] = []
+        const receivedRequests: { url: string; method: string; headers: StandardHeaders }[] = []
 
         clientServer.setHandler(async (request) => {
           // Bun clears the native request headers once the response completes, so snapshot while handling
-          receivedRequests.push({ url: request.url, method: request.method, headers: request.headers })
+          receivedRequests.push({
+            url: request.url,
+            method: request.method,
+            headers: request.headers,
+          })
 
           return {
             headers: {
@@ -138,7 +144,10 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           const formData = new FormData()
           formData.append('a', 'b')
           formData.append('c', 'd')
-          formData.append('file', new File(['File Inside'], 'test.etc', { type: 'application/octet-stream' }))
+          formData.append(
+            'file',
+            new File(['File Inside'], 'test.etc', { type: 'application/octet-stream' }),
+          )
           return formData
         },
         assertBody: async (body: any) => {
@@ -159,7 +168,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
       {
         name: 'empty-event-stream',
         createBody: () => {
-          return (async function* () {}())
+          return (async function* () {})()
         },
         assertBody: async (body: any) => {
           expect(isAsyncIteratorObject(body)).toBe(true)
@@ -188,8 +197,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         clientServer.setHandler(async (request) => {
           if (assertBody) {
             await assertBody(await request.resolveBody())
-          }
-          else {
+          } else {
             expect(await request.resolveBody()).toEqual(createBody() as any)
           }
 
@@ -213,8 +221,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
 
         if (assertBody) {
           await assertBody(await response.resolveBody())
-        }
-        else {
+        } else {
           expect(await response.resolveBody()).toEqual(createBody() as any)
         }
       })
@@ -222,7 +229,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
 
     it('event stream in parallel', async () => {
       clientServer.setHandler(async (request) => {
-        const body = await request.resolveBody() as AsyncGenerator
+        const body = (await request.resolveBody()) as AsyncGenerator
         expect(isAsyncIteratorObject(body)).toBe(true)
 
         return {
@@ -246,12 +253,12 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           yield withEventMeta({ order: 2 }, { id: 'id-2' })
           await sleep(CHUNK_DELAY)
           return withEventMeta({ order: 3 }, { comments: ['order3'] })
-        }()),
+        })(),
       })
 
       expect(response.status).toEqual(200)
 
-      const body = await response.resolveBody() as AsyncGenerator
+      const body = (await response.resolveBody()) as AsyncGenerator
       expect(isAsyncIteratorObject(body)).toBe(true)
 
       const first = await body.next()
@@ -280,7 +287,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
 
     it('event stream with error event in parallel', async () => {
       clientServer.setHandler(async (request) => {
-        const actualBody = await request.resolveBody() as AsyncGenerator
+        const actualBody = (await request.resolveBody()) as AsyncGenerator
         expect(isAsyncIteratorObject(actualBody)).toBe(true)
 
         return {
@@ -303,11 +310,11 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           await sleep(CHUNK_DELAY)
           yield withEventMeta({ order: 2 }, { id: 'id-2' })
           throw withEventMeta(new ErrorEvent({ order: 3 }), { comments: ['order3'] })
-        }()),
+        })(),
       })
 
       expect(response.status).toEqual(200)
-      const body = await response.resolveBody() as AsyncGenerator
+      const body = (await response.resolveBody()) as AsyncGenerator
       expect(isAsyncIteratorObject(body)).toBe(true)
 
       const first = await body.next()
@@ -329,8 +336,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
       let error: unknown
       try {
         await body.next()
-      }
-      catch (e) {
+      } catch (e) {
         error = e
       }
 
@@ -347,7 +353,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         expect(request.method).toEqual('POST')
         expect(request.url).toEqual('/octet-stream')
 
-        const body = await request.resolveBody() as ReadableStream
+        const body = (await request.resolveBody()) as ReadableStream
         expect(body).toBeInstanceOf(ReadableStream)
 
         return {
@@ -383,19 +389,28 @@ for (const [adapter, createClientServer] of ADAPTERS) {
 
       expect(response.headers['x-from']).toEqual('server')
       expect(response.status).toEqual(200)
-      const body = await response.resolveBody() as ReadableStream
+      const body = (await response.resolveBody()) as ReadableStream
       expect(body).toBeInstanceOf(ReadableStream)
       const reader = body.getReader()
 
-      expect(await reader.read()).toEqual({ done: false, value: new TextEncoder().encode('chunk1'.repeat(10)) })
+      expect(await reader.read()).toEqual({
+        done: false,
+        value: new TextEncoder().encode('chunk1'.repeat(10)),
+      })
       expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
       start = Date.now()
 
-      expect(await reader.read()).toEqual({ done: false, value: new TextEncoder().encode('chunk2'.repeat(10)) })
+      expect(await reader.read()).toEqual({
+        done: false,
+        value: new TextEncoder().encode('chunk2'.repeat(10)),
+      })
       expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
       start = Date.now()
 
-      expect(await reader.read()).toEqual({ done: false, value: new TextEncoder().encode('chunk3'.repeat(10)) })
+      expect(await reader.read()).toEqual({
+        done: false,
+        value: new TextEncoder().encode('chunk3'.repeat(10)),
+      })
       expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
       start = Date.now()
 

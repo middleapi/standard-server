@@ -1,9 +1,11 @@
 import type { AddressInfo } from 'node:net'
-import type { ClientServerTest } from './client-server'
+
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import express from 'express'
 import express4 from 'express4'
+
+import type { ClientServerTest } from './client-server'
 
 export interface ExpressjsClientServerTestOptions {
   /**

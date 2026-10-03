@@ -1,4 +1,5 @@
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
+
 import type { PeerOctetStreamMessage } from './types'
 
 export function toOctetStream(
@@ -11,15 +12,16 @@ export function toOctetStream(
         const { json, binary } = await queue.pull()
 
         if (binary) {
-          controller.enqueue(binary instanceof Uint8Array ? binary : new Uint8Array(await binary.arrayBuffer()))
+          controller.enqueue(
+            binary instanceof Uint8Array ? binary : new Uint8Array(await binary.arrayBuffer()),
+          )
         }
 
         if (json.close) {
           await cleanup({ kind: 'success' })
           controller.close()
         }
-      }
-      catch (error) {
+      } catch (error) {
         await cleanup({ kind: 'error', error })
         controller.error(error)
       }
@@ -69,8 +71,7 @@ export class OctetStreamTransmitter {
             kind: 'octet-stream',
             id: this.messageId,
           })
-        }
-        catch (err) {
+        } catch (err) {
           await this.cancel()
           throw err
         }
@@ -78,8 +79,7 @@ export class OctetStreamTransmitter {
         if (this.isDone) {
           return
         }
-      }
-      catch (error) {
+      } catch (error) {
         this.isDone = true
         throw error
       }

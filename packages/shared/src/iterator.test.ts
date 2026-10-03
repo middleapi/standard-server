@@ -11,13 +11,13 @@ it('isAsyncIteratorObject', () => {
   expect(isAsyncIteratorObject(() => {})).toBe(false)
   expect(isAsyncIteratorObject({ [Symbol.asyncIterator]: 123 })).toBe(false)
 
-  expect(isAsyncIteratorObject({ [Symbol.asyncIterator]: () => { } })).toBe(false)
+  expect(isAsyncIteratorObject({ [Symbol.asyncIterator]: () => {} })).toBe(false)
   expect(isAsyncIteratorObject({ next: () => {} })).toBe(false)
 
-  async function* gen() { }
+  async function* gen() {}
   expect(isAsyncIteratorObject(gen())).toBe(true)
 
-  function* gen2() { }
+  function* gen2() {}
   expect(isAsyncIteratorObject(gen2())).toBe(false)
 })
 
@@ -27,9 +27,12 @@ describe('asyncIteratorClass', () => {
   let iterator: AsyncGenerator
 
   // how the underlying call settles after the consumer has stopped reading
-  const lateSettles: [string, (deferred: ReturnType<typeof promiseWithResolvers<unknown>>) => void][] = [
-    ['resolves', deferred => deferred.resolve({ done: false, value: 42 })],
-    ['rejects', deferred => deferred.reject(new Error('Late'))],
+  const lateSettles: [
+    string,
+    (deferred: ReturnType<typeof promiseWithResolvers<unknown>>) => void,
+  ][] = [
+    ['resolves', (deferred) => deferred.resolve({ done: false, value: 42 })],
+    ['rejects', (deferred) => deferred.reject(new Error('Late'))],
   ]
 
   beforeEach(() => {
@@ -76,7 +79,7 @@ describe('asyncIteratorClass', () => {
     it('should handle multiple calls correctly', async () => {
       let time = 0
       next.mockImplementation(async () => {
-        await new Promise(resolve => setTimeout(resolve, 10))
+        await new Promise((resolve) => setTimeout(resolve, 10))
         return {
           done: time === 2,
           value: time++,
@@ -133,26 +136,25 @@ describe('asyncIteratorClass', () => {
       expect(next).toHaveBeenCalledTimes(0)
     })
 
-    it.each(lateSettles)('should end a waiting next() when its call %s after return()', async (_, settle) => {
-      const deferred = promiseWithResolvers<unknown>()
-      next.mockReturnValueOnce(deferred.promise)
+    it.each(lateSettles)(
+      'should end a waiting next() when its call %s after return()',
+      async (_, settle) => {
+        const deferred = promiseWithResolvers<unknown>()
+        next.mockReturnValueOnce(deferred.promise)
 
-      const pending = iterator.next()
-      await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
+        const pending = iterator.next()
+        await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
 
-      await iterator.return(undefined)
-      settle(deferred)
+        await iterator.return(undefined)
+        settle(deferred)
 
-      await expect(pending).resolves.toEqual({ done: true, value: undefined })
-      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
-    })
+        await expect(pending).resolves.toEqual({ done: true, value: undefined })
+        expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      },
+    )
 
     it('should call cleanup({ kind: cancelled })', async () => {
-      await Promise.all([
-        iterator.return('done'),
-        iterator.return('done'),
-        iterator.return('done'),
-      ])
+      await Promise.all([iterator.return('done'), iterator.return('done'), iterator.return('done')])
 
       expect(cleanup).toHaveBeenCalledTimes(1)
       expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
@@ -166,21 +168,24 @@ describe('asyncIteratorClass', () => {
       expect(next).toHaveBeenCalledTimes(0)
     })
 
-    it.each(lateSettles)('should end a waiting next() when its call %s after throw()', async (_, settle) => {
-      const deferred = promiseWithResolvers<unknown>()
-      next.mockReturnValueOnce(deferred.promise)
+    it.each(lateSettles)(
+      'should end a waiting next() when its call %s after throw()',
+      async (_, settle) => {
+        const deferred = promiseWithResolvers<unknown>()
+        next.mockReturnValueOnce(deferred.promise)
 
-      const pending = iterator.next()
-      await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
+        const pending = iterator.next()
+        await vi.waitFor(() => expect(next).toHaveBeenCalledTimes(1))
 
-      const error = new Error('Forced error')
-      await expect(iterator.throw(error)).rejects.toBe(error)
-      settle(deferred)
+        const error = new Error('Forced error')
+        await expect(iterator.throw(error)).rejects.toBe(error)
+        settle(deferred)
 
-      // like a native async generator, only the caller of throw() sees the error
-      await expect(pending).resolves.toEqual({ done: true, value: undefined })
-      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled', error })
-    })
+        // like a native async generator, only the caller of throw() sees the error
+        await expect(pending).resolves.toEqual({ done: true, value: undefined })
+        expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled', error })
+      },
+    )
 
     it('should call cleanup({ kind: cancelled, reason })', async () => {
       const error = new Error('Forced error')
@@ -223,8 +228,7 @@ describe('asyncIteratorClass', () => {
       next.mockImplementation(async () => {
         if (counter < limit) {
           return { done: false, value: counter++ }
-        }
-        else {
+        } else {
           return { done: true, value: undefined }
         }
       })
@@ -270,8 +274,7 @@ describe('asyncIteratorClass', () => {
             throw error
           }
         }
-      }
-      catch (e) {
+      } catch (e) {
         expect(e).toBe(error)
       }
 

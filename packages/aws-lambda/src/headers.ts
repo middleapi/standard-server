@@ -1,6 +1,7 @@
 import type { StandardHeaders } from '@standard-server/core'
-import type { AnyAPIGatewayProxyEvent } from './types'
 import { toArray } from '@standard-server/shared'
+
+import type { AnyAPIGatewayProxyEvent } from './types'
 
 /**
  * Convert API Gateway proxy event headers to standard headers.
@@ -64,10 +65,9 @@ export function toStandardHeaders(event: AnyAPIGatewayProxyEvent): StandardHeade
  * Split standard headers into the `headers` and `cookies` metadata fields.
  * `set-cookie` values are kept separate because joining them would corrupt them.
  */
-export function toLambdaHeaders(standardHeaders: StandardHeaders): [
-  headers: Record<string, string>,
-  setCookies: string[],
-] {
+export function toLambdaHeaders(
+  standardHeaders: StandardHeaders,
+): [headers: Record<string, string>, setCookies: string[]] {
   const headers: Record<string, string> = Object.create(null)
   const setCookies: string[] = []
 
@@ -79,8 +79,7 @@ export function toLambdaHeaders(standardHeaders: StandardHeaders): [
 
     if (key.toLowerCase() === 'set-cookie') {
       setCookies.push(...toArray(value))
-    }
-    else {
+    } else {
       headers[key] = Array.isArray(value) ? value.join(', ') : value
     }
   }

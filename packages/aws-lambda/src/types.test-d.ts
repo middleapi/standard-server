@@ -1,5 +1,11 @@
 import type * as awsLambda from 'aws-lambda'
-import type { AnyAPIGatewayProxyEvent, APIGatewayProxyEvent, APIGatewayProxyEventV2, HttpResponseStream } from './types'
+
+import type {
+  AnyAPIGatewayProxyEvent,
+  APIGatewayProxyEvent,
+  APIGatewayProxyEventV2,
+  HttpResponseStream,
+} from './types'
 
 it('APIGatewayProxyEvent', () => {
   expectTypeOf<awsLambda.APIGatewayProxyEvent>().toExtend<APIGatewayProxyEvent>()

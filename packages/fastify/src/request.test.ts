@@ -2,6 +2,7 @@ import type { StandardLazyRequest } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
+
 import { toStandardLazyRequest } from './request'
 
 const toStandardBodySpy = vi.spyOn(StandardServerNode, 'toStandardBody')
@@ -54,12 +55,14 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.url).toBe('/hello?foo=bar')
   })
 
-  it('uses the url fastify routed on, not the pre-rewrite `originalUrl`', async ({ onTestFinished }) => {
+  it('uses the url fastify routed on, not the pre-rewrite `originalUrl`', async ({
+    onTestFinished,
+  }) => {
     let fastifyReq: any
     let standardRequest!: StandardLazyRequest
 
     const fastify = Fastify({
-      rewriteUrl: req => req.url?.replace(/^\/api/, '') || '/',
+      rewriteUrl: (req) => req.url?.replace(/^\/api/, '') || '/',
     })
     onTestFinished(() => fastify.close())
 
@@ -129,7 +132,10 @@ describe('toStandardLazyRequest', () => {
 
     await fastify.ready()
     // fastify has no built-in parser for this content type, so the body stays unparsed
-    await request(fastify.server).post('/').set('content-type', 'application/octet-stream').send('{"foo":"bar"}')
+    await request(fastify.server)
+      .post('/')
+      .set('content-type', 'application/octet-stream')
+      .send('{"foo":"bar"}')
 
     expect(toStandardBodySpy).toBeCalledTimes(1)
     expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: 'json' })

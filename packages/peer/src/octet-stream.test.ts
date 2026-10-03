@@ -1,6 +1,7 @@
-import type { PeerOctetStreamMessage } from './types'
 import { Queue } from '@standard-server/shared'
+
 import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
+import type { PeerOctetStreamMessage } from './types'
 
 describe('toOctetStream', () => {
   it('enqueues binary chunks and closes', async () => {
@@ -146,7 +147,7 @@ describe('octetStreamTransmitter', () => {
 
     const stream = new ReadableStream({
       async pull(controller) {
-        await new Promise(resolve => setTimeout(resolve, 50))
+        await new Promise((resolve) => setTimeout(resolve, 50))
         controller.enqueue(new Uint8Array([1]))
       },
       cancel,

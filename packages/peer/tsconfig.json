@@ -1,9 +1,9 @@
 {
-  "extends": "../../tsconfig.lib.json",
-  "references": [
-    { "path": "../core" },
-    { "path": "../shared" }
-  ],
+  "extends": "uncheck/tsconfig/middleapi/lib",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "references": [{ "path": "../core" }, { "path": "../shared" }],
   "include": ["./package.json", "src", "tests/peer.test.ts"],
   "exclude": [
     "**/*.test.*",

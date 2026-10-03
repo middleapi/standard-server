@@ -1,11 +1,13 @@
-import type { StandardResponse } from '@standard-server/core'
+import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
-import type { AddressInfo } from 'node:net'
-import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
 import Stream from 'node:stream'
+
+import type { StandardResponse } from '@standard-server/core'
 import request from 'supertest'
+
 import * as Body from './body'
 import { sendStandardResponse } from './response'
 
@@ -23,19 +25,27 @@ describe('sendStandardResponse', () => {
     const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
       endSpy = vi.spyOn(res, 'end')
 
-      await sendStandardResponse(res, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        res,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: undefined,
         },
-        body: undefined,
-      }, options)
+        options,
+      )
     }).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(undefined, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      undefined,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(endSpy).toBeCalledTimes(1)
     expect(endSpy).toBeCalledWith()
@@ -54,19 +64,27 @@ describe('sendStandardResponse', () => {
     const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
       endSpy = vi.spyOn(res, 'end')
 
-      await sendStandardResponse(res, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        res,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: { foo: 'bar' },
         },
-        body: { foo: 'bar' },
-      }, options)
+        options,
+      )
     }).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith({ foo: 'bar' }, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      { foo: 'bar' },
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(endSpy).toBeCalledTimes(1)
     expect(endSpy).toBeCalledWith((await toNodeHttpBodySpy.mock.results[0]!.value)[0])
@@ -88,19 +106,27 @@ describe('sendStandardResponse', () => {
     const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
       endSpy = vi.spyOn(res, 'end')
 
-      await sendStandardResponse(res, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        res,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: blob,
         },
-        body: blob,
-      }, options)
+        options,
+      )
     }).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(blob, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      blob,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(endSpy).toBeCalledTimes(1)
     expect(endSpy).toBeCalledWith()
@@ -132,19 +158,27 @@ describe('sendStandardResponse', () => {
     const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
       endSpy = vi.spyOn(res, 'end')
 
-      await sendStandardResponse(res, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        res,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: generator,
         },
-        body: generator,
-      }, options)
+        options,
+      )
     }).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(generator, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      generator,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(endSpy).toBeCalledTimes(1)
     expect(endSpy).toBeCalledWith()
@@ -175,19 +209,27 @@ describe('sendStandardResponse', () => {
     const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
       endSpy = vi.spyOn(res, 'end')
 
-      await sendStandardResponse(res, {
-        status: 207,
-        headers: {
-          'x-custom-header': 'custom-value',
+      await sendStandardResponse(
+        res,
+        {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          body: stream,
         },
-        body: stream,
-      }, options)
+        options,
+      )
     }).get('/')
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(stream, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      stream,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(endSpy).toBeCalledTimes(1)
     expect(endSpy).toBeCalledWith()
@@ -214,28 +256,37 @@ describe('sendStandardResponse', () => {
     let destroySpy: any
     let thrownError: any
 
-    const options = { }
-    await expect(request(async (req: IncomingMessage, res: ServerResponse) => {
-      destroySpy = vi.spyOn(res, 'destroy')
+    const options = {}
+    await expect(
+      request(async (req: IncomingMessage, res: ServerResponse) => {
+        destroySpy = vi.spyOn(res, 'destroy')
 
-      try {
-        await sendStandardResponse(res, {
-          status: 207,
-          headers: {
-            'x-custom-header': 'custom-value',
-          },
-          body: stream,
-        }, options)
-      }
-      catch (err) {
-        thrownError = err
-      }
-    }).get('/')).rejects.toThrow()
+        try {
+          await sendStandardResponse(
+            res,
+            {
+              status: 207,
+              headers: {
+                'x-custom-header': 'custom-value',
+              },
+              body: stream,
+            },
+            options,
+          )
+        } catch (err) {
+          thrownError = err
+        }
+      }).get('/'),
+    ).rejects.toThrow()
 
     expect(toNodeHttpBodySpy).toBeCalledTimes(1)
-    expect(toNodeHttpBodySpy).toBeCalledWith(stream, {
-      'x-custom-header': 'custom-value',
-    }, options)
+    expect(toNodeHttpBodySpy).toBeCalledWith(
+      stream,
+      {
+        'x-custom-header': 'custom-value',
+      },
+      options,
+    )
 
     expect(destroySpy).toBeCalledTimes(1)
     expect(destroySpy).toBeCalledWith(error)
@@ -246,25 +297,30 @@ describe('sendStandardResponse', () => {
     let destroySpy: any
     let thrownError: any
 
-    const options = { }
-    await expect(request(async (req: IncomingMessage, res: ServerResponse) => {
-      destroySpy = vi.spyOn(res, 'destroy')
+    const options = {}
+    await expect(
+      request(async (req: IncomingMessage, res: ServerResponse) => {
+        destroySpy = vi.spyOn(res, 'destroy')
 
-      try {
-        await sendStandardResponse(res, {
-          status: 207,
-          headers: {
-            'x-invalid': 'bad\nvalue',
-          },
-          body: (async function* () {
-            yield 1
-          })(),
-        }, options)
-      }
-      catch (err) {
-        thrownError = err
-      }
-    }).get('/')).rejects.toThrow()
+        try {
+          await sendStandardResponse(
+            res,
+            {
+              status: 207,
+              headers: {
+                'x-invalid': 'bad\nvalue',
+              },
+              body: (async function* () {
+                yield 1
+              })(),
+            },
+            options,
+          )
+        } catch (err) {
+          thrownError = err
+        }
+      }).get('/'),
+    ).rejects.toThrow()
 
     expect(thrownError).toBeInstanceOf(Error)
     expect(thrownError.code).toBe('ERR_INVALID_CHAR')
@@ -289,8 +345,7 @@ describe('sendStandardResponse', () => {
           },
           body: undefined,
         })
-      }
-      catch (err) {
+      } catch (err) {
         sendError = err
       }
 
@@ -311,14 +366,13 @@ describe('sendStandardResponse', () => {
         body: (async function* () {
           try {
             yield 1
-            await new Promise(r => setTimeout(r, 100))
+            await new Promise((r) => setTimeout(r, 100))
             yield 2
-            await new Promise(r => setTimeout(r, 100))
+            await new Promise((r) => setTimeout(r, 100))
             yield 3
-            await new Promise(r => setTimeout(r, 9999999))
+            await new Promise((r) => setTimeout(r, 9999999))
             yield 4
-          }
-          finally {
+          } finally {
             clean = true
           }
         })(),
@@ -339,9 +393,11 @@ describe('sendStandardResponse', () => {
 
       ;(responseStream as any).setHeader = vi.fn()
 
-      const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow('test')
+      const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow(
+        'test',
+      )
 
-      await new Promise(r => setTimeout(r, 120))
+      await new Promise((r) => setTimeout(r, 120))
 
       expect(chunks).toEqual([
         Buffer.from(': \n\n'),
@@ -368,14 +424,13 @@ describe('sendStandardResponse', () => {
         body: (async function* () {
           try {
             yield 1
-            await new Promise(r => setTimeout(r, 100))
+            await new Promise((r) => setTimeout(r, 100))
             yield 2
-            await new Promise(r => setTimeout(r, 100))
+            await new Promise((r) => setTimeout(r, 100))
             yield 3
-            await new Promise(r => setTimeout(r, 9999999))
+            await new Promise((r) => setTimeout(r, 9999999))
             yield 4
-          }
-          finally {
+          } finally {
             clean = true
           }
         })(),
@@ -394,11 +449,11 @@ describe('sendStandardResponse', () => {
         },
       })
 
-     ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).setHeader = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
-      await new Promise(r => setTimeout(r, 110))
+      await new Promise((r) => setTimeout(r, 110))
 
       expect(chunks).toEqual([
         Buffer.from(': \n\n'),
@@ -427,11 +482,8 @@ describe('sendStandardResponse', () => {
         body: (async function* () {
           try {
             yield 1
-          }
-          catch (error) {
-
-          }
-          finally {
+          } catch (error) {
+          } finally {
             clean = true
           }
         })(),
@@ -468,8 +520,7 @@ describe('sendStandardResponse', () => {
         body: (async function* () {
           try {
             yield 1
-          }
-          finally {
+          } finally {
             clean = true
           }
         })(),
@@ -529,10 +580,9 @@ describe('sendStandardResponse', () => {
         try {
           while (true) {
             yield 'foo'
-            await new Promise(r => setTimeout(r, 10))
+            await new Promise((r) => setTimeout(r, 10))
           }
-        }
-        finally {
+        } finally {
           clean = true
         }
       })()
@@ -561,17 +611,20 @@ describe('sendStandardResponse', () => {
   describe('http2 stream reset by the client', () => {
     it.each([
       ['resolves on a cancel', http2.constants.NGHTTP2_CANCEL, undefined],
-      ['rejects with the stream error on an error code', http2.constants.NGHTTP2_INTERNAL_ERROR, 'ERR_HTTP2_STREAM_ERROR'],
+      [
+        'rejects with the stream error on an error code',
+        http2.constants.NGHTTP2_INTERNAL_ERROR,
+        'ERR_HTTP2_STREAM_ERROR',
+      ],
     ])('%s', async (_, code, errorCode) => {
       let clean = false
       const body = (async function* () {
         try {
           while (true) {
             yield 'foo'
-            await new Promise(r => setTimeout(r, 10))
+            await new Promise((r) => setTimeout(r, 10))
           }
-        }
-        finally {
+        } finally {
           clean = true
         }
       })()
@@ -581,7 +634,7 @@ describe('sendStandardResponse', () => {
       const server = http2.createServer((req, res) => {
         sending = sendStandardResponse(res, { status: 200, headers: {}, body })
       })
-      await new Promise<void>(r => server.listen(0, r))
+      await new Promise<void>((r) => server.listen(0, r))
 
       const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
 
@@ -589,23 +642,21 @@ describe('sendStandardResponse', () => {
         const reqStream = client.request({ ':path': '/' })
         reqStream.once('error', () => {})
 
-        await new Promise(r => reqStream.once('data', r))
+        await new Promise((r) => reqStream.once('data', r))
         reqStream.close(code)
 
         if (errorCode) {
           await expect(sending).rejects.toMatchObject({ code: errorCode })
-        }
-        else {
+        } else {
           await expect(sending).resolves.toBeUndefined()
         }
 
         await vi.waitFor(() => {
           expect(clean).toBe(true)
         })
-      }
-      finally {
+      } finally {
         client.close()
-        await new Promise(r => server.close(r))
+        await new Promise((r) => server.close(r))
       }
     })
   })
@@ -613,9 +664,9 @@ describe('sendStandardResponse', () => {
 
 async function requestHttp2Head(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
-): Promise<{ headers: http2.IncomingHttpHeaders, body: string }> {
+): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
   const server = http2.createServer(listener)
-  await new Promise<void>(r => server.listen(0, r))
+  await new Promise<void>((r) => server.listen(0, r))
 
   const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
 
@@ -630,12 +681,11 @@ async function requestHttp2Head(
       reqStream.once('error', reject)
     })
 
-    await new Promise(r => reqStream.once('close', r))
+    await new Promise((r) => reqStream.once('close', r))
 
     return { headers, body: Buffer.concat(chunks).toString() }
-  }
-  finally {
+  } finally {
     client.close()
-    await new Promise(r => server.close(r))
+    await new Promise((r) => server.close(r))
   }
 }

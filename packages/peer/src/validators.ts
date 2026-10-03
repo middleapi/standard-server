@@ -1,6 +1,25 @@
-import type { ClientPeerSendMessage, PeerCancelMessage, PeerEventStreamMessage, PeerMessage, PeerOctetStreamMessage, PeerRequestMessage, PeerResponseMessage, PeerStreamCancelMessage, ServerPeerSendMessage } from './types'
-import { isEventStreamMessageComment, isEventStreamMessageId, isEventStreamMessageRetry, isStandardHeaders, isStandardMethod, isStandardStatus, isStandardUrl } from '@standard-server/core'
+import {
+  isEventStreamMessageComment,
+  isEventStreamMessageId,
+  isEventStreamMessageRetry,
+  isStandardHeaders,
+  isStandardMethod,
+  isStandardStatus,
+  isStandardUrl,
+} from '@standard-server/core'
 import { isTypescriptObject } from '@standard-server/shared'
+
+import type {
+  ClientPeerSendMessage,
+  PeerCancelMessage,
+  PeerEventStreamMessage,
+  PeerMessage,
+  PeerOctetStreamMessage,
+  PeerRequestMessage,
+  PeerResponseMessage,
+  PeerStreamCancelMessage,
+  ServerPeerSendMessage,
+} from './types'
 
 export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
   if (!isTypescriptObject(maybe)) {
@@ -15,7 +34,11 @@ export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
     return false
   }
 
-  if (maybe.binary !== undefined && !(maybe.binary instanceof Uint8Array) && !(maybe.binary instanceof Blob)) {
+  if (
+    maybe.binary !== undefined &&
+    !(maybe.binary instanceof Uint8Array) &&
+    !(maybe.binary instanceof Blob)
+  ) {
     return false
   }
 
@@ -79,7 +102,12 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
     return false
   }
 
-  if (maybe.json.event !== undefined && maybe.json.event !== 'message' && maybe.json.event !== 'error' && maybe.json.event !== 'close') {
+  if (
+    maybe.json.event !== undefined &&
+    maybe.json.event !== 'message' &&
+    maybe.json.event !== 'error' &&
+    maybe.json.event !== 'close'
+  ) {
     return false
   }
 
@@ -88,8 +116,8 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
   }
 
   if (
-    maybe.json.comments !== undefined
-    && !(Array.isArray(maybe.json.comments) && maybe.json.comments.every(isEventStreamMessageComment))
+    maybe.json.comments !== undefined &&
+    !(Array.isArray(maybe.json.comments) && maybe.json.comments.every(isEventStreamMessageComment))
   ) {
     return false
   }
@@ -98,7 +126,11 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
 }
 
 export function isPeerOctetStreamMessage(maybe: PeerMessage): maybe is PeerOctetStreamMessage {
-  return maybe.kind === 'octet-stream' && isTypescriptObject(maybe.json) && (typeof maybe.json.close === 'undefined' || typeof maybe.json.close === 'boolean')
+  return (
+    maybe.kind === 'octet-stream' &&
+    isTypescriptObject(maybe.json) &&
+    (typeof maybe.json.close === 'undefined' || typeof maybe.json.close === 'boolean')
+  )
 }
 
 export function isPeerStreamCancelMessage(maybe: PeerMessage): maybe is PeerStreamCancelMessage {
@@ -106,16 +138,20 @@ export function isPeerStreamCancelMessage(maybe: PeerMessage): maybe is PeerStre
 }
 
 export function isClientPeerSendMessage(maybe: PeerMessage): maybe is ClientPeerSendMessage {
-  return isPeerRequestMessage(maybe)
-    || isPeerCancelMessage(maybe)
-    || isPeerEventStreamMessage(maybe)
-    || isPeerOctetStreamMessage(maybe)
+  return (
+    isPeerRequestMessage(maybe) ||
+    isPeerCancelMessage(maybe) ||
+    isPeerEventStreamMessage(maybe) ||
+    isPeerOctetStreamMessage(maybe)
+  )
 }
 
 export function isServerPeerSendMessage(maybe: PeerMessage): maybe is ServerPeerSendMessage {
-  return isPeerResponseMessage(maybe)
-    || isPeerCancelMessage(maybe)
-    || isPeerEventStreamMessage(maybe)
-    || isPeerOctetStreamMessage(maybe)
-    || isPeerStreamCancelMessage(maybe)
+  return (
+    isPeerResponseMessage(maybe) ||
+    isPeerCancelMessage(maybe) ||
+    isPeerEventStreamMessage(maybe) ||
+    isPeerOctetStreamMessage(maybe) ||
+    isPeerStreamCancelMessage(maybe)
+  )
 }

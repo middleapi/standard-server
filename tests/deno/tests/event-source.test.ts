@@ -5,20 +5,22 @@ import { afterAll, describe, it } from '@std/testing/bdd'
 
 let createBody: () => AsyncGenerator
 
-const server = Deno.serve({ port: 0, onListen: () => {} }, () => toFetchResponse({
-  status: 200,
-  headers: {},
-  body: createBody(),
-}))
+const server = Deno.serve({ port: 0, onListen: () => {} }, () =>
+  toFetchResponse({
+    status: 200,
+    headers: {},
+    body: createBody(),
+  }),
+)
 
 afterAll(() => server.shutdown())
 
 /**
  * Listens with Deno's native EventSource until a close or error event arrives.
  */
-function receive(): Promise<{ event: string, data: string }[]> {
+function receive(): Promise<{ event: string; data: string }[]> {
   const source = new EventSource(`http://localhost:${server.addr.port}`)
-  const received: { event: string, data: string }[] = []
+  const received: { event: string; data: string }[] = []
 
   return new Promise((resolve) => {
     for (const event of ['message', 'close', 'error']) {

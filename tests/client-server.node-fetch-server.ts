@@ -1,21 +1,31 @@
-import type { AddressInfo } from 'node:net'
-import type { ClientServerTest } from './client-server'
 import * as http from 'node:http'
+import type { AddressInfo } from 'node:net'
+
 import { createRequestListener } from '@remix-run/node-fetch-server'
-import { toFetchBody, toFetchHeaders, toFetchResponse, toStandardLazyRequest, toStandardLazyResponse } from '@standard-server/fetch'
+import {
+  toFetchBody,
+  toFetchHeaders,
+  toFetchResponse,
+  toStandardLazyRequest,
+  toStandardLazyResponse,
+} from '@standard-server/fetch'
+
+import type { ClientServerTest } from './client-server'
 
 export function createNodeFetchServerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
     return { status: 404, body: 'Not Found', headers: {} }
   })
 
-  const server = http.createServer(createRequestListener(async (request: Request) => {
-    const standardRequest = toStandardLazyRequest(request)
-    const standardResponse = await handler(standardRequest)
-    const response = toFetchResponse(standardResponse)
+  const server = http.createServer(
+    createRequestListener(async (request: Request) => {
+      const standardRequest = toStandardLazyRequest(request)
+      const standardResponse = await handler(standardRequest)
+      const response = toFetchResponse(standardResponse)
 
-    return response
-  }))
+      return response
+    }),
+  )
 
   server.listen(0)
 

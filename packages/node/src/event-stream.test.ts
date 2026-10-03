@@ -1,6 +1,8 @@
 import { Readable } from 'node:stream'
+
 import * as FetchAdapter from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
+
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 import * as UtilsModule from './utils'
 
@@ -32,7 +34,9 @@ it('toAsyncIteratorObject', async () => {
 
   expect(toWebReadableStreamSpy).toBeCalledTimes(1)
   expect(toAsyncIteratorObjectFetch).toBeCalledTimes(1)
-  expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(toWebReadableStreamSpy.mock.results[0]!.value)
+  expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(
+    toWebReadableStreamSpy.mock.results[0]!.value,
+  )
 })
 
 it('toEventStream', async () => {
@@ -46,12 +50,12 @@ it('toEventStream', async () => {
     .pipeThrough(new TextDecoderStream())
     .getReader()
 
-  expect((await reader.read())).toEqual({ done: false, value: ': \n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'data: 1\n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'data: 2\n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'data: 3\n\n' })
-  expect((await reader.read())).toEqual({ done: false, value: 'event: close\n\n' })
-  expect((await reader.read())).toEqual({ done: true, value: undefined })
+  expect(await reader.read()).toEqual({ done: false, value: ': \n\n' })
+  expect(await reader.read()).toEqual({ done: false, value: 'data: 1\n\n' })
+  expect(await reader.read()).toEqual({ done: false, value: 'data: 2\n\n' })
+  expect(await reader.read()).toEqual({ done: false, value: 'data: 3\n\n' })
+  expect(await reader.read()).toEqual({ done: false, value: 'event: close\n\n' })
+  expect(await reader.read()).toEqual({ done: true, value: undefined })
 
   expect(toEventStreamFetch).toHaveBeenCalledTimes(1)
 })

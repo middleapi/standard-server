@@ -1,11 +1,13 @@
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
-import type { AddressInfo } from 'node:net'
-import type { ClientServerTest } from './client-server'
 import * as http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
 import { Readable } from 'node:stream'
+
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { throwIfAborted } from '@standard-server/shared'
+
+import type { ClientServerTest } from './client-server'
 import { generateTlsCert } from './tls'
 
 export interface NodeHttp2ClientServerTestOptions {
@@ -13,7 +15,9 @@ export interface NodeHttp2ClientServerTestOptions {
   secure?: boolean
 }
 
-export function createNodeHttp2ClientServerTest(options: NodeHttp2ClientServerTestOptions = {}): ClientServerTest {
+export function createNodeHttp2ClientServerTest(
+  options: NodeHttp2ClientServerTestOptions = {},
+): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
     return { status: 404, body: 'Not Found', headers: {} }
   })
@@ -37,7 +41,7 @@ export function createNodeHttp2ClientServerTest(options: NodeHttp2ClientServerTe
       ? http2.createSecureServer({ cert: tls.cert, key: tls.key }, requestListener)
       : http2.createServer(requestListener)
 
-    await new Promise<void>(resolve => server.listen(0, resolve))
+    await new Promise<void>((resolve) => server.listen(0, resolve))
 
     const port = (server.address() as AddressInfo).port
 
@@ -111,8 +115,7 @@ export function createNodeHttp2ClientServerTest(options: NodeHttp2ClientServerTe
               })
             }
           }
-        }
-        catch (error) {
+        } catch (error) {
           stream.destroy(error as Error)
         }
       })()

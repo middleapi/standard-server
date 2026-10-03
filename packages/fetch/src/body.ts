@@ -1,7 +1,12 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
-import type { ToEventStreamOptions } from './event-stream'
-import { generateContentDisposition, getFilenameFromContentDisposition, resolveStandardBodyHint } from '@standard-server/core'
+import {
+  generateContentDisposition,
+  getFilenameFromContentDisposition,
+  resolveStandardBodyHint,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
+
+import type { ToEventStreamOptions } from './event-stream'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 export interface ToStandardBodyOptions {
@@ -14,13 +19,18 @@ export interface ToStandardBodyOptions {
 /**
  * Convert a fetch request or response to a standard body.
  */
-export async function toStandardBody(re: Request | Response, options?: ToStandardBodyOptions): Promise<StandardBody> {
-  const hint = options?.hint ?? resolveStandardBodyHint({
-    'standard-server': re.headers.get('standard-server') ?? undefined,
-    'content-type': re.headers.get('content-type') ?? undefined,
-    'content-length': re.headers.get('content-length') ?? undefined,
-    'content-disposition': re.headers.get('content-disposition') ?? undefined,
-  })
+export async function toStandardBody(
+  re: Request | Response,
+  options?: ToStandardBodyOptions,
+): Promise<StandardBody> {
+  const hint =
+    options?.hint ??
+    resolveStandardBodyHint({
+      'standard-server': re.headers.get('standard-server') ?? undefined,
+      'content-type': re.headers.get('content-type') ?? undefined,
+      'content-length': re.headers.get('content-length') ?? undefined,
+      'content-disposition': re.headers.get('content-disposition') ?? undefined,
+    })
 
   if (hint === 'none') {
     return undefined
@@ -51,9 +61,10 @@ export async function toStandardBody(re: Request | Response, options?: ToStandar
 
   if (hint === 'file') {
     const contentDisposition = re.headers.get('content-disposition')
-    const fileName = contentDisposition !== null
-      ? getFilenameFromContentDisposition(contentDisposition)
-      : undefined
+    const fileName =
+      contentDisposition !== null
+        ? getFilenameFromContentDisposition(contentDisposition)
+        : undefined
 
     const blob = await re.blob()
     return new File([blob], fileName ?? 'blob', {
@@ -61,11 +72,14 @@ export async function toStandardBody(re: Request | Response, options?: ToStandar
     })
   }
 
-  return re.body ?? new ReadableStream({
-    start(controller) {
-      controller.close()
-    },
-  })
+  return (
+    re.body ??
+    new ReadableStream({
+      start(controller) {
+        controller.close()
+      },
+    })
+  )
 }
 
 export interface ToFetchBodyOptions {
@@ -86,7 +100,13 @@ export function toFetchBody(
   headers: StandardHeaders,
   options: ToFetchBodyOptions = {},
 ): [
-  body: undefined | string | FormData | URLSearchParams | Blob | ReadableStream<Uint8Array<ArrayBuffer>>,
+  body:
+    | undefined
+    | string
+    | FormData
+    | URLSearchParams
+    | Blob
+    | ReadableStream<Uint8Array<ArrayBuffer>>,
   headers: StandardHeaders,
 ] {
   headers = { ...headers }
@@ -108,7 +128,9 @@ export function toFetchBody(
 
     headers['content-type'] ??= body.type
     // FIX: Bun returns `undefined` for an empty File name, despite the spec requiring a string
-    headers['content-disposition'] ??= generateContentDisposition(body instanceof File ? body.name ?? '' : 'blob')
+    headers['content-disposition'] ??= generateContentDisposition(
+      body instanceof File ? (body.name ?? '') : 'blob',
+    )
 
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {

@@ -1,5 +1,13 @@
+import {
+  ClientPeer,
+  decodePeerMessage,
+  encodePeerMessage,
+  isClientPeerSendMessage,
+  isServerPeerSendMessage,
+  ServerPeer,
+} from '@standard-server/peer'
+
 import type { ClientServerHandler, ClientServerTest } from './client-server'
-import { ClientPeer, decodePeerMessage, encodePeerMessage, isClientPeerSendMessage, isServerPeerSendMessage, ServerPeer } from '@standard-server/peer'
 import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 
 export function createBunWsClientServerTest(): ClientServerTest {
@@ -32,7 +40,7 @@ export function createBunWsClientServerTest(): ClientServerTest {
           return
         }
 
-        await serverPeer!.message(message, async request => handler(request))
+        await serverPeer!.message(message, async (request) => handler(request))
       },
     },
   })
@@ -64,7 +72,7 @@ export function createBunWsClientServerTest(): ClientServerTest {
     setHandler: (next) => {
       handler = next
     },
-    request: standardRequest => clientPeer.request(standardRequest),
+    request: (standardRequest) => clientPeer.request(standardRequest),
     close: () => {
       wsc.close()
       server.stop(true)

@@ -1,38 +1,43 @@
-import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
 import { appendFile, mkdtemp, rm } from 'node:fs/promises'
 import http, { createServer } from 'node:http'
 import http2, { createServer as createHttp2Server, connect as http2Connect } from 'node:http2'
+import type { AddressInfo } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError, toWebReadableStream } from './utils'
+
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  toWebReadableStream,
+} from './utils'
 
 describe('canWriteToNodeResponse', () => {
   it('on http1 response aborted by client', async ({ onTestFinished }) => {
     const server = http.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
           expect(canWriteToNodeResponse(res)).toBe(true)
 
-          await new Promise<void>(r => res.once('close', () => r()))
+          await new Promise<void>((r) => res.once('close', () => r()))
 
           expect(canWriteToNodeResponse(res)).toBe(false)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const socket = connect(port, '127.0.0.1', () => {
@@ -48,7 +53,7 @@ describe('canWriteToNodeResponse', () => {
 
   it('on http1 response finished normally', async ({ onTestFinished }) => {
     const server = http.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
@@ -62,24 +67,23 @@ describe('canWriteToNodeResponse', () => {
           })
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
-    http.get(`http://localhost:${port}`, res => res.resume())
+    http.get(`http://localhost:${port}`, (res) => res.resume())
 
     await handled
   })
 
   it('on http1 response with headers already flushed', async ({ onTestFinished }) => {
     const server = http.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
@@ -94,43 +98,41 @@ describe('canWriteToNodeResponse', () => {
           res.end()
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
-    http.get(`http://localhost:${port}`, res => res.resume())
+    http.get(`http://localhost:${port}`, (res) => res.resume())
 
     await handled
   })
 
   it('on http2 response aborted by client', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
           expect(canWriteToNodeResponse(res)).toBe(true)
 
-          await new Promise<void>(r => res.stream.once('close', () => r()))
+          await new Promise<void>((r) => res.stream.once('close', () => r()))
 
           expect(canWriteToNodeResponse(res)).toBe(false)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -147,7 +149,7 @@ describe('canWriteToNodeResponse', () => {
 
   it('on http2 response finished normally', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
@@ -161,14 +163,13 @@ describe('canWriteToNodeResponse', () => {
           })
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -181,7 +182,7 @@ describe('canWriteToNodeResponse', () => {
 
   it('on http2 HEAD response, whose stream Node already ended', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
@@ -194,14 +195,13 @@ describe('canWriteToNodeResponse', () => {
           expect(canWriteToNodeResponse(res)).toBe(false)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -216,7 +216,7 @@ describe('canWriteToNodeResponse', () => {
 describe('getNodeResponseError', () => {
   it('on http1 response destroyed with an error', async ({ onTestFinished }) => {
     const server = http.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const error = new Error('test')
 
@@ -229,58 +229,56 @@ describe('getNodeResponseError', () => {
           res.once('error', () => {})
           res.destroy(error)
 
-          await new Promise<void>(r => res.once('close', () => r()))
+          await new Promise<void>((r) => res.once('close', () => r()))
 
           expect(getNodeResponseError(res)).toBe(error)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
-    http.get(`http://localhost:${port}`, res => res.resume()).once('error', () => {})
+    http.get(`http://localhost:${port}`, (res) => res.resume()).once('error', () => {})
 
     await handled
   })
 
   it('on http1 response finished normally', async ({ onTestFinished }) => {
     const server = http.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
           res.end('ok')
 
-          await new Promise<void>(r => res.once('close', () => r()))
+          await new Promise<void>((r) => res.once('close', () => r()))
 
           expect(getNodeResponseError(res)).toBe(null)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
-    http.get(`http://localhost:${port}`, res => res.resume())
+    http.get(`http://localhost:${port}`, (res) => res.resume())
 
     await handled
   })
 
   it('on http2 response destroyed with an error', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const error = new Error('test')
 
@@ -293,7 +291,7 @@ describe('getNodeResponseError', () => {
           res.stream.once('error', () => {})
           res.stream.destroy(error)
 
-          await new Promise<void>(r => res.stream.once('close', () => r()))
+          await new Promise<void>((r) => res.stream.once('close', () => r()))
 
           expect(getNodeResponseError(res)).toBe(error)
 
@@ -303,14 +301,13 @@ describe('getNodeResponseError', () => {
           expect((res as any).errored).toBe(undefined)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -322,26 +319,25 @@ describe('getNodeResponseError', () => {
 
   it('on http2 response finished normally', async ({ onTestFinished }) => {
     const server = http2.createServer()
-    onTestFinished(() => new Promise<any>(r => server.close(r)))
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
           res.end('ok')
 
-          await new Promise<void>(r => res.stream.once('close', () => r()))
+          await new Promise<void>((r) => res.stream.once('close', () => r()))
 
           expect(getNodeResponseError(res)).toBe(null)
 
           resolve()
-        }
-        catch (error) {
+        } catch (error) {
           reject(error)
         }
       })
     })
 
-    await new Promise<void>(r => server.listen(0, r))
+    await new Promise<void>((r) => server.listen(0, r))
     const port = (server.address() as any).port
 
     const client = http2.connect(`http://localhost:${port}`)
@@ -366,7 +362,7 @@ describe('destroyNodeHttpBody', () => {
   it('ignores an already-closed stream', async () => {
     const body = new Readable({ read() {} })
     body.destroy()
-    await new Promise<void>(r => body.once('close', () => r()))
+    await new Promise<void>((r) => body.once('close', () => r()))
 
     const destroy = vi.spyOn(body, 'destroy')
     const onError = vi.fn()
@@ -386,7 +382,7 @@ describe('destroyNodeHttpBody', () => {
 
     expect(body.errored).toBe(error)
 
-    await new Promise<void>(r => body.once('close', () => r()))
+    await new Promise<void>((r) => body.once('close', () => r()))
 
     expect(onError.mock.calls).toEqual([[error]])
   })
@@ -400,7 +396,7 @@ describe('destroyNodeHttpBody', () => {
 
     expect(destroy.mock.calls).toEqual([[undefined]])
 
-    await new Promise<void>(r => body.once('close', () => r()))
+    await new Promise<void>((r) => body.once('close', () => r()))
 
     expect(onError).not.toHaveBeenCalled()
   })
@@ -417,7 +413,7 @@ describe('destroyNodeHttpBody', () => {
 
     destroyNodeHttpBody(body, undefined, onError)
 
-    await new Promise<void>(r => body.once('close', () => r()))
+    await new Promise<void>((r) => body.once('close', () => r()))
 
     expect(onError).toHaveBeenCalledWith(error)
   })
@@ -452,14 +448,13 @@ describe('toWebReadableStream', () => {
     try {
       await fn(crashes)
       // Let any queued 'data' event reach a (possibly closed) controller.
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
       return crashes
-    }
-    finally {
+    } finally {
       process.off('uncaughtException', record)
       process.off('unhandledRejection', record)
-      prevExceptions.forEach(listener => process.on('uncaughtException', listener))
-      prevRejections.forEach(listener => process.on('unhandledRejection', listener))
+      prevExceptions.forEach((listener) => process.on('uncaughtException', listener))
+      prevRejections.forEach((listener) => process.on('unhandledRejection', listener))
     }
   }
 
@@ -468,7 +463,10 @@ describe('toWebReadableStream', () => {
    * gap that lets more data queue up) and rejects past `LIMIT`, cancelling the
    * stream while bytes are still arriving.
    */
-  async function spoolUntilRejected(body: ReadableStream<Uint8Array>, tmpDir: string): Promise<void> {
+  async function spoolUntilRejected(
+    body: ReadableStream<Uint8Array>,
+    tmpDir: string,
+  ): Promise<void> {
     const sink = path.join(await mkdtemp(path.join(tmpDir, 'chunk-')), 'sink')
     let total = 0
     try {
@@ -479,8 +477,7 @@ describe('toWebReadableStream', () => {
         }
         await appendFile(sink, chunk)
       }
-    }
-    catch {
+    } catch {
       // Mirrors the plugin turning the oversized body into a 413.
     }
   }
@@ -511,7 +508,11 @@ describe('toWebReadableStream', () => {
     return new Promise((resolve) => {
       const client = http2Connect(`http://127.0.0.1:${port}`)
       client.on('error', () => {})
-      const request = client.request({ ':method': 'POST', ':path': '/', 'content-length': '104857600' })
+      const request = client.request({
+        ':method': 'POST',
+        ':path': '/',
+        'content-length': '104857600',
+      })
       const blob = Buffer.alloc(256 * 1024, 0x61)
       const interval = setInterval(() => {
         if (request.destroyed || request.closed) {
@@ -548,7 +549,7 @@ describe('toWebReadableStream', () => {
   async function runUploadServer(
     kind: 'http1' | 'http2',
     iterations: number,
-  ): Promise<{ handled: number, crashes: Error[] }> {
+  ): Promise<{ handled: number; crashes: Error[] }> {
     const tmpDir = await mkdtemp(path.join(tmpdir(), `toweb-${kind}-`))
     let handled = 0
 
@@ -560,8 +561,7 @@ describe('toWebReadableStream', () => {
           res.statusCode = 413
           res.end('too large')
         }
-      }
-      catch {
+      } catch {
         // The request stream may already be torn down; the response is best effort.
       }
     }
@@ -570,15 +570,15 @@ describe('toWebReadableStream', () => {
     const flood = kind === 'http1' ? floodAndAbortHttp1 : floodAndAbortHttp2
 
     const crashes = await recordUncaught(async () => {
-      await new Promise<void>(resolve => server.listen(0, resolve))
+      await new Promise<void>((resolve) => server.listen(0, resolve))
       const { port } = server.address() as AddressInfo
       for (let i = 0; i < iterations; i++) {
         await flood(port)
-        await new Promise(resolve => setTimeout(resolve, 5))
+        await new Promise((resolve) => setTimeout(resolve, 5))
       }
     })
 
-    await new Promise<void>(resolve => server.close(() => resolve()))
+    await new Promise<void>((resolve) => server.close(() => resolve()))
     await rm(tmpDir, { recursive: true, force: true })
     return { handled, crashes }
   }
@@ -607,26 +607,33 @@ describe('toWebReadableStream', () => {
     expect(Buffer.concat(received).equals(Buffer.from('123héllo'))).toBe(true)
   })
 
-  it.each(['utf8', 'base64', 'hex', 'latin1'] as const)('recovers the bytes of a stream with %s encoding set as copies', async (encoding) => {
-    const bytes = Buffer.from('héllo 😀')
-    const source = Readable.from([bytes.subarray(0, 8), bytes.subarray(8)], { objectMode: false }).setEncoding(encoding)
+  it.each(['utf8', 'base64', 'hex', 'latin1'] as const)(
+    'recovers the bytes of a stream with %s encoding set as copies',
+    async (encoding) => {
+      const bytes = Buffer.from('héllo 😀')
+      const source = Readable.from([bytes.subarray(0, 8), bytes.subarray(8)], {
+        objectMode: false,
+      }).setEncoding(encoding)
 
-    const received: Uint8Array[] = []
-    for await (const chunk of toWebReadableStream(source)) {
-      expect(chunk).toBeInstanceOf(Uint8Array)
-      expect(Buffer.isBuffer(chunk)).toBe(false)
-      received.push(chunk)
-    }
+      const received: Uint8Array[] = []
+      for await (const chunk of toWebReadableStream(source)) {
+        expect(chunk).toBeInstanceOf(Uint8Array)
+        expect(Buffer.isBuffer(chunk)).toBe(false)
+        received.push(chunk)
+      }
 
-    expect(Buffer.concat(received).equals(bytes)).toBe(true)
-  })
+      expect(Buffer.concat(received).equals(bytes)).toBe(true)
+    },
+  )
 
   it('does not throw when a raw buffer stream is cancelled mid-read', async () => {
-    const source = Readable.from((async function* () {
-      for (let i = 0; i < 10_000; i++) {
-        yield Buffer.alloc(64 * 1024, 0x61)
-      }
-    })())
+    const source = Readable.from(
+      (async function* () {
+        for (let i = 0; i < 10_000; i++) {
+          yield Buffer.alloc(64 * 1024, 0x61)
+        }
+      })(),
+    )
 
     let read = 0
     const crashes = await recordUncaught(async () => {
@@ -636,7 +643,7 @@ describe('toWebReadableStream', () => {
           break // cancels the web stream while the source still has data
         }
       }
-      await new Promise(resolve => setImmediate(resolve))
+      await new Promise((resolve) => setImmediate(resolve))
     })
 
     expect(crashes).toEqual([])
@@ -668,7 +675,9 @@ describe('toWebReadableStream', () => {
     await reader.cancel()
   }
 
-  it('keeps an HTTP/1 keep-alive connection usable after cancelling a request body', async ({ onTestFinished }) => {
+  it('keeps an HTTP/1 keep-alive connection usable after cancelling a request body', async ({
+    onTestFinished,
+  }) => {
     const otherListener = vi.fn()
     let readableListeners: unknown[] = []
 
@@ -679,17 +688,19 @@ describe('toWebReadableStream', () => {
         readableListeners = req.listeners('readable')
         res.statusCode = 413
         res.end('too large')
-      }
-      else {
+      } else {
         res.end('ok')
       }
     })
-    onTestFinished(() => new Promise<any>((r) => {
-      server.closeAllConnections()
-      server.close(r)
-    }))
+    onTestFinished(
+      () =>
+        new Promise<any>((r) => {
+          server.closeAllConnections()
+          server.close(r)
+        }),
+    )
 
-    await new Promise<void>(resolve => server.listen(0, resolve))
+    await new Promise<void>((resolve) => server.listen(0, resolve))
     const { port } = server.address() as AddressInfo
 
     const socket = net.connect(port, '127.0.0.1')
@@ -716,14 +727,17 @@ describe('toWebReadableStream', () => {
       })
     })
 
-    await new Promise<void>(resolve => server.listen(0, resolve))
+    await new Promise<void>((resolve) => server.listen(0, resolve))
     const { port } = server.address() as AddressInfo
 
     const client = http2Connect(`http://127.0.0.1:${port}`)
-    onTestFinished(() => new Promise<any>((r) => {
-      client.destroy()
-      server.close(r)
-    }))
+    onTestFinished(
+      () =>
+        new Promise<any>((r) => {
+          client.destroy()
+          server.close(r)
+        }),
+    )
 
     const request = client.request({ ':method': 'POST', ':path': '/' })
     request.end(UPLOAD)
@@ -734,7 +748,7 @@ describe('toWebReadableStream', () => {
       received += chunk
     })
 
-    await new Promise(resolve => request.once('close', resolve))
+    await new Promise((resolve) => request.once('close', resolve))
     await responseClosed
 
     expect(received).toBe('ok')

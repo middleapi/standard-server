@@ -1,11 +1,23 @@
 import type { StandardBody, StandardLazyResponse, StandardRequest } from '@standard-server/core'
-import type { Queue } from '@standard-server/shared'
-import type { ClientPeerSendMessage, PeerEventStreamMessage, PeerOctetStreamMessage, ServerPeerSendMessage } from './types'
 import { cancelStandardBody } from '@standard-server/core'
-import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject, SequentialIdGenerator, throwIfAborted } from '@standard-server/shared'
+import type { Queue } from '@standard-server/shared'
+import {
+  AbortError,
+  hasAnyDefinedValue,
+  isAsyncIteratorObject,
+  SequentialIdGenerator,
+  throwIfAborted,
+} from '@standard-server/shared'
+
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
 import { OctetStreamTransmitter } from './octet-stream'
+import type {
+  ClientPeerSendMessage,
+  PeerEventStreamMessage,
+  PeerOctetStreamMessage,
+  ServerPeerSendMessage,
+} from './types'
 
 interface ClientPeerRequestStateInternal {
   resolve?: ((response: StandardLazyResponse) => void) | undefined
@@ -27,10 +39,7 @@ export class ClientPeer {
   private readonly idGenerator = new SequentialIdGenerator()
   private readonly requests = new Map<string, ClientPeerRequestStateInternal>()
 
-  constructor(
-    private readonly send: (message: ClientPeerSendMessage) => Promise<void>,
-  ) {
-  }
+  constructor(private readonly send: (message: ClientPeerSendMessage) => Promise<void>) {}
 
   /**
    * Send a request to the server peer
@@ -89,7 +98,9 @@ export class ClientPeer {
         json: {
           method: request.method === 'POST' ? undefined : request.method,
           url: request.url,
-          headers: hasAnyDefinedValue(encodedAtomicBody.headers) ? encodedAtomicBody.headers : undefined,
+          headers: hasAnyDefinedValue(encodedAtomicBody.headers)
+            ? encodedAtomicBody.headers
+            : undefined,
           body: encodedAtomicBody.jsonBody,
         },
         binary: encodedAtomicBody.binary,
@@ -119,8 +130,7 @@ export class ClientPeer {
             return this.abortById(id, error)
           }
         })
-      }
-      else if (request.body instanceof ReadableStream) {
+      } else if (request.body instanceof ReadableStream) {
         const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
         state.octetStreamTransmitter = transmitter
         await transmitter.transmit().catch((error) => {
@@ -129,14 +139,14 @@ export class ClientPeer {
           }
         })
       }
-    }
-    catch (reason) {
+    } catch (reason) {
       failure = reason
       await this.closeById(id, reason)
-    }
-    finally {
+    } finally {
       if (untransmittedBody !== undefined) {
-        await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(() => {})
+        await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
+          () => {},
+        )
       }
     }
   }
@@ -144,13 +154,12 @@ export class ClientPeer {
   /**
    * Handle a message from server
    */
-  async message(
-    message: ServerPeerSendMessage,
-  ): Promise<void> {
+  async message(message: ServerPeerSendMessage): Promise<void> {
     const id = message.id
     const state = this.requests.get(id)
 
-    if (!state) { // request already closed or non-existing
+    if (!state) {
+      // request already closed or non-existing
       return
     }
 
@@ -182,7 +191,8 @@ export class ClientPeer {
       return
     }
 
-    if (!state.resolve) { // duplicate response message
+    if (!state.resolve) {
+      // duplicate response message
       return
     }
 
@@ -193,8 +203,7 @@ export class ClientPeer {
       const decoded = toStandardBody(message, async (cleanupState) => {
         if (cleanupState.kind === 'cancelled') {
           await this.abortById(id, cleanupState.error)
-        }
-        else if (state.eventStreamMessageQueue || state.octetStreamMessageQueue) {
+        } else if (state.eventStreamMessageQueue || state.octetStreamMessageQueue) {
           await this.closeById(id, cleanupState.error)
         }
       })
@@ -212,8 +221,7 @@ export class ClientPeer {
         // if there is no stream, we can close the request immediately
         await this.closeById(id)
       }
-    }
-    catch (reason) {
+    } catch (reason) {
       await this.closeById(id, reason)
     }
   }
@@ -221,15 +229,14 @@ export class ClientPeer {
   async close(reason?: unknown): Promise<void> {
     reason ??= new AbortError('Peer was closed')
 
-    await Promise.all(
-      Array.from(this.requests.keys()).map(id => this.closeById(id, reason)),
-    )
+    await Promise.all(Array.from(this.requests.keys()).map((id) => this.closeById(id, reason)))
   }
 
   private async closeById(id: string, reason?: unknown): Promise<void> {
     const state = this.requests.get(id)
 
-    if (!state) { // already closed
+    if (!state) {
+      // already closed
       return
     }
 
@@ -265,7 +272,8 @@ export class ClientPeer {
   private async abortById(id: string, reason: unknown): Promise<void> {
     const state = this.requests.get(id)
 
-    if (!state) { // already closed
+    if (!state) {
+      // already closed
       return
     }
 
