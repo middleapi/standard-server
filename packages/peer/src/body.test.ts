@@ -135,6 +135,72 @@ describe('toStandardBody', () => {
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
   })
 
+  it('rejects reading a server-sent event stream twice', async () => {
+    const cleanup = vi.fn()
+    const { resolveBody, eventStreamMessageQueue } = toStandardBody(
+      makeMessage({ bodyHint: 'event-stream' }),
+      cleanup,
+    )
+
+    const [first, second] = await Promise.allSettled([resolveBody(), resolveBody()])
+
+    expect(second).toEqual({
+      status: 'rejected',
+      reason: new TypeError('Failed to read body: body stream already read'),
+    })
+    await expect(resolveBody()).rejects.toThrow('Failed to read body: body stream already read')
+
+    // the first reader still receives every event
+    const body = (first as PromiseFulfilledResult<AsyncIteratorClass<any>>).value
+    for (const data of [1, 2]) {
+      eventStreamMessageQueue?.push({ id: '1', kind: 'event-stream', json: { data } })
+    }
+    eventStreamMessageQueue?.push({ id: '1', kind: 'event-stream', json: { event: 'close' } })
+
+    expect(await body.next()).toEqual({ done: false, value: 1 })
+    expect(await body.next()).toEqual({ done: false, value: 2 })
+    expect(await body.next()).toEqual({ done: true, value: undefined })
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
+  it('rejects reading a binary download stream twice', async () => {
+    const cleanup = vi.fn()
+    const { resolveBody, octetStreamMessageQueue } = toStandardBody(
+      makeMessage({ contentType: 'application/octet-stream' }),
+      cleanup,
+    )
+
+    const [first, second] = await Promise.allSettled([resolveBody(), resolveBody()])
+
+    expect(second).toEqual({
+      status: 'rejected',
+      reason: new TypeError('Failed to read body: body stream already read'),
+    })
+    await expect(resolveBody()).rejects.toThrow('Failed to read body: body stream already read')
+
+    // the first reader still receives every chunk
+    const body = (first as PromiseFulfilledResult<ReadableStream<Uint8Array<ArrayBuffer>>>).value
+    octetStreamMessageQueue?.push({
+      id: '1',
+      kind: 'octet-stream',
+      json: {},
+      binary: new Uint8Array([1]),
+    })
+    octetStreamMessageQueue?.push({
+      id: '1',
+      kind: 'octet-stream',
+      json: { close: true },
+      binary: new Uint8Array([2]),
+    })
+
+    expect(await new Response(body).bytes()).toEqual(new Uint8Array([1, 2]))
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
   it('receives an uploaded file with filename', async () => {
     const binary = new TextEncoder().encode('file content')
     const cleanup = vi.fn()

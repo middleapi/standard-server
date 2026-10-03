@@ -13,6 +13,14 @@ import { toAsyncIteratorObject, toEventStream } from './event-stream'
 import type { NodeHttpRequest } from './types'
 import { readableChunkToBytes, toWebReadableStream } from './utils'
 
+/**
+ * Requests whose body stream a `toStandardBody` call has already claimed.
+ *
+ * `req.readable` stays true until the stream ends, so on its own it lets a second
+ * (e.g. concurrent) call read the same stream, splitting its data between the two.
+ */
+const claimedRequests = new WeakSet<NodeHttpRequest>()
+
 export interface ToStandardBodyOptions {
   /**
    * Hints on how the body should be parsed.
@@ -28,7 +36,7 @@ export async function toStandardBody(
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
   // body's already parsed by upstream framework like express, ...
-  if (req.body !== undefined && !req.readable) {
+  if (req.body !== undefined && !req.readable && !claimedRequests.has(req)) {
     return req.body
   }
 
@@ -45,10 +53,13 @@ export async function toStandardBody(
     return undefined
   }
 
-  if (!req.readable) {
+  if (!req.readable || claimedRequests.has(req)) {
     // native fetch error use TypeError
     throw new TypeError('Failed to read body: body stream already read or destroyed')
   }
+
+  // Claim before the first await, so a concurrent call throws instead of reading the rest
+  claimedRequests.add(req)
 
   if (hint === 'json') {
     const text = await _streamToString(req)

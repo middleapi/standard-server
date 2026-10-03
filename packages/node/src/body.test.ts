@@ -441,6 +441,72 @@ describe('toStandardBody', () => {
       expect(await toStandardBody(req!, { hint: 'none' })).toBe(undefined)
     })
 
+    it('throw on read body while another read is in progress', async () => {
+      // big enough to arrive in several chunks, so the first read is still in progress
+      const value = 'x'.repeat(200_000)
+      let results: PromiseSettledResult<StandardBody>[] = []
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        results = await Promise.allSettled([toStandardBody(req), toStandardBody(req)])
+        res.end()
+      })
+        .post('/')
+        .send({ value })
+
+      expect(results).toEqual([
+        { status: 'fulfilled', value: { value } },
+        {
+          status: 'rejected',
+          reason: new TypeError('Failed to read body: body stream already read or destroyed'),
+        },
+      ])
+    })
+
+    it.each([
+      'json',
+      'form-data',
+      'url-search-params',
+      'event-stream',
+      'file',
+      'octet-stream',
+    ] as const)('throw on read body again before the stream ends (hint=%s)', async (hint) => {
+      let error: unknown
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        const first = toStandardBody(req, { hint })
+        error = await toStandardBody(req, { hint }).catch((error) => error)
+        await first.catch(() => {}) // the payload is not valid for every hint
+        res.end()
+      })
+        .post('/')
+        .send('foo=bar')
+
+      expect(error).toEqual(
+        new TypeError('Failed to read body: body stream already read or destroyed'),
+      )
+    })
+
+    // body-parser 1.x (express 4) assigns `{}` to every request, even the ones it leaves unread
+    it('throw on read body multiple time with a body assigned without consuming the stream', async () => {
+      let req: NodeHttpRequest
+      let standardBody: any
+
+      await request(async (_req: IncomingMessage, res: ServerResponse) => {
+        req = _req as NodeHttpRequest
+        req.body = {}
+        standardBody = await toStandardBody(req)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.from('foo'))
+
+      expect(standardBody).toBeInstanceOf(File)
+      await expect(toStandardBody(req!)).rejects.toThrow(
+        'Failed to read body: body stream already read',
+      )
+    })
+
     it('prefers user defined body hint over standard-server header', async () => {
       let standardBody: any
 
