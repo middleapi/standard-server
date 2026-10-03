@@ -141,7 +141,14 @@ export class ClientPeer {
       }
     } catch (reason) {
       failure = reason
-      await this.closeById(id, reason)
+
+      if (state.requestSent) {
+        // the server already holds the request, so it must be cancelled there as well;
+        // a failed cancel delivery must not surface as an unhandled rejection
+        await this.abortById(id, reason).catch(() => {})
+      } else {
+        await this.closeById(id, reason)
+      }
     } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
