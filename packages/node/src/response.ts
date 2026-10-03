@@ -1,3 +1,5 @@
+import type { ServerResponse } from 'node:http'
+
 import type { StandardResponse } from '@standard-server/core'
 
 import type { ToNodeHttpBodyOptions } from './body'
@@ -39,7 +41,7 @@ export async function sendStandardResponse(
     connection.once('close', resolve)
 
     try {
-      // DON'T use `res.writeHead` because it send response immediately in chunked mode
+      // DON'T use `res.writeHead` here because it send response immediately in chunked mode
       // while we only need chunked if the response body is stream
       res.statusCode = standardResponse.status
       for (const key of Object.keys(resHeaders)) {
@@ -55,6 +57,12 @@ export async function sendStandardResponse(
       } else if (typeof resBody === 'string') {
         res.end(resBody)
       } else {
+        // Node validates the status and headers (e.g. HTTP/2 connection-specific ones) only when
+        // writing them. The first `write` of `pipe` would do that from the body's `data` handler,
+        // where a throw escapes this try/catch and crashes the process, so write them here instead.
+        // (the cast only picks an overload: TS can't call `writeHead` on the union)
+        ;(res as ServerResponse).writeHead(res.statusCode)
+
         connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)

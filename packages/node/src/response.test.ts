@@ -331,6 +331,53 @@ describe('sendStandardResponse', () => {
     expect((resBody as any).destroyed).toBe(true)
   })
 
+  it.each([
+    [
+      'stream',
+      () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('foo'))
+            controller.close()
+          },
+        }),
+    ],
+    ['file', () => new Blob(['foo'])],
+    [
+      'event iterator',
+      () =>
+        (async function* () {
+          yield 'foo'
+        })(),
+    ],
+  ])(
+    'rejects, destroys the response and the body when the status is invalid (%s body)',
+    async (_, body) => {
+      let destroySpy: any
+      let thrownError: any
+
+      await expect(
+        request(async (req: IncomingMessage, res: ServerResponse) => {
+          destroySpy = vi.spyOn(res, 'destroy')
+
+          try {
+            await sendStandardResponse(res, { status: 1000, headers: {}, body: body() })
+          } catch (err) {
+            thrownError = err
+          }
+        }).get('/'),
+      ).rejects.toThrow()
+
+      expect(thrownError).toBeInstanceOf(RangeError)
+      expect(thrownError.code).toBe('ERR_HTTP_INVALID_STATUS_CODE')
+
+      expect(destroySpy).toHaveBeenCalledWith(thrownError)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    },
+  )
+
   it('resolves without sending when headers were already flushed', async () => {
     let sendError: any
 
@@ -392,6 +439,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow(
         'test',
@@ -450,6 +498,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
@@ -606,6 +655,51 @@ describe('sendStandardResponse', () => {
         expect(clean).toBe(true)
       })
     })
+  })
+
+  it('http2 rejects and releases a stream body when a header is connection-specific', async () => {
+    let canceled = false
+    const body = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode('foo'))
+      },
+      cancel() {
+        canceled = true
+      },
+    })
+
+    let sending: Promise<void> | undefined
+
+    const server = http2.createServer((req, res) => {
+      sending = sendStandardResponse(res, {
+        status: 200,
+        // e.g. forwarded from an upstream `fetch` response
+        headers: { 'keep-alive': 'timeout=5', 'transfer-encoding': 'chunked' },
+        body,
+      })
+      sending.catch(() => {})
+    })
+    await new Promise<void>((r) => server.listen(0, r))
+
+    const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+    try {
+      const reqStream = client.request({ ':path': '/' })
+      reqStream.once('error', () => {})
+      reqStream.resume()
+      await new Promise((r) => reqStream.once('close', r))
+
+      await expect(sending).rejects.toMatchObject({
+        code: 'ERR_HTTP2_INVALID_CONNECTION_HEADERS',
+      })
+
+      await vi.waitFor(() => {
+        expect(canceled).toBe(true)
+      })
+    } finally {
+      client.close()
+      await new Promise((r) => server.close(r))
+    }
   })
 
   describe('http2 stream reset by the client', () => {
