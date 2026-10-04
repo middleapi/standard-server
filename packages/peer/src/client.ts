@@ -125,30 +125,24 @@ export class ClientPeer {
       if (isAsyncIteratorObject(request.body)) {
         const transmitter = new EventStreamTransmitter(request.body, id, this.send)
         state.eventStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.eventStreamTransmitter) {
-            return this.abortById(id, error)
-          }
-        })
+        await transmitter.transmit()
       } else if (request.body instanceof ReadableStream) {
         const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
         state.octetStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.octetStreamTransmitter) {
-            return this.abortById(id, error)
-          }
-        })
+        await transmitter.transmit()
       }
     } catch (reason) {
       failure = reason
 
-      if (state.requestSent) {
+      if (!state.requestSent) {
+        await this.closeById(id, reason)
+      } else if (!state.streamCancelled) {
         // the server already holds the request, so it must be cancelled there as well;
         // a failed cancel delivery must not surface as an unhandled rejection
         await this.abortById(id, reason).catch(() => {})
-      } else {
-        await this.closeById(id, reason)
       }
+      // otherwise the server stopped the upload itself, so a failing transmitter is expected
+      // and the request stays open for its response
     } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
