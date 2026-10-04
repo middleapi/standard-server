@@ -66,7 +66,7 @@ export class ClientPeer {
         state.removeAbortListener = () => signal.removeEventListener('abort', abortListener)
       }
 
-      void this.transmitRequest(id, state, request)
+      void this.transmitRequest(id, state, request).catch(() => {})
     })
   }
 
@@ -125,23 +125,20 @@ export class ClientPeer {
       if (isAsyncIteratorObject(request.body)) {
         const transmitter = new EventStreamTransmitter(request.body, id, this.send)
         state.eventStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.eventStreamTransmitter) {
-            return this.abortById(id, error)
-          }
-        })
+        await transmitter.transmit()
       } else if (request.body instanceof ReadableStream) {
         const transmitter = new OctetStreamTransmitter(request.body, id, this.send)
         state.octetStreamTransmitter = transmitter
-        await transmitter.transmit().catch((error) => {
-          if (state.octetStreamTransmitter) {
-            return this.abortById(id, error)
-          }
-        })
+        await transmitter.transmit()
       }
     } catch (reason) {
       failure = reason
-      await this.closeById(id, reason)
+
+      if (!state.requestSent) {
+        await this.closeById(id, reason)
+      } else if (!state.streamCancelled) {
+        await this.abortById(id, reason)
+      }
     } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
