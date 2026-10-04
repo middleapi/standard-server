@@ -66,7 +66,7 @@ export class ClientPeer {
         state.removeAbortListener = () => signal.removeEventListener('abort', abortListener)
       }
 
-      void this.transmitRequest(id, state, request)
+      void this.transmitRequest(id, state, request).catch(() => {})
     })
   }
 
@@ -137,12 +137,8 @@ export class ClientPeer {
       if (!state.requestSent) {
         await this.closeById(id, reason)
       } else if (!state.streamCancelled) {
-        // the server already holds the request, so it must be cancelled there as well;
-        // a failed cancel delivery must not surface as an unhandled rejection
-        await this.abortById(id, reason).catch(() => {})
+        await this.abortById(id, reason)
       }
-      // otherwise the server stopped the upload itself, so a failing transmitter is expected
-      // and the request stays open for its response
     } finally {
       if (untransmittedBody !== undefined) {
         await cancelStandardBody(untransmittedBody, failure ?? request.signal?.reason).catch(
