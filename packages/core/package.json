@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/core",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "The Standard Server contract: transport-agnostic request, response, body, and streaming types with body parsing rules, runtime validators, and SSE helpers shared by every adapter",
   "keywords": [
     "body-parser",

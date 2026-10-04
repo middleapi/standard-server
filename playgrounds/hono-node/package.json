@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/hono-node-playground",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "private": true,
   "type": "module",
   "scripts": {
