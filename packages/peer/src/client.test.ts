@@ -371,6 +371,10 @@ describe('clientPeer', () => {
       const error = new Error('send failed')
       send.mockRejectedValueOnce(error)
       await expect(peer.request(makeRequest())).rejects.toThrow(error)
+
+      // the server never received the request, so there is nothing to cancel there
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
     })
 
     it('cancels an octet-stream request body when signal aborted during encode', async () => {
@@ -1010,6 +1014,41 @@ describe('clientPeer', () => {
 
         await peer.message(makeResponseMessage(id))
         await promise
+      })
+
+      it('sends cancel message and rejects request when the body cannot be read after the request is sent', async () => {
+        const stream = new ReadableStream<Uint8Array>()
+        stream.getReader()
+
+        await expect(
+          peer.request(makeRequest({ method: 'POST', headers: {}, body: stream })),
+        ).rejects.toThrow(TypeError)
+
+        // the server already received the request, so it must be told to drop it
+        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
+        expect(send.mock.calls.map(([m]) => m)).toEqual([
+          expect.objectContaining({ id, kind: 'request' }),
+          { id, kind: 'cancel' },
+        ])
+      })
+
+      it('silently ignores transport failures when cancelling after the body cannot be read', async () => {
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'cancel') {
+            throw new Error('transport down')
+          }
+        })
+
+        const stream = new ReadableStream<Uint8Array>()
+        stream.getReader()
+
+        await expect(
+          peer.request(makeRequest({ method: 'POST', headers: {}, body: stream })),
+        ).rejects.toThrow(TypeError)
+
+        // let the failed cancel delivery settle; it must not surface anywhere
+        await sleep(1)
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
       })
 
       it('stops transmitting the octet-stream request body when a full response arrives', async () => {

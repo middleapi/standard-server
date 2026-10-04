@@ -554,6 +554,28 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
   })
 
+  it('releases the server request when the client fails to stream a body after sending the request', async () => {
+    let serverSignal: AbortSignal | undefined
+
+    const { client, server } = connect(async (request) => {
+      serverSignal = request.signal
+      // blocks until the upload ends or the request is cancelled
+      await ((await request.resolveBody()) as ReadableStream).getReader().read()
+      return { status: 200, headers: {} }
+    })
+
+    // a body the caller already locked cannot be streamed once the request message is out
+    const body = new ReadableStream<Uint8Array>()
+    body.getReader()
+
+    await expect(
+      client.request({ url: '/upload', method: 'POST', headers: {}, body }),
+    ).rejects.toThrow(TypeError)
+
+    await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
+    expect((server as any).requests.size).toBe(0)
+  })
+
   it('propagates a client abort fired while the request message is still being sent', async () => {
     const encodeStarted = promiseWithResolvers<void>()
     const releaseEncode = promiseWithResolvers<void>()
