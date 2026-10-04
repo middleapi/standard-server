@@ -224,8 +224,8 @@ importers:
         specifier: ^5.11.0
         version: 5.12.1
       h3:
-        specifier: 2.0.1-rc.26
-        version: 2.0.1-rc.26
+        specifier: 2.0.1-rc.32
+        version: 2.0.1-rc.32
       oxfmt:
         specifier: ^0.71.0
         version: 0.71.0
@@ -2091,14 +2091,17 @@ packages:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
-  h3@2.0.1-rc.26:
-    resolution: {integrity: sha512-GDxlvDsKxgjRvG5UBRJYyGJTMWLV30CJ4cV+e7QCTgftDHihrvio1fVPbNembhEr6J4WNm8IWy3fookgyTweLw==}
+  h3@2.0.1-rc.32:
+    resolution: {integrity: sha512-Epg1E85L8yIKd9UeAQAVdm6QVrnHbppMsQ641EjpNi4c0IlAg+PJlwp4Xw03Z1loRXPQaH9k64gJT5qDELqm+g==}
     engines: {node: '>=20.11.1'}
     hasBin: true
     peerDependencies:
-      crossws: ^0.4.9
+      crossws: ^0.4.12
+      ocache: '>=0.3.0'
     peerDependenciesMeta:
       crossws:
+        optional: true
+      ocache:
         optional: true
 
   has-flag@4.0.0:
@@ -2970,6 +2973,11 @@ packages:
 
   srvx@0.12.8:
     resolution: {integrity: sha512-7k9HoDhluTlD7UJ+F+OopZoPZXB2J8f/5nW2VMLaB8KsSlZlRQxyyoX0hWEQCxB+F+3ZvB5QX3LqB6xSBRfxQQ==}
+    engines: {node: '>=20.16.0'}
+    hasBin: true
+
+  srvx@1.0.5:
+    resolution: {integrity: sha512-KvSKRpgPG/oaq3cyT614OQ2bAa7DynuGamivCZeoZzIUULOdbQz6wUtnnVuC4+DCx2Zglzo8v5gBYmWIWYhDxA==}
     engines: {node: '>=20.16.0'}
     hasBin: true
 
@@ -4870,10 +4878,10 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  h3@2.0.1-rc.26:
+  h3@2.0.1-rc.32:
     dependencies:
       rou3: 0.9.2
-      srvx: 0.12.8
+      srvx: 1.0.5
 
   has-flag@4.0.0: {}
 
@@ -5736,6 +5744,8 @@ snapshots:
   split2@4.2.0: {}
 
   srvx@0.12.8: {}
+
+  srvx@1.0.5: {}
 
   stack-trace@1.0.0-pre2: {}
 
