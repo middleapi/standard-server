@@ -823,8 +823,8 @@ describe('clientPeer', () => {
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
 
         releaseRequest.resolve()
-        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
-        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+        const id = await waitForSend(2)
+        expect(send).toHaveBeenCalledTimes(2)
         expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
       })
 
@@ -1178,8 +1178,8 @@ describe('clientPeer', () => {
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
 
         releaseRequest.resolve()
-        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
-        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+        const id = await waitForSend(2)
+        expect(send).toHaveBeenCalledTimes(2)
         expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
       })
 

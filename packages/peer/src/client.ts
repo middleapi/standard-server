@@ -288,9 +288,7 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    if (!state.requestSent) {
-      state.cancelPending = true
-    }
+    state.cancelPending = !state.requestSent
 
     const promises = [
       state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
