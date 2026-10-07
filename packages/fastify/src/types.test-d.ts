@@ -2,6 +2,7 @@ import type { StandardHeaders } from '@standard-server/core'
 import type { NodeHttpRequest, NodeHttpResponse } from '@standard-server/node'
 import Fastify from 'fastify'
 
+import { standardContentTypeParser } from './request'
 import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 
 /**
@@ -56,4 +57,12 @@ it('accept the request and reply of an encapsulated plugin', () => {
     },
     { prefix: '/api' },
   )
+})
+
+it('accept standardContentTypeParser as a content type parser of any instance', () => {
+  Fastify().addContentTypeParser('*', standardContentTypeParser)
+  Fastify({ http2: true }).addContentTypeParser('*', standardContentTypeParser)
+  Fastify().register(async (instance) => {
+    instance.addContentTypeParser(/^text\//, standardContentTypeParser)
+  })
 })

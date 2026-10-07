@@ -43,12 +43,13 @@ This package is the Fastify adapter for that model. It builds on [`@standard-ser
 
 ## Package overview
 
-The package exposes two helpers and their option shapes:
+The package exposes two helpers, a content type parser, and their option shapes:
 
-| Group                   | Exports                                                                                                 | Purpose                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                     | Adapt Fastify request and reply objects to Standard Server |
-| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `SendStandardResponseOptions` | Type handler inputs and serializer options                 |
+| Group                   | Exports                                                                                                 | Purpose                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                     | Adapt Fastify request and reply objects to Standard Server                           |
+| Body parsing            | `standardContentTypeParser`                                                                             | Leave request bodies for the adapter to parse, see [Resolving Body](#resolving-body) |
+| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `SendStandardResponseOptions` | Type handler inputs and serializer options                                           |
 
 Both helpers accept `AnyFastifyRequest` and `AnyFastifyReply`, which are `FastifyRequest` and `FastifyReply` widened over every raw server. That is what lets the same call site work for `Fastify()`, `Fastify({ http2: true })`, typed route generics, hooks, and encapsulated plugins alike.
 
@@ -99,18 +100,27 @@ await fastify.listen({ port: 3000 })
 
 `resolveBody(hint?)` returns the body Fastify already parsed with its own content type parsers, if there is one. Otherwise it falls back to `toStandardBody()` from `@standard-server/node`, which follows the shared Standard Server resolution rules: an explicit `hint` wins, then the [`standard-server` header](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#the-standard-server-header), then inference from the content headers. See [how body parsing works](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#how-body-parsing-works) in the core README for the full algorithm.
 
-Because Fastify's own parsers win, a `hint` only applies to bodies Fastify left unparsed. Fastify ships parsers for `application/json` and `text/plain`, and rejects every other content type with `415 Unsupported Media Type` unless you register one. To let the adapter own body parsing end to end, register a catch-all parser that leaves the body untouched:
+Because Fastify's own parsers win, a `hint` only applies to bodies Fastify left unparsed. Fastify ships parsers for `application/json` and `text/plain`, and rejects every other content type with `415 Unsupported Media Type` unless you register one. To let the adapter own body parsing end to end, register `standardContentTypeParser` as a catch-all parser, which leaves the body unparsed:
 
 ```ts
+import { standardContentTypeParser } from '@standard-server/fastify'
+
 // optional: also drop fastify's built-in json and text/plain parsers
 fastify.removeAllContentTypeParsers()
 
-fastify.addContentTypeParser('*', (req, payload, done) => {
-  done(null, undefined)
-})
+fastify.addContentTypeParser('*', standardContentTypeParser)
 ```
 
 Register it inside an encapsulated plugin if you only want it to apply to the routes that serve Standard Server handlers.
+
+The adapter still reads the body through Fastify's body pipeline:
+
+- **`preParsing` hooks apply.** The body is read from the payload stream those hooks return, so decompression and other payload transforms work as they do for Fastify's own parsers. A parser of your own that leaves the body unparsed (`done(null, undefined)`) works too, but the adapter then reads the raw request, bypassing those hooks.
+- **`bodyLimit` applies.** The route's `bodyLimit`, or the instance's, caps the bytes read after any `preParsing` transform. A larger body fails with Fastify's own `FST_ERR_CTP_BODY_TOO_LARGE` error, which Fastify answers with `413`. Streaming bodies (`octet-stream`, `event-stream`) are still handed over chunk by chunk, but count towards the limit too, so raise it on the routes that accept large uploads or long-lived streams:
+
+  ```ts
+  fastify.post('/upload', { bodyLimit: 100 * 1024 * 1024 }, handler)
+  ```
 
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.

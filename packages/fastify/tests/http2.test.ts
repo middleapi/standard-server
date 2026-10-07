@@ -1,9 +1,9 @@
 import http2 from 'node:http2'
 import type { AddressInfo } from 'node:net'
 
-import Fastify from 'fastify'
+import Fastify, { errorCodes } from 'fastify'
 
-import { sendStandardResponse, toStandardLazyRequest } from '../src'
+import { sendStandardResponse, standardContentTypeParser, toStandardLazyRequest } from '../src'
 
 /**
  * `@standard-server/node` supports both node http and http2, so the fastify adapter
@@ -19,9 +19,7 @@ describe('http2', () => {
     onTestFinished(() => fastify.close())
 
     fastify.removeAllContentTypeParsers()
-    fastify.addContentTypeParser('*', (req, payload, done) => {
-      done(null, undefined)
-    })
+    fastify.addContentTypeParser('*', standardContentTypeParser)
 
     fastify.all('/*', async (req, reply) => {
       const standardRequest = toStandardLazyRequest(req, reply)
@@ -70,6 +68,56 @@ describe('http2', () => {
     expect(headers['x-custom-header']).toBe('custom-value')
     expect(headers['content-type']).toBe('application/json; charset=utf-8')
     expect(text).toEqual('{"foo":"bar"}')
+  })
+
+  it('rejects a body over the bodyLimit', async ({ onTestFinished }) => {
+    let error: unknown
+
+    const fastify = Fastify({ http2: true, bodyLimit: 100 })
+    onTestFinished(() => fastify.close())
+
+    fastify.removeAllContentTypeParsers()
+    fastify.addContentTypeParser('*', standardContentTypeParser)
+
+    fastify.all('/*', async (req, reply) => {
+      await toStandardLazyRequest(req, reply)
+        .resolveBody()
+        .catch((e) => {
+          error = e
+          throw e
+        })
+    })
+
+    await fastify.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = fastify.server.address() as AddressInfo
+
+    const client = http2.connect(`http://127.0.0.1:${port}`)
+    onTestFinished(() => new Promise<void>((resolve) => client.close(resolve)))
+
+    const stream = client.request({
+      ':method': 'POST',
+      ':path': '/',
+      'content-type': 'application/json',
+    })
+
+    // no content-length, so the limit is only hit while reading
+    stream.write(`{"foo":"${'x'.repeat(60)}`)
+    stream.end(`${'x'.repeat(60)}"}`)
+
+    const headers = await new Promise<http2.IncomingHttpHeaders>((resolve, reject) => {
+      stream.once('response', resolve)
+      stream.once('error', reject)
+    })
+
+    let text = ''
+    stream.setEncoding('utf8')
+    for await (const chunk of stream) {
+      text += chunk
+    }
+
+    expect(headers[':status']).toBe(413)
+    expect(JSON.parse(text).code).toBe('FST_ERR_CTP_BODY_TOO_LARGE')
+    expect(error).toBeInstanceOf(errorCodes.FST_ERR_CTP_BODY_TOO_LARGE)
   })
 
   it('aborts the request signal when the client cancels', async ({ onTestFinished }) => {

@@ -1,4 +1,8 @@
-import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/fastify'
+import {
+  sendStandardResponse,
+  standardContentTypeParser,
+  toStandardLazyRequest,
+} from '@standard-server/fastify'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import Fastify from 'fastify'
 
@@ -13,9 +17,7 @@ export function createFastifyClientServerTest(): ClientServerTest {
 
   // hand every body over to the standard adapter, which knows the standard-server hints
   fastify.removeAllContentTypeParsers()
-  fastify.addContentTypeParser('*', (req, payload, done) => {
-    done(null, undefined)
-  })
+  fastify.addContentTypeParser('*', standardContentTypeParser)
 
   // a blob/file without a type is sent with an empty `content-type`, which fastify rejects with 415
   fastify.addHook('onRequest', async (req) => {
