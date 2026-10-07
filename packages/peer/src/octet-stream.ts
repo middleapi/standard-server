@@ -32,6 +32,21 @@ export function toOctetStream(
   })
 }
 
+/**
+ * Copy a chunk that views only part of its `ArrayBuffer` (e.g. a slice of Node's
+ * pooled `Buffer` memory), so transports that structured-clone messages don't send
+ * the whole backing buffer, including unrelated data, to the remote peer.
+ * Chunks that already own their whole buffer are returned as-is.
+ */
+function toStandaloneBytes(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
+  if (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) {
+    return bytes
+  }
+
+  // Not `bytes.slice()`: `Buffer#slice` returns a view, not a copy
+  return new Uint8Array(bytes)
+}
+
 export class OctetStreamTransmitter {
   private isDone = false
   private readonly reader: ReadableStreamDefaultReader<Uint8Array<ArrayBuffer>>
@@ -67,7 +82,7 @@ export class OctetStreamTransmitter {
         try {
           await this.send({
             json: { close: item.done ? true : undefined },
-            binary: item.value,
+            binary: item.value && toStandaloneBytes(item.value),
             kind: 'octet-stream',
             id: this.messageId,
           })

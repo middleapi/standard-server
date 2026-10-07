@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer'
+
 import { Queue } from '@standard-server/shared'
 
 import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
@@ -139,6 +141,47 @@ describe('octetStreamTransmitter', () => {
       json: { close: true },
       binary: undefined,
     })
+  })
+
+  it('copies chunks that view part of a larger buffer', async () => {
+    const pooled = Buffer.from('hello')
+    const view = new Uint8Array(new ArrayBuffer(16), 4, 3).fill(7)
+    expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
+
+    const send = vi.fn(async (_message: PeerOctetStreamMessage) => {})
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(pooled)
+        controller.enqueue(view)
+        controller.close()
+      },
+    })
+
+    await new OctetStreamTransmitter(stream, 'msg-1', send).transmit()
+
+    const sent = send.mock.calls.map(([message]) => message.binary as Uint8Array<ArrayBuffer>)
+
+    expect(sent[0]!.buffer.byteLength).toBe(sent[0]!.byteLength)
+    expect(structuredClone(sent[0]!).buffer.byteLength).toBe(5)
+    expect(new TextDecoder().decode(sent[0])).toBe('hello')
+
+    expect(sent[1]!.buffer.byteLength).toBe(sent[1]!.byteLength)
+    expect(sent[1]).toEqual(new Uint8Array([7, 7, 7]))
+  })
+
+  it('sends chunks that own their whole buffer as-is', async () => {
+    const chunk = new Uint8Array([1, 2, 3])
+    const send = vi.fn(async (_message: PeerOctetStreamMessage) => {})
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(chunk)
+        controller.close()
+      },
+    })
+
+    await new OctetStreamTransmitter(stream, 'msg-1', send).transmit()
+
+    expect(send.mock.calls[0]![0].binary).toBe(chunk)
   })
 
   it('cancel stops transmission and cancels reader', async () => {
