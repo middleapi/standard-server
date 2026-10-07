@@ -797,6 +797,28 @@ describe('clientPeer', () => {
         await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
         await expect(iter.next()).rejects.toThrow('Server canceled the request')
       })
+
+      it('throws on resolving the event-stream response body multiple times', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'event-stream'))
+
+        const response = await promise
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await expect(response.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        // the first iterator still receives every event
+        await peer.message(makeEventStreamMessage(id, 0))
+        await peer.message(makeEventStreamMessage(id, 1))
+        await peer.message(makeEventStreamMessage(id, 2, 'close'))
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 0 })
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 1 })
+        await expect(iter.next()).resolves.toEqual({ done: true, value: 2 })
+        await expect(response.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+      })
     })
   })
 
@@ -1131,6 +1153,29 @@ describe('clientPeer', () => {
         expect(value).toEqual(new Uint8Array([5, 6]))
 
         await expect(reader.read()).rejects.toThrow('Server canceled the request')
+      })
+
+      it('throws on resolving the octet-stream response body multiple times', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'octet-stream'))
+
+        const response = await promise
+        const body = (await response.resolveBody()) as ReadableStream<Uint8Array>
+        await expect(response.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        // the first stream still receives every chunk
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([1])))
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([2])))
+        await peer.message(makeOctetStreamMessage(id, true))
+        const reader = body.getReader()
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1]) })
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([2]) })
+        expect(await reader.read()).toEqual({ done: true, value: undefined })
+        await expect(response.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
       })
     })
   })

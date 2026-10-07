@@ -1,4 +1,5 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
+import type { Queue } from '@standard-server/shared'
 import {
   AbortError,
   AsyncIteratorClass,
@@ -407,6 +408,7 @@ describe('serverPeer', () => {
         await vi.waitFor(() => expect(handler).toHaveBeenCalled())
         const request = handler.mock.calls[0]![0]
         const iter = (await request.resolveBody()) as AsyncIterator<unknown>
+        const queue: Queue<unknown> = (peer as any).requests.get('1').eventStreamMessageQueue
 
         await peer.message(makeEventStreamMessage('1', 'bye', 'close'), vi.fn())
         await expect(iter.next()).resolves.toEqual({ value: 'bye', done: true })
@@ -414,11 +416,41 @@ describe('serverPeer', () => {
         // late messages are ignored instead of buffered forever
         await peer.message(makeEventStreamMessage('1', 'late'), vi.fn())
         expect((peer as any).requests.get('1').eventStreamMessageQueue).toBeUndefined()
+        // the dropped queue is closed, so nothing can be left waiting on it
+        await expect(queue.pull()).rejects.toThrow('Queue was closed.')
 
         box.resolve(jsonResponse())
         await promise
 
         // the fully consumed body does not trigger a stream/cancel on close
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response'])
+      })
+
+      it('throws on resolving the event-stream request body multiple times', async () => {
+        const { handler, box } = deferredHandler()
+        const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
+        const promise = peer.message(msg, handler)
+
+        await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+        const request = handler.mock.calls[0]![0]
+        const iter = (await request.resolveBody()) as AsyncIterator<unknown>
+        await expect(request.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        // the first iterator still receives every event
+        await peer.message(makeEventStreamMessage('1', 0), vi.fn())
+        await peer.message(makeEventStreamMessage('1', 1), vi.fn())
+        await peer.message(makeEventStreamMessage('1', 2, 'close'), vi.fn())
+        await expect(iter.next()).resolves.toEqual({ value: 0, done: false })
+        await expect(iter.next()).resolves.toEqual({ value: 1, done: false })
+        await expect(iter.next()).resolves.toEqual({ value: 2, done: true })
+        await expect(request.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        box.resolve(jsonResponse())
+        await promise
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response'])
       })
     })
@@ -667,6 +699,73 @@ describe('serverPeer', () => {
           makeOctetStreamMessage('nonexist', undefined, new Uint8Array([1, 2, 3])),
           vi.fn(),
         )
+      })
+
+      it('stops accepting octet-stream messages once the body is fully consumed', async () => {
+        const { handler, box } = deferredHandler()
+        const msg = makeRequestMessage({
+          headers: {
+            'standard-server': 'octet-stream',
+            'content-type': 'application/octet-stream',
+          },
+        })
+        const promise = peer.message(msg, handler)
+
+        await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+        const request = handler.mock.calls[0]![0]
+        const body = (await request.resolveBody()) as ReadableStream<Uint8Array>
+        const queue: Queue<unknown> = (peer as any).requests.get('1').octetStreamMessageQueue
+
+        await peer.message(makeOctetStreamMessage('1', true, new Uint8Array([1])), vi.fn())
+        const reader = body.getReader()
+        expect(await reader.read()).toEqual({ value: new Uint8Array([1]), done: false })
+        expect(await reader.read()).toEqual({ value: undefined, done: true })
+
+        // late messages are ignored instead of buffered forever
+        await peer.message(makeOctetStreamMessage('1', true, new Uint8Array([2])), vi.fn())
+        expect((peer as any).requests.get('1').octetStreamMessageQueue).toBeUndefined()
+        // the dropped queue is closed, so nothing can be left waiting on it
+        await expect(queue.pull()).rejects.toThrow('Queue was closed.')
+
+        box.resolve(jsonResponse())
+        await promise
+
+        // the fully consumed body does not trigger a stream/cancel on close
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response'])
+      })
+
+      it('throws on resolving the octet-stream request body multiple times', async () => {
+        const { handler, box } = deferredHandler()
+        const msg = makeRequestMessage({
+          headers: {
+            'standard-server': 'octet-stream',
+            'content-type': 'application/octet-stream',
+          },
+        })
+        const promise = peer.message(msg, handler)
+
+        await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+        const request = handler.mock.calls[0]![0]
+        const body = (await request.resolveBody()) as ReadableStream<Uint8Array>
+        await expect(request.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        // the first stream still receives every chunk
+        await peer.message(makeOctetStreamMessage('1', false, new Uint8Array([1])), vi.fn())
+        await peer.message(makeOctetStreamMessage('1', false, new Uint8Array([2])), vi.fn())
+        await peer.message(makeOctetStreamMessage('1', true), vi.fn())
+        const reader = body.getReader()
+        expect(await reader.read()).toEqual({ value: new Uint8Array([1]), done: false })
+        expect(await reader.read()).toEqual({ value: new Uint8Array([2]), done: false })
+        expect(await reader.read()).toEqual({ value: undefined, done: true })
+        await expect(request.resolveBody()).rejects.toThrow(
+          new TypeError('Failed to read body: body stream already read'),
+        )
+
+        box.resolve(jsonResponse())
+        await promise
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response'])
       })
     })
 
