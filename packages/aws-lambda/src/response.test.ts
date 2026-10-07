@@ -56,6 +56,22 @@ function bodyOf(stream: HttpResponseStream & { chunks: Buffer[] }): string {
   return Buffer.concat(stream.chunks.slice(2)).toString()
 }
 
+/**
+ * Mimics a subscription: once started, the generator waits on a source that never settles,
+ * so `return()` (and any `finally` cleanup) would wait behind that pending `next()` forever.
+ */
+function createSubscriptionBody() {
+  let started = false
+
+  const body = (async function* () {
+    started = true
+    await new Promise(() => {})
+    yield 1
+  })()
+
+  return { body, isStarted: () => started }
+}
+
 describe('sendStandardResponse', () => {
   it('buffered (empty)', async () => {
     const responseStream = createResponseStream()
@@ -329,7 +345,7 @@ describe('sendStandardResponse', () => {
   })
 
   describe('response stream closed before sending', () => {
-    it('resolves and destroys the body', async () => {
+    it('resolves and releases the body without starting it', async () => {
       const responseStream = createResponseStream()
       responseStream.destroy()
 
@@ -337,26 +353,42 @@ describe('sendStandardResponse', () => {
         expect(responseStream.closed).toBe(true)
       })
 
-      let clean = false
-      const standardResponse: StandardResponse = {
-        body: (async function* () {
-          try {
-            yield 1
-          } finally {
-            clean = true
-          }
-        })(),
-        headers: {},
-        status: 200,
-      }
+      const { body, isStarted } = createSubscriptionBody()
 
-      await expect(sendStandardResponse(responseStream, standardResponse)).resolves.toBeUndefined()
+      await expect(
+        sendStandardResponse(responseStream, { status: 200, headers: {}, body }),
+      ).resolves.toBeUndefined()
+
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
+      expect(fromSpy).not.toHaveBeenCalled()
+
+      // released: the generator is closed without its body ever running
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
+    })
+
+    it('rejects and releases the body when the response stream was destroyed with an error', async () => {
+      const responseStream = createResponseStream()
+      responseStream.once('error', () => {})
+      responseStream.destroy(new Error('test'))
 
       await vi.waitFor(() => {
-        expect(clean).toBe(true)
+        expect(responseStream.closed).toBe(true)
       })
 
+      const { body, isStarted } = createSubscriptionBody()
+
+      await expect(
+        sendStandardResponse(responseStream, { status: 200, headers: {}, body }),
+      ).rejects.toThrow('test')
+
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
       expect(fromSpy).not.toHaveBeenCalled()
+
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
     })
 
     it('rejects when the response stream was destroyed with an error', async () => {

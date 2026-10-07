@@ -1,4 +1,5 @@
 import type { StandardResponse } from '@standard-server/core'
+import { cancelStandardBody } from '@standard-server/core'
 
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
@@ -12,6 +13,21 @@ export async function sendStandardResponse(
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
+  if (!canWriteToNodeResponse(res)) {
+    const error = getNodeResponseError(res)
+
+    // Release the body without converting it: converting an event stream already starts
+    // its iterator, whose cleanup then waits behind a `next()` that may never settle.
+    // WARNING: errors that occur here are silently ignored
+    cancelStandardBody(standardResponse.body, error ?? undefined).catch(() => {})
+
+    if (error) {
+      throw error
+    }
+
+    return
+  }
+
   const [resBody, resHeaders] = toNodeHttpBody(
     standardResponse.body,
     standardResponse.headers,
@@ -19,20 +35,6 @@ export async function sendStandardResponse(
   )
 
   return new Promise((resolve, reject) => {
-    if (!canWriteToNodeResponse(res)) {
-      const error = getNodeResponseError(res)
-
-      destroyNodeHttpBody(resBody, error, reject)
-
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-
-      return
-    }
-
     const connection = 'stream' in res ? res.stream : res
 
     connection.once('error', reject)

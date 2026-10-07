@@ -476,20 +476,8 @@ describe('sendStandardResponse', () => {
   })
 
   describe('response closed before sending', () => {
-    it('resolves and destroys the body', async () => {
-      let clean = false
-      const res: StandardResponse = {
-        body: (async function* () {
-          try {
-            yield 1
-          } catch (error) {
-          } finally {
-            clean = true
-          }
-        })(),
-        headers: {},
-        status: 200,
-      }
+    it('resolves and releases the body without starting it', async () => {
+      const { body, isStarted } = createSubscriptionBody()
 
       const responseStream = new Stream.Writable({
         write(chunk, encoding, callback) {
@@ -505,28 +493,21 @@ describe('sendStandardResponse', () => {
         expect(responseStream.closed).toBe(true)
       })
 
-      await expect(sendStandardResponse(responseStream as any, res)).resolves.toBeUndefined()
+      await expect(
+        sendStandardResponse(responseStream as any, { status: 200, headers: {}, body }),
+      ).resolves.toBeUndefined()
 
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
-
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
       expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+
+      // released: the generator is closed without its body ever running
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
     })
 
     it('rejects when response was destroyed with an error', async () => {
-      let clean = false
-      const res: StandardResponse = {
-        body: (async function* () {
-          try {
-            yield 1
-          } finally {
-            clean = true
-          }
-        })(),
-        headers: {},
-        status: 200,
-      }
+      const { body, isStarted } = createSubscriptionBody()
 
       const responseStream = new Stream.Writable({
         write(chunk, encoding, callback) {
@@ -543,13 +524,43 @@ describe('sendStandardResponse', () => {
         expect(responseStream.closed).toBe(true)
       })
 
-      await expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow('test')
+      await expect(
+        sendStandardResponse(responseStream as any, { status: 200, headers: {}, body }),
+      ).rejects.toThrow('test')
 
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
+      expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
+    })
+
+    it('cancels a stream body with the response error', async () => {
+      const cancel = vi.fn()
+      const body = new ReadableStream({ cancel })
+
+      const responseStream = new Stream.Writable({
+        write(chunk, encoding, callback) {
+          callback()
+        },
       })
 
-      expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+      const error = new Error('test')
+      responseStream.once('error', () => {})
+      responseStream.destroy(error)
+
+      await vi.waitFor(() => {
+        expect(responseStream.closed).toBe(true)
+      })
+
+      await expect(
+        sendStandardResponse(responseStream as any, { status: 200, headers: {}, body }),
+      ).rejects.toBe(error)
+
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(cancel).toHaveBeenCalledWith(error)
     })
   })
 
@@ -661,6 +672,22 @@ describe('sendStandardResponse', () => {
     })
   })
 })
+
+/**
+ * Mimics a subscription: once started, the generator waits on a source that never settles,
+ * so `return()` (and any `finally` cleanup) would wait behind that pending `next()` forever.
+ */
+function createSubscriptionBody() {
+  let started = false
+
+  const body = (async function* () {
+    started = true
+    await new Promise(() => {})
+    yield 1
+  })()
+
+  return { body, isStarted: () => started }
+}
 
 async function requestHttp2Head(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,

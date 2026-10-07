@@ -503,16 +503,8 @@ describe('sendStandardResponse', () => {
       expect(reply.send).not.toHaveBeenCalled()
     })
 
-    it('resolves and destroys the body', async () => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          yield 1
-        } catch {
-        } finally {
-          clean = true
-        }
-      })()
+    it('resolves and releases the body without starting it', async () => {
+      const { body, isStarted } = createSubscriptionBody()
 
       const raw = new Writable({
         write(chunk, encoding, callback) {
@@ -541,24 +533,19 @@ describe('sendStandardResponse', () => {
         }),
       ).resolves.toBeUndefined()
 
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
-
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
       expect(reply.status).not.toHaveBeenCalled()
       expect(reply.header).not.toHaveBeenCalled()
       expect(reply.send).not.toHaveBeenCalled()
+
+      // released: the generator is closed without its body ever running
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
     })
 
     it('rejects when an http2 response was destroyed with an error', async () => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          yield 1
-        } finally {
-          clean = true
-        }
-      })()
+      const { body, isStarted } = createSubscriptionBody()
 
       const stream = new Writable({
         write(chunk, encoding, callback) {
@@ -589,22 +576,16 @@ describe('sendStandardResponse', () => {
         }),
       ).rejects.toThrow('test')
 
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
-
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
       expect(reply.send).not.toHaveBeenCalled()
+
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
     })
 
     it('rejects when response was destroyed with an error', async () => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          yield 1
-        } finally {
-          clean = true
-        }
-      })()
+      const { body, isStarted } = createSubscriptionBody()
 
       const raw = new Writable({
         write(chunk, encoding, callback) {
@@ -634,13 +615,14 @@ describe('sendStandardResponse', () => {
         }),
       ).rejects.toThrow('test')
 
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
-
+      expect(toNodeHttpBodySpy).not.toHaveBeenCalled()
       expect(reply.status).not.toHaveBeenCalled()
       expect(reply.header).not.toHaveBeenCalled()
       expect(reply.send).not.toHaveBeenCalled()
+
+      expect(isStarted()).toBe(false)
+      await expect(body.next()).resolves.toEqual({ done: true, value: undefined })
+      expect(isStarted()).toBe(false)
     })
   })
 
@@ -779,6 +761,22 @@ function createEndlessBody() {
   })()
 
   return { body, isReleased: () => released }
+}
+
+/**
+ * Mimics a subscription: once started, the generator waits on a source that never settles,
+ * so `return()` (and any `finally` cleanup) would wait behind that pending `next()` forever.
+ */
+function createSubscriptionBody() {
+  let started = false
+
+  const body = (async function* () {
+    started = true
+    await new Promise(() => {})
+    yield 1
+  })()
+
+  return { body, isStarted: () => started }
 }
 
 async function requestHttp2Head(
