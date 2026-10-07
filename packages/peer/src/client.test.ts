@@ -124,6 +124,23 @@ describe('clientPeer', () => {
     return { id, promise }
   }
 
+  /**
+   * Holds `send` of the request message until released, like a transport that resolves only after
+   * the server handled the request. `onRequest` runs first, e.g. to deliver an early response.
+   */
+  function holdRequestSend(onRequest?: (message: PeerRequestMessage) => Promise<void>) {
+    const requestSending = promiseWithResolvers<PeerRequestMessage>()
+    const releaseRequest = promiseWithResolvers<void>()
+    send.mockImplementation(async (message) => {
+      if (message.kind === 'request') {
+        requestSending.resolve(message)
+        await onRequest?.(message)
+        await releaseRequest.promise
+      }
+    })
+    return { requestSending: requestSending.promise, releaseRequest }
+  }
+
   describe('request / response', () => {
     it('sends PeerRequestMessage and resolves on PeerResponseMessage', async () => {
       const { id, promise } = await requestAndGetId(makeRequest({}))
@@ -254,19 +271,11 @@ describe('clientPeer', () => {
 
   describe('signal / abort', () => {
     async function abortWhileSendingRequest(body: StandardRequest['body']) {
-      const requestSending = promiseWithResolvers<PeerRequestMessage>()
-      const releaseRequest = promiseWithResolvers<void>()
-      send.mockImplementation(async (message) => {
-        if (message.kind === 'request') {
-          requestSending.resolve(message)
-          // e.g. a transport that resolves only after the server handled the request
-          await releaseRequest.promise
-        }
-      })
+      const { requestSending, releaseRequest } = holdRequestSend()
 
       const controller = new AbortController()
       const promise = peer.request(makeRequest({ body, signal: controller.signal }))
-      const { id } = await requestSending.promise
+      const { id } = await requestSending
       const error = new Error('aborted during send')
       controller.abort(error)
 
@@ -584,13 +593,8 @@ describe('clientPeer', () => {
       })
 
       it('streams the event-stream request body while the request message is still in flight', async () => {
-        const releaseRequest = promiseWithResolvers<void>()
-        send.mockImplementation(async (message) => {
-          if (message.kind === 'request') {
-            // e.g. a transport that resolves only after the server read the whole request body
-            await releaseRequest.promise
-          }
-        })
+        // e.g. a transport that resolves only after the server read the whole request body
+        const { releaseRequest } = holdRequestSend()
 
         const { id, promise } = await requestAndGetId(
           makeRequest({ method: 'POST', headers: {}, body: makeAsyncIter(['a']) }),
@@ -824,20 +828,16 @@ describe('clientPeer', () => {
       })
 
       it('cancel request when canceling iterator while the request message is still in flight', async () => {
-        const releaseRequest = promiseWithResolvers<void>()
-        send.mockImplementation(async (message) => {
-          if (message.kind === 'request') {
-            // e.g. a transport that resolves only after the server finished streaming the response
-            await peer.message(makeStreamingResponse(message.id, 'event-stream'))
-            await releaseRequest.promise
-          }
-        })
+        // e.g. a transport that resolves only after the server finished streaming the response
+        const { requestSending, releaseRequest } = holdRequestSend((message) =>
+          peer.message(makeStreamingResponse(message.id, 'event-stream')),
+        )
 
         const response = await peer.request(makeRequest())
         const iter = (await response.resolveBody()) as AsyncIterator<unknown>
         await iter.return?.()
 
-        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
+        const { id } = await requestSending
         expect(send).toHaveBeenCalledTimes(2)
         expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
 
@@ -903,13 +903,8 @@ describe('clientPeer', () => {
       })
 
       it('streams the octet-stream request body while the request message is still in flight', async () => {
-        const releaseRequest = promiseWithResolvers<void>()
-        send.mockImplementation(async (message) => {
-          if (message.kind === 'request') {
-            // e.g. a transport that resolves only after the server read the whole request body
-            await releaseRequest.promise
-          }
-        })
+        // e.g. a transport that resolves only after the server read the whole request body
+        const { releaseRequest } = holdRequestSend()
 
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -935,12 +930,7 @@ describe('clientPeer', () => {
       })
 
       it('cancels the octet-stream request body and rejects when the in-flight request message fails to send', async () => {
-        const releaseRequest = promiseWithResolvers<void>()
-        send.mockImplementation(async (message) => {
-          if (message.kind === 'request') {
-            await releaseRequest.promise
-          }
-        })
+        const { releaseRequest } = holdRequestSend()
 
         const cancel = vi.fn()
         const promise = peer.request(

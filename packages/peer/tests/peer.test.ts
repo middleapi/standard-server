@@ -53,6 +53,10 @@ function connect(
   return wire
 }
 
+function getPeerSize(peer: ClientPeer | ServerPeer): number {
+  return (peer as any).requests.size
+}
+
 describe('peer integration (client <-> server over encoded wire)', () => {
   it('completes a JSON request/response cycle', async () => {
     const { client } = connect(async (request) => ({
@@ -359,8 +363,8 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       })
 
       expect(await response.resolveBody()).toBe('hello world')
-      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
-      expect((client as any).requests.size).toBe(0)
+      await vi.waitFor(() => expect(getPeerSize(server)).toBe(0))
+      expect(getPeerSize(client)).toBe(0)
     })
 
     it('uploads an event-stream request body the handler reads', async () => {
@@ -386,8 +390,8 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       })
 
       expect(await response.resolveBody()).toEqual(['a', 'b'])
-      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
-      expect((client as any).requests.size).toBe(0)
+      await vi.waitFor(() => expect(getPeerSize(server)).toBe(0))
+      expect(getPeerSize(client)).toBe(0)
     })
 
     it('stops uploading a request body the server cancelled', async () => {
@@ -446,7 +450,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
         await expect(promise).rejects.toThrow('user navigated away')
         await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
-        await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
+        await vi.waitFor(() => expect(getPeerSize(server)).toBe(0))
       },
     )
 
@@ -478,8 +482,8 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       await iterator.return!()
 
       await finished.promise
-      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
-      expect((client as any).requests.size).toBe(0)
+      await vi.waitFor(() => expect(getPeerSize(server)).toBe(0))
+      expect(getPeerSize(client)).toBe(0)
     })
   })
 
@@ -525,7 +529,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     ).rejects.toThrow(TypeError)
 
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
-    expect((server as any).requests.size).toBe(0)
+    expect(getPeerSize(server)).toBe(0)
   })
 
   it('propagates a client abort fired while the request message is still being sent', async () => {
