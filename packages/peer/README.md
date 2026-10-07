@@ -124,6 +124,15 @@ const payload = await response.resolveBody()
 > [!TIP]
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.
 
+## Implementing `send`
+
+`ClientPeer` and `ServerPeer` hand every outgoing message to the `send` function you pass in, and can call it again before an earlier call settles. In particular, `ClientPeer` does not wait for the request message's `send` to resolve before it streams the request body or cancels the request. Your `send` must:
+
+- **Deliver messages in the order it is called.** A request or response message must reach the other peer before its stream messages. Encoding with `encodePeerMessage()` first, as in the example above, is fine: only a message carrying a `Blob` waits on encoding, and the only message that can overtake one is a cancel for a request aborted while its `send` is pending, which `ClientPeer` sends again once that `send` resolves.
+- **Reject if the message cannot be delivered.** If the request message fails to send, the request rejects with that error.
+
+The promise `send` returns may resolve as soon as the message is handed to the transport, or only after the other peer has handled it. Request/response channels work too: for example, Electron's `ipcRenderer.invoke()` paired with an `ipcMain.handle()` listener that returns `serverPeer.message(...)`. That promise settles only after the handler has returned and the whole response, including a streamed body, has been sent, yet the handler can still read a streamed request body and observe client aborts in the meantime.
+
 ## Body resolution
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.

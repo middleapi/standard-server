@@ -44,10 +44,10 @@ export class OctetStreamTransmitter {
     this.reader = stream.getReader()
   }
 
-  async cancel(): Promise<void> {
+  async cancel(reason?: unknown): Promise<void> {
     if (!this.isDone) {
       this.isDone = true
-      await this.reader.cancel()
+      await this.reader.cancel(reason)
     }
   }
 

@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
 import {
@@ -75,21 +75,6 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       url: '/greet',
       method: 'PUT',
     })
-  })
-
-  it('completes when the transport waits for full remote processing before send resolves', async () => {
-    const { client } = connect(
-      async (request) => ({
-        status: 200,
-        headers: {},
-        body: { pong: request.url },
-      }),
-      { waitForRemote: true },
-    )
-
-    const response = await client.request({ url: '/ping', method: 'GET', headers: {} })
-    expect(response.status).toBe(200)
-    expect(await response.resolveBody()).toEqual({ pong: '/ping' })
   })
 
   it('handles multiple concurrent requests over the same connection', async () => {
@@ -333,28 +318,169 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(await readAll(body as ReadableStream<Uint8Array>)).toEqual([4, 5])
   })
 
-  it('does not upload a request body the server cancelled while the request message was still being sent', async () => {
-    const { client } = connect(
-      async (request) => {
-        await ((await request.resolveBody()) as ReadableStream).cancel()
-        // a streamed response keeps the request open after the request `send` resolves
-        return { status: 200, headers: {}, body: (async function* () {})() }
-      },
-      { waitForRemote: true },
-    )
+  describe('when send resolves only after the remote handled the message', () => {
+    it('completes a request/response cycle', async () => {
+      const { client } = connect(
+        async (request) => ({
+          status: 200,
+          headers: {},
+          body: { pong: request.url },
+        }),
+        { waitForRemote: true },
+      )
 
-    const cancel = vi.fn()
-    await client.request({
-      url: '/upload',
-      method: 'POST',
-      headers: {},
-      body: new ReadableStream<Uint8Array>({
-        start: (controller) => controller.enqueue(new Uint8Array([1, 2])),
-        cancel,
-      }),
+      const response = await client.request({ url: '/ping', method: 'GET', headers: {} })
+      expect(response.status).toBe(200)
+      expect(await response.resolveBody()).toEqual({ pong: '/ping' })
     })
 
-    await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+    it('uploads a streamed request body the handler reads', async () => {
+      const { client, server } = connect(
+        async (request) => ({
+          status: 200,
+          headers: {},
+          body: await new Response((await request.resolveBody()) as ReadableStream).text(),
+        }),
+        { waitForRemote: true },
+      )
+
+      const encoder = new TextEncoder()
+      const response = await client.request({
+        url: '/upload',
+        method: 'POST',
+        headers: {},
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('hello '))
+            controller.enqueue(encoder.encode('world'))
+            controller.close()
+          },
+        }),
+      })
+
+      expect(await response.resolveBody()).toBe('hello world')
+      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
+      expect((client as any).requests.size).toBe(0)
+    })
+
+    it('uploads an event-stream request body the handler reads', async () => {
+      const { client, server } = connect(
+        async (request) => {
+          const received: unknown[] = []
+          for await (const event of (await request.resolveBody()) as AsyncIterable<unknown>) {
+            received.push(event)
+          }
+          return { status: 200, headers: {}, body: received }
+        },
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({
+        url: '/ingest',
+        method: 'POST',
+        headers: {},
+        body: (async function* () {
+          yield 'a'
+          yield 'b'
+        })(),
+      })
+
+      expect(await response.resolveBody()).toEqual(['a', 'b'])
+      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
+      expect((client as any).requests.size).toBe(0)
+    })
+
+    it('stops uploading a request body the server cancelled', async () => {
+      const { client } = connect(
+        async (request) => {
+          await ((await request.resolveBody()) as ReadableStream).cancel()
+          // a streamed response keeps the request open after the request `send` resolves
+          return { status: 200, headers: {}, body: (async function* () {})() }
+        },
+        { waitForRemote: true },
+      )
+
+      const cancel = vi.fn()
+      await client.request({
+        url: '/upload',
+        method: 'POST',
+        headers: {},
+        body: new ReadableStream<Uint8Array>({
+          start: (controller) => controller.enqueue(new Uint8Array([1, 2])),
+          cancel,
+        }),
+      })
+
+      await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+    })
+
+    it.each([
+      ['GET', undefined],
+      ['POST', new File(['hello'], 'hello.txt', { type: 'text/plain' })],
+    ] as const)(
+      'propagates a client abort to a %s handler that is still running',
+      async (method, body) => {
+        let serverSignal: AbortSignal | undefined
+
+        const { client, server } = connect(
+          async (request) => {
+            serverSignal = request.signal
+            // settles only once the request is aborted
+            await new Promise((resolve) => request.signal?.addEventListener('abort', resolve))
+            return { status: 200, headers: {} }
+          },
+          { waitForRemote: true },
+        )
+
+        const controller = new AbortController()
+        const promise = client.request({
+          url: '/slow',
+          method,
+          headers: {},
+          body,
+          signal: controller.signal,
+        })
+
+        await vi.waitFor(() => expect(serverSignal).toBeDefined())
+        controller.abort(new Error('user navigated away'))
+
+        await expect(promise).rejects.toThrow('user navigated away')
+        await vi.waitFor(() => expect(serverSignal!.aborted).toBe(true))
+        await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
+      },
+    )
+
+    it('stops an endless response stream when the client returns its iterator', async () => {
+      const finished = promiseWithResolvers<void>()
+
+      const { client, server } = connect(
+        async () => ({
+          status: 200,
+          headers: {},
+          body: (async function* () {
+            try {
+              for (let i = 0; ; i++) {
+                yield i
+                await sleep(1)
+              }
+            } finally {
+              finished.resolve()
+            }
+          })(),
+        }),
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({ url: '/events', method: 'GET', headers: {} })
+      const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
+
+      await expect(iterator.next()).resolves.toEqual({ done: false, value: 0 })
+      await iterator.return!()
+
+      await finished.promise
+      await vi.waitFor(() => expect((server as any).requests.size).toBe(0))
+      expect((client as any).requests.size).toBe(0)
+    })
   })
 
   it('propagates client aborts to the server handler signal', async () => {

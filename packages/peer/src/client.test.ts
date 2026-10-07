@@ -253,30 +253,31 @@ describe('clientPeer', () => {
   })
 
   describe('signal / abort', () => {
-    async function abortWhileSendingRequest() {
+    async function abortWhileSendingRequest(body: StandardRequest['body']) {
       const requestSending = promiseWithResolvers<PeerRequestMessage>()
       const releaseRequest = promiseWithResolvers<void>()
-      const bodyCancelled = promiseWithResolvers<void>()
       send.mockImplementation(async (message) => {
         if (message.kind === 'request') {
           requestSending.resolve(message)
+          // e.g. a transport that resolves only after the server handled the request
           await releaseRequest.promise
         }
       })
 
       const controller = new AbortController()
-      const body = new ReadableStream({ cancel: () => bodyCancelled.resolve() })
       const promise = peer.request(makeRequest({ body, signal: controller.signal }))
       const { id } = await requestSending.promise
       const error = new Error('aborted during send')
       controller.abort(error)
 
-      // the request settles right away, but the cancel must not overtake the request message
+      // the cancel follows the in-flight request message right away, so the server can stop handling it
       await expect(promise).rejects.toBe(error)
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      await vi.waitFor(() =>
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel']),
+      )
+      expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
 
-      // the unsent body is released last, after any cancel message
-      return { id, releaseRequest, bodyCancelled: bodyCancelled.promise }
+      return { id, releaseRequest }
     }
 
     it('throws immediately if signal already aborted', async () => {
@@ -452,22 +453,35 @@ describe('clientPeer', () => {
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
-    it('sends the cancel message once the in-flight request message is sent', async () => {
-      const { id, releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+    it('sends the cancel message while the request message is still in flight', async () => {
+      const cancel = vi.fn()
+      const { releaseRequest } = await abortWhileSendingRequest(new ReadableStream({ cancel }))
+
+      // the body was already streaming, so it is released with the abort reason
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(cancel).toHaveBeenCalledWith(new Error('aborted during send'))
 
       releaseRequest.resolve()
-      await bodyCancelled
-      expect(send).toHaveBeenCalledTimes(2)
-      expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
-    it('does not send a cancel message when the in-flight request message fails to send', async () => {
-      const { releaseRequest, bodyCancelled } = await abortWhileSendingRequest()
+    it('repeats the cancel message once an in-flight request message with a Blob body is sent', async () => {
+      const { id, releaseRequest } = await abortWhileSendingRequest(new Blob(['hello']))
+
+      // `send` may still be reading the Blob, so the first cancel may have overtaken the request message
+      releaseRequest.resolve()
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3))
+      expect(send).toHaveBeenNthCalledWith(3, { id, kind: 'cancel' })
+    })
+
+    it('does not repeat the cancel message when the in-flight request message fails to send', async () => {
+      const { releaseRequest } = await abortWhileSendingRequest(new Blob(['hello']))
 
       // the server never received the request, so there is nothing to cancel there
       releaseRequest.reject(new Error('transport down'))
-      await bodyCancelled
-      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
     })
 
     it('rejects pending request on server abort', async () => {
@@ -567,6 +581,32 @@ describe('clientPeer', () => {
 
         await peer.message(makeResponseMessage(id))
         await promise
+      })
+
+      it('streams the event-stream request body while the request message is still in flight', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // e.g. a transport that resolves only after the server read the whole request body
+            await releaseRequest.promise
+          }
+        })
+
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: makeAsyncIter(['a']) }),
+        )
+
+        await vi.waitFor(() =>
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual([
+            'request',
+            'event-stream',
+            'event-stream',
+          ]),
+        )
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        expect(await (await promise).resolveBody()).toBe('ok')
+        releaseRequest.resolve()
       })
 
       it('cancels iterator on stream/cancel message', async () => {
@@ -783,6 +823,29 @@ describe('clientPeer', () => {
         expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'cancel' }))
       })
 
+      it('cancel request when canceling iterator while the request message is still in flight', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // e.g. a transport that resolves only after the server finished streaming the response
+            await peer.message(makeStreamingResponse(message.id, 'event-stream'))
+            await releaseRequest.promise
+          }
+        })
+
+        const response = await peer.request(makeRequest())
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await iter.return?.()
+
+        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
+        expect(send).toHaveBeenCalledTimes(2)
+        expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
+
+        releaseRequest.resolve()
+        await sleep(1)
+        expect(send).toHaveBeenCalledTimes(2)
+      })
+
       it('iterator error if receive cancel message', async () => {
         const { id, promise } = await requestAndGetId()
         await peer.message(makeStreamingResponse(id, 'event-stream'))
@@ -837,6 +900,61 @@ describe('clientPeer', () => {
           json: { close: true },
           binary: undefined,
         })
+      })
+
+      it('streams the octet-stream request body while the request message is still in flight', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // e.g. a transport that resolves only after the server read the whole request body
+            await releaseRequest.promise
+          }
+        })
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2]))
+            controller.close()
+          },
+        })
+        const { id, promise } = await requestAndGetId(
+          makeRequest({ method: 'POST', headers: {}, body: stream }),
+        )
+
+        await vi.waitFor(() =>
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual([
+            'request',
+            'octet-stream',
+            'octet-stream',
+          ]),
+        )
+
+        await peer.message(makeResponseMessage(id, 'ok'))
+        expect(await (await promise).resolveBody()).toBe('ok')
+        releaseRequest.resolve()
+      })
+
+      it('cancels the octet-stream request body and rejects when the in-flight request message fails to send', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            await releaseRequest.promise
+          }
+        })
+
+        const cancel = vi.fn()
+        const promise = peer.request(
+          makeRequest({ method: 'POST', headers: {}, body: new ReadableStream({ cancel }) }),
+        )
+        await waitForSend()
+
+        const error = new Error('transport down')
+        releaseRequest.reject(error)
+
+        await expect(promise).rejects.toBe(error)
+        await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(error))
+        // the server may never have received the request, so there is nothing to cancel there
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
       })
 
       it('cancels transmitter on stream/cancel message', async () => {

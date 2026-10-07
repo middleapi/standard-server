@@ -26,6 +26,12 @@ interface ServerPeerRequestStateInternal {
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
 
+  /**
+   * @param send Delivers a message to the client peer. It can be called again before an earlier call
+   * settles, e.g. for another request, and must deliver messages in the order it is called. It may resolve
+   * as soon as the message is handed to the transport, or only after the client peer has handled it.
+   * It must reject if the message cannot be delivered.
+   */
   constructor(private readonly send: (message: ServerPeerSendMessage) => Promise<void>) {}
 
   /**

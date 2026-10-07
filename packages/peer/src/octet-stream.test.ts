@@ -156,10 +156,12 @@ describe('octetStreamTransmitter', () => {
     const transmitter = new OctetStreamTransmitter(stream, 'msg-1', send)
     const transmitPromise = transmitter.transmit()
 
-    await transmitter.cancel()
+    const reason = new Error('cancelled')
+    await transmitter.cancel(reason)
     await transmitPromise
 
     expect(cancel).toHaveBeenCalledTimes(1)
+    expect(cancel).toHaveBeenCalledWith(reason)
     // should not have sent anything since cancel happened before first read resolved
     expect(send).not.toHaveBeenCalled()
   })
