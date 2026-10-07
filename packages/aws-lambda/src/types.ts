@@ -7,11 +7,17 @@ import type { Writable } from 'node:stream'
  */
 export interface APIGatewayProxyEvent {
   /**
+   * Only set by HTTP APIs, REST APIs and ALB omit it.
+   *
+   * @example '1.0'
+   */
+  version?: string
+  /**
    * @example 'GET', 'POST', etc.
    */
   httpMethod: string
   /**
-   * Url-decoded when delivered by an HTTP API, still encoded from a REST API.
+   * Url-decoded when delivered by an HTTP API (`version` is `'1.0'`), still encoded from a REST API or ALB.
    *
    * @example '/example'
    */
@@ -46,7 +52,8 @@ export interface APIGatewayProxyEvent {
  */
 export interface APIGatewayProxyEventV2 {
   /**
-   * Url-decoded when delivered by an HTTP API, still encoded from a Lambda Function URL.
+   * Url-decoded when delivered by an HTTP API, still encoded from a Lambda Function URL,
+   * told apart by `requestContext.domainName`.
    *
    * @example '/example'
    */
@@ -64,6 +71,13 @@ export interface APIGatewayProxyEventV2 {
    */
   cookies?: string[] | null
   requestContext: {
+    /**
+     * `<url-id>.lambda-url.<region>.on.aws` for Lambda Function URLs,
+     * anything else, or missing, is treated as an HTTP API.
+     *
+     * @example 'id.execute-api.us-east-1.amazonaws.com'
+     */
+    domainName?: string
     http: {
       /**
        * @example 'GET', 'POST', etc.

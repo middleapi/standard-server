@@ -3,7 +3,15 @@ import { safeEncodeURIComponent } from '@standard-server/shared'
 
 import type { AnyAPIGatewayProxyEvent } from './types'
 
+// the WHATWG path percent-encode set, characters that can never appear literally in an encoded path
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
+
+// plus `%` and `\`, a decoded path carries them as data: left as-is, `URL` would decode `%2e%2e`
+// again into a dot segment and treat `\` as `/`, resolving segments API Gateway never routed on
+const DECODED_PATH_CHAR_RE = /[\0-\x20"#%<>?\\^`{}\x7F-\u{10FFFF}]/gu
+
+// anchored, so an HTTP API custom domain cannot pass for a Lambda Function URL
+const FUNCTION_URL_DOMAIN_RE = /\.lambda-url\.[a-z0-9-]+\.on\.aws$/
 
 /**
  * Build a standard url from an API Gateway proxy event.
@@ -13,12 +21,15 @@ const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
  */
 export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   if (!('httpMethod' in event)) {
-    const pathname = toPathname(event.rawPath)
+    // HTTP APIs deliver `rawPath` url-decoded, Lambda Function URLs still encoded
+    const isDecoded = !FUNCTION_URL_DOMAIN_RE.test(event.requestContext.domainName ?? '')
+    const pathname = toPathname(event.rawPath, isDecoded)
 
     return event.rawQueryString ? `${pathname}?${event.rawQueryString}` : pathname
   }
 
-  const pathname = toPathname(event.path)
+  // only HTTP APIs set `version` and deliver `path` url-decoded, REST APIs and ALB still encoded
+  const pathname = toPathname(event.path, event.version === '1.0')
 
   const query = new URLSearchParams()
 
@@ -47,8 +58,11 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   return search === '' ? pathname : `${pathname}?${search}`
 }
 
-function toPathname(path: string): `/${string}` {
-  const encoded = path.replace(UNENCODED_PATH_CHAR_RE, safeEncodeURIComponent)
+function toPathname(path: string, isDecoded: boolean): `/${string}` {
+  const encoded = path.replace(
+    isDecoded ? DECODED_PATH_CHAR_RE : UNENCODED_PATH_CHAR_RE,
+    safeEncodeURIComponent,
+  )
 
   return encoded.startsWith('/') ? (encoded as `/${string}`) : `/${encoded}`
 }
