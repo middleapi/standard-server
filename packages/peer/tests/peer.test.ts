@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
 import {
@@ -18,10 +18,16 @@ import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
  *
  * With `waitForRemote`, each send resolves only after the remote side handled the message,
  * so the remote's replies arrive while the send is still in flight.
+ *
+ * With `requestAck`, the client's request message is delivered right away, but its send resolves
+ * only once `requestAck` does, like a transport that waits for the remote to acknowledge delivery.
  */
 function connect(
   handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
-  { waitForRemote = false } = {},
+  {
+    waitForRemote = false,
+    requestAck,
+  }: { waitForRemote?: boolean; requestAck?: Promise<void> } = {},
 ): { client: ClientPeer; server: ServerPeer } {
   const prefix = 'peer:'
   const wire = {} as { client: ClientPeer; server: ServerPeer }
@@ -36,6 +42,9 @@ function connect(
       await handled
     } else {
       void handled.catch(() => {})
+    }
+    if (requestAck && message.kind === 'request') {
+      await requestAck
     }
   })
 
@@ -436,6 +445,77 @@ describe('peer integration (client <-> server over encoded wire)', () => {
 
     releaseEncode.resolve()
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
+  })
+
+  it('cancels the server event stream when the client stops reading it before the request send resolves', async () => {
+    const requestAck = promiseWithResolvers<void>()
+    let streamCleanedUp = false
+
+    const { client, server } = connect(
+      async () => ({
+        status: 200,
+        headers: {},
+        body: (async function* () {
+          try {
+            while (true) {
+              yield 'tick'
+              await sleep(1)
+            }
+          } finally {
+            streamCleanedUp = true
+          }
+        })(),
+      }),
+      { requestAck: requestAck.promise },
+    )
+    const serverMessage = vi.spyOn(server, 'message')
+
+    const response = await client.request({ url: '/events', method: 'GET', headers: {} })
+    const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: 'tick' })
+    await iterator.return!()
+
+    // the cancel must not overtake the request message, so it waits for the ack
+    expect(serverMessage.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+    requestAck.resolve()
+    await vi.waitFor(() => expect(streamCleanedUp).toBe(true))
+    expect(serverMessage.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    expect((server as any).requests.size).toBe(0)
+  })
+
+  it('cancels the server octet stream when the client stops reading it before the request send resolves', async () => {
+    const requestAck = promiseWithResolvers<void>()
+    const streamCancelled = vi.fn()
+
+    const { client, server } = connect(
+      async () => ({
+        status: 200,
+        headers: {},
+        body: new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            await sleep(1)
+            controller.enqueue(new Uint8Array([1]))
+          },
+          cancel: streamCancelled,
+        }),
+      }),
+      { requestAck: requestAck.promise },
+    )
+    const serverMessage = vi.spyOn(server, 'message')
+
+    const response = await client.request({ url: '/download', method: 'GET', headers: {} })
+    const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+    await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([1]) })
+    await reader.cancel()
+
+    // the cancel must not overtake the request message, so it waits for the ack
+    expect(serverMessage.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+    requestAck.resolve()
+    await vi.waitFor(() => expect(streamCancelled).toHaveBeenCalled())
+    expect(serverMessage.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+    expect((server as any).requests.size).toBe(0)
   })
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {

@@ -29,9 +29,11 @@ interface ClientPeerRequestStateInternal {
   removeAbortListener?: (() => void) | undefined
   /**
    * A cancel must not overtake the request message (the server ignores cancels for unknown ids),
-   * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
+   * so until the request message is sent, abortById only sets cancelPending
+   * and transmitRequest sends the cancel once the request message is out.
    */
   requestSent?: boolean | undefined
+  cancelPending?: boolean | undefined
   streamCancelled?: boolean | undefined
 }
 
@@ -109,7 +111,7 @@ export class ClientPeer {
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
-        if (request.signal?.aborted) {
+        if (state.cancelPending) {
           await this.send({ id, kind: 'cancel' })
         }
 
@@ -285,6 +287,10 @@ export class ClientPeer {
     state.octetStreamMessageQueue?.abort(reason)
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
+
+    if (!state.requestSent) {
+      state.cancelPending = true
+    }
 
     const promises = [
       state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,

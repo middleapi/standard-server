@@ -470,6 +470,26 @@ describe('clientPeer', () => {
       expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
     })
 
+    it('does not send a cancel message when the signal aborts after the request completed during send', async () => {
+      const controller = new AbortController()
+      const releaseRequest = promiseWithResolvers<void>()
+      send.mockImplementation(async (message) => {
+        if (message.kind === 'request') {
+          await peer.message(makeResponseMessage(message.id, 'done'))
+          await releaseRequest.promise
+        }
+      })
+
+      const response = await peer.request(makeRequest({ signal: controller.signal }))
+      expect(await response.resolveBody()).toBe('done')
+
+      // the server already finished the request, so a late abort has nothing to cancel
+      controller.abort(new Error('late abort'))
+      releaseRequest.resolve()
+      await sleep(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
+
     it('rejects pending request on server abort', async () => {
       const { id, promise } = await requestAndGetId()
       await peer.message(makeCancelMessage(id))
@@ -781,6 +801,31 @@ describe('clientPeer', () => {
 
         expect(send).toHaveBeenCalledTimes(2)
         expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'cancel' }))
+      })
+
+      it('sends the cancel message once the in-flight request message is sent when canceling iterator', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // the transport delivers the request right away but resolves only on a later ack
+            await peer.message(makeStreamingResponse(message.id, 'event-stream'))
+            await peer.message(makeEventStreamMessage(message.id, 42))
+            await releaseRequest.promise
+          }
+        })
+
+        const response = await peer.request(makeRequest())
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 42 })
+        await iter.return?.()
+
+        // the cancel must not overtake the in-flight request message
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+        releaseRequest.resolve()
+        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+        expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
       })
 
       it('iterator error if receive cancel message', async () => {
@@ -1111,6 +1156,31 @@ describe('clientPeer', () => {
 
         expect(send).toHaveBeenCalledTimes(2)
         expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'cancel' }))
+      })
+
+      it('sends the cancel message once the in-flight request message is sent when canceling ReadableStream', async () => {
+        const releaseRequest = promiseWithResolvers<void>()
+        send.mockImplementation(async (message) => {
+          if (message.kind === 'request') {
+            // the transport delivers the request right away but resolves only on a later ack
+            await peer.message(makeStreamingResponse(message.id, 'octet-stream'))
+            await peer.message(makeOctetStreamMessage(message.id, false, new Uint8Array([5, 6])))
+            await releaseRequest.promise
+          }
+        })
+
+        const response = await peer.request(makeRequest())
+        const reader = ((await response.resolveBody()) as ReadableStream).getReader()
+        await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([5, 6]) })
+        await reader.cancel()
+
+        // the cancel must not overtake the in-flight request message
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+        releaseRequest.resolve()
+        const id = (send.mock.calls[0]![0] as PeerRequestMessage).id
+        await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+        expect(send).toHaveBeenNthCalledWith(2, { id, kind: 'cancel' })
       })
 
       it('readableStream error if receive a cancel message', async () => {
