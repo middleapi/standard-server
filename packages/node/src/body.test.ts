@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { once } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import http2 from 'node:http2'
 import { Readable } from 'node:stream'
@@ -423,6 +424,10 @@ describe('toStandardBody', () => {
   })
 
   describe('edge case', () => {
+    const alreadyReadError = new TypeError(
+      'Failed to read body: body stream already read or destroyed',
+    )
+
     it('throw on read body multiple time except (hint=none)', async () => {
       let req: NodeHttpRequest
 
@@ -439,6 +444,67 @@ describe('toStandardBody', () => {
         'Failed to read body: body stream already read',
       )
       expect(await toStandardBody(req!, { hint: 'none' })).toBe(undefined)
+    })
+
+    it('throw on concurrent reads', async () => {
+      let results: PromiseSettledResult<StandardBody>[] = []
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        results = await Promise.allSettled([toStandardBody(req), toStandardBody(req)])
+        res.end()
+      })
+        .post('/')
+        .send({ foo: 'bar' })
+
+      expect(results).toEqual([
+        { status: 'fulfilled', value: { foo: 'bar' } },
+        { status: 'rejected', reason: alreadyReadError },
+      ])
+    })
+
+    it('throw on read body while an earlier read is in progress', async () => {
+      const body = Buffer.alloc(299_000, 1)
+      let secondRead: PromiseSettledResult<StandardBody> | undefined
+      let firstReadBytes = 0
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        const stream = (await toStandardBody(req)) as ReadableStream<Uint8Array>
+        const reader = stream.getReader()
+        let result = await reader.read()
+
+        ;[secondRead] = await Promise.allSettled([toStandardBody(req)])
+
+        while (!result.done) {
+          firstReadBytes += result.value.byteLength
+          result = await reader.read()
+        }
+
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'octet-stream')
+        .send(body)
+
+      expect(secondRead).toEqual({ status: 'rejected', reason: alreadyReadError })
+      // the first read still gets the whole body
+      expect(firstReadBytes).toBe(body.length)
+    })
+
+    it('throw on read body partially read by another consumer', async () => {
+      let read: PromiseSettledResult<StandardBody> | undefined
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        await once(req, 'readable')
+        req.read(1)
+
+        ;[read] = await Promise.allSettled([toStandardBody(req)])
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.alloc(299_000, 1))
+
+      expect(read).toEqual({ status: 'rejected', reason: alreadyReadError })
     })
 
     it('prefers user defined body hint over standard-server header', async () => {
