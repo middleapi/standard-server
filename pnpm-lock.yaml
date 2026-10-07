@@ -300,6 +300,9 @@ importers:
       '@fastify/cookie':
         specifier: ^11.1.2
         version: 11.1.2
+      '@standard-server/fetch':
+        specifier: workspace:*
+        version: link:../fetch
       '@types/node':
         specifier: ^26.4.1
         version: 26.4.1

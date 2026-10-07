@@ -3,6 +3,7 @@ import http2 from 'node:http2'
 import { Readable, Writable } from 'node:stream'
 
 import FastifyCookie from '@fastify/cookie'
+import { toStandardLazyResponse } from '@standard-server/fetch'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
@@ -439,6 +440,114 @@ describe('sendStandardResponse', () => {
 
       await vi.waitFor(() => {
         expect(cancelMock).toHaveBeenCalledTimes(1)
+      })
+    })
+
+    describe('fastify sends an error instead of the body', () => {
+      it('drops the body headers when the body stream errors before the first byte', async ({
+        onTestFinished,
+      }) => {
+        let sending: Promise<void> | undefined
+
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          sending = sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: new ReadableStream({
+              pull(controller) {
+                controller.error(new Error('upstream failed'))
+              },
+            }),
+          })
+
+          await sending
+        })
+
+        const res = await fetch(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+        expect(res.status).toBe(500)
+        expect(res.headers.has('standard-server')).toBe(false)
+        expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+
+        await expect(toStandardLazyResponse(res).resolveBody()).resolves.toEqual({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: 'upstream failed',
+        })
+
+        // fastify's error handler already handled the error
+        await expect(sending).resolves.toBeUndefined()
+      })
+
+      it('drops the body headers when an onSend hook fails', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        // e.g. a compression plugin failing on the body, not on the error payload. A sync throw
+        // runs fastify's whole error flow inside the `reply.send` of the body.
+        fastify.addHook('onSend', (req, reply, payload, done) => {
+          if (payload instanceof Readable) {
+            throw new Error('compression failed')
+          }
+
+          done(null, payload)
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: new File(['foo'], 'report.txt', { type: 'text/plain' }),
+          })
+        })
+
+        const res = await fetch(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+        expect(res.status).toBe(500)
+        expect(res.headers.has('standard-server')).toBe(false)
+        expect(res.headers.has('content-disposition')).toBe(false)
+        expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+
+        await expect(toStandardLazyResponse(res).resolveBody()).resolves.toEqual({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message: 'compression failed',
+        })
+      })
+
+      it('keeps what a custom error handler sets', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.setErrorHandler<Error>(async (error, req, reply) => {
+          reply.status(502).header('content-disposition', 'attachment; filename="error.json"')
+          return { message: error.message }
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: { 'content-disposition': 'attachment; filename="data.bin"' },
+            body: new ReadableStream({
+              pull(controller) {
+                controller.error(new Error('upstream failed'))
+              },
+            }),
+          })
+        })
+
+        const res = await fetch(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+        expect(res.status).toBe(502)
+        expect(res.headers.has('standard-server')).toBe(false)
+        expect(res.headers.get('content-disposition')).toBe('attachment; filename="error.json"')
+        // fastify copied the body's content-type to the raw response before piping the body
+        expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+
+        await expect(res.json()).resolves.toEqual({ message: 'upstream failed' })
       })
     })
 

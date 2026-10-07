@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@fastify/cookie": "^11.1.2",
+    "@standard-server/fetch": "workspace:*",
     "@types/node": "^26.4.1",
     "@types/supertest": "^7.2.1",
     "fastify": "^5.11.0",
