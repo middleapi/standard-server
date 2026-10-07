@@ -417,7 +417,7 @@ describe('serverPeer', () => {
         await peer.message(makeEventStreamMessage('1', 'late'), vi.fn())
         expect((peer as any).requests.get('1').eventStreamMessageQueue).toBeUndefined()
         // the dropped queue is closed, so nothing can be left waiting on it
-        await expect(queue.pull()).rejects.toThrow('Queue was closed.')
+        await expect(queue.pull()).rejects.toThrow('Queue was aborted.')
 
         box.resolve(jsonResponse())
         await promise
@@ -725,7 +725,7 @@ describe('serverPeer', () => {
         await peer.message(makeOctetStreamMessage('1', true, new Uint8Array([2])), vi.fn())
         expect((peer as any).requests.get('1').octetStreamMessageQueue).toBeUndefined()
         // the dropped queue is closed, so nothing can be left waiting on it
-        await expect(queue.pull()).rejects.toThrow('Queue was closed.')
+        await expect(queue.pull()).rejects.toThrow('Queue was aborted.')
 
         box.resolve(jsonResponse())
         await promise

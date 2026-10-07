@@ -68,20 +68,14 @@ export class ServerPeer {
       const decoded = toStandardBody(message, async ({ kind, error }) => {
         /**
          * The request body is finished (fully read, errored, or cancelled).
-         * Close the queues so nothing is left waiting on them, then drop them
+         * Abort the queues so nothing is left waiting on them, then drop them
          * so late stream messages are ignored instead of buffered forever.
          */
         const streamActive =
           state.eventStreamMessageQueue !== undefined || state.octetStreamMessageQueue !== undefined
 
-        if (kind === 'cancelled') {
-          state.eventStreamMessageQueue?.abort(error)
-          state.octetStreamMessageQueue?.abort(error)
-        } else {
-          state.eventStreamMessageQueue?.close(error)
-          state.octetStreamMessageQueue?.close(error)
-        }
-
+        state.eventStreamMessageQueue?.abort(error)
+        state.octetStreamMessageQueue?.abort(error)
         state.eventStreamMessageQueue = undefined
         state.octetStreamMessageQueue = undefined
 
