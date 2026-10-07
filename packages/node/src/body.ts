@@ -21,11 +21,6 @@ export interface ToStandardBodyOptions {
 }
 
 /**
- * Requests whose body a `toStandardBody` call has started reading.
- */
-const claimedRequests = new WeakSet<NodeHttpRequest>()
-
-/**
  * Parses the body of a node http request.
  */
 export async function toStandardBody(
@@ -51,14 +46,11 @@ export async function toStandardBody(
   }
 
   // `readable` stays true until 'end', so it alone misses a read in progress:
-  // `readableDidRead` catches other consumers that got data, and the claim catches
-  // earlier calls of ours, which may not have read anything yet (or read lazily)
-  if (!req.readable || req.readableDidRead || claimedRequests.has(req)) {
+  // `readableFlowing` leaves null once a reader attaches, `readableDidRead` once data is read
+  if (!req.readable || req.readableFlowing !== null || req.readableDidRead) {
     // native fetch error use TypeError
     throw new TypeError('Failed to read body: body stream already read or destroyed')
   }
-
-  claimedRequests.add(req)
 
   if (hint === 'json') {
     const text = await _streamToString(req)
