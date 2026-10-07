@@ -287,6 +287,9 @@ describe('toStandardBody', () => {
   describe.each(['utf8', 'latin1', 'base64', 'hex'] as const)(
     'request with %s encoding set',
     (encoding) => {
+      // utf8 decodes invalid byte sequences to U+FFFD, so only valid text survives it
+      const bytes =
+        encoding === 'utf8' ? Buffer.from('emoji=😀') : Buffer.from([0xff, 0xfe, 0x00, 0x80, 0x41])
       let standardBody: any
 
       async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -302,54 +305,20 @@ describe('toStandardBody', () => {
       })
 
       it('file', async () => {
-        await request(handler).post('/').set('standard-server', 'file').send('emoji=😀')
+        await request(handler).post('/').set('standard-server', 'file').send(bytes)
 
         expect(standardBody).toBeInstanceOf(File)
-        expect(await standardBody.text()).toBe('emoji=😀')
+        expect(new Uint8Array(await standardBody.arrayBuffer())).toEqual(new Uint8Array(bytes))
       })
 
       it('form-data', async () => {
-        await request(handler)
-          .post('/')
-          .field('emoji', '😀')
-          .attach('file', Buffer.from('emoji=😀'), 'foo.txt')
+        await request(handler).post('/').field('emoji', '😀').attach('file', bytes, 'foo.bin')
 
         expect(standardBody).toBeInstanceOf(FormData)
         expect(standardBody.get('emoji')).toBe('😀')
-        expect(await standardBody.get('file').text()).toBe('emoji=😀')
-      })
-    },
-  )
-
-  // utf8 is left out: it decodes invalid byte sequences to U+FFFD, so binary data can't be recovered
-  describe.each(['latin1', 'base64', 'hex'] as const)(
-    'binary request with %s encoding set',
-    (encoding) => {
-      const bytes = new Uint8Array([0xff, 0xfe, 0x00, 0x80, 0x41])
-      let standardBody: any
-
-      async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-        req.setEncoding(encoding)
-        standardBody = await toStandardBody(req)
-        res.end()
-      }
-
-      it('file', async () => {
-        await request(handler)
-          .post('/')
-          .set('standard-server', 'file')
-          .type('application/octet-stream')
-          .send(Buffer.from(bytes))
-
-        expect(standardBody).toBeInstanceOf(File)
-        expect(new Uint8Array(await standardBody.arrayBuffer())).toEqual(bytes)
-      })
-
-      it('form-data', async () => {
-        await request(handler).post('/').attach('file', Buffer.from(bytes), 'foo.bin')
-
-        expect(standardBody).toBeInstanceOf(FormData)
-        expect(new Uint8Array(await standardBody.get('file').arrayBuffer())).toEqual(bytes)
+        expect(new Uint8Array(await standardBody.get('file').arrayBuffer())).toEqual(
+          new Uint8Array(bytes),
+        )
       })
     },
   )
