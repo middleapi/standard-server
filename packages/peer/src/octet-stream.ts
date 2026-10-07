@@ -33,13 +33,11 @@ export function toOctetStream(
 }
 
 /**
- * Copy a chunk that views only part of its `ArrayBuffer` (e.g. a slice of Node's
- * pooled `Buffer` memory), so transports that structured-clone messages don't send
- * the whole backing buffer, including unrelated data, to the remote peer.
- * Chunks that already own their whole buffer are returned as-is.
+ * Copy a chunk that views only part of its `ArrayBuffer` (e.g. Node's pooled `Buffer`),
+ * so structured-clone transports don't send the whole backing buffer to the remote peer.
  */
 function toStandaloneBytes(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
-  if (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) {
+  if (bytes.byteLength === bytes.buffer.byteLength) {
     return bytes
   }
 
