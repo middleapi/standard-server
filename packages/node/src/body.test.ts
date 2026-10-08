@@ -478,13 +478,11 @@ describe('toStandardBody', () => {
       expect(await reader.read()).toEqual({ done: false, value: 'hello' })
     })
 
-    it('throws a clear error on form-data without content-type', async () => {
+    it('lets the parser reject form-data without content-type', async () => {
       const req = Readable.from([Buffer.from('--X--\r\n')]) as IncomingMessage
       req.headers = { 'standard-server': 'form-data' }
 
-      await expect(toStandardBody(req)).rejects.toThrow(
-        new TypeError('Failed to parse body as FormData: missing content-type header'),
-      )
+      await expect(toStandardBody(req)).rejects.toThrow(TypeError)
     })
 
     it('falls back to the content headers if the body hint is invalid', async () => {

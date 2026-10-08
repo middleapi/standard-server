@@ -161,19 +161,11 @@ export function toNodeHttpBody(
   return [stringifyJSON(body), headers]
 }
 
-async function _streamToFormData(
-  stream: Readable,
-  contentType: string | undefined,
-): Promise<FormData> {
-  // the boundary lives in the content-type, so the body can't be parsed without it
-  if (contentType === undefined) {
-    throw new TypeError('Failed to parse body as FormData: missing content-type header')
-  }
-
+function _streamToFormData(stream: Readable, contentType: string | undefined): Promise<FormData> {
   // undici would encode string chunks (from `setEncoding`) as utf8, corrupting other encodings
   const response = new Response(toWebReadableStream(stream), {
     headers: {
-      'content-type': contentType,
+      'content-type': contentType ?? '',
     },
   })
 
