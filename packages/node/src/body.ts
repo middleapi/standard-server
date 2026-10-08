@@ -162,7 +162,6 @@ export function toNodeHttpBody(
 }
 
 function _streamToFormData(stream: Readable, contentType: string | undefined): Promise<FormData> {
-  // undici would encode string chunks (from `setEncoding`) as utf8, corrupting other encodings
   const response = new Response(toWebReadableStream(stream), {
     headers: {
       'content-type': contentType ?? '',
