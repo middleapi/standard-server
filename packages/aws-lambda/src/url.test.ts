@@ -116,26 +116,14 @@ describe('toStandardUrl (v1)', () => {
 })
 
 describe('toStandardUrl path escaping', () => {
-  const httpApiV2 = (rawPath: string) => ({
-    version: '2.0',
+  const v2 = (domainName?: string) => (rawPath: string) => ({
     rawPath,
-    requestContext: {
-      domainName: 'id.execute-api.us-east-1.amazonaws.com',
-      http: { method: 'GET' },
-    },
+    requestContext: { domainName, http: { method: 'GET' } },
   })
 
-  const functionUrl = (rawPath: string) => ({
-    version: '2.0',
-    rawPath,
-    requestContext: {
-      domainName: 'url-id.lambda-url.us-east-1.on.aws',
-      http: { method: 'GET' },
-    },
-  })
-
+  const httpApiV2 = v2('id.execute-api.us-east-1.amazonaws.com')
+  const functionUrl = v2('url-id.lambda-url.us-east-1.on.aws')
   const httpApiV1 = (path: string) => ({ version: '1.0', httpMethod: 'GET', path })
-
   const restApi = (path: string) => ({ httpMethod: 'GET', path })
 
   // HTTP APIs deliver the path url-decoded, values observed on a live API Gateway HTTP API
@@ -148,11 +136,13 @@ describe('toStandardUrl path escaping', () => {
       '/capture/quote"brace{}angle<>tick`caret^',
       '/capture/quote%22brace%7B%7Dangle%3C%3Etick%60caret%5E',
     ],
+    ['/capture/bracket[value]|pipe', '/capture/bracket%5Bvalue%5D%7Cpipe'],
     ['/capture/tab\tnewline\ndel\x7F', '/capture/tab%09newline%0Adel%7F'],
     // a decoded `%` or `\` is data, `URL` must neither decode it again nor treat `\` as `/`
     ['/capture/literal%value', '/capture/literal%25value'],
     ['/capture/percent%25done', '/capture/percent%2525done'],
     ['/capture/literal%2525value', '/capture/literal%252525value'],
+    // matched a `/public/{proxy+}` route, it must not resolve to `/secret`
     ['/public/%2e%2e/secret', '/public/%252e%252e/secret'],
     ['/public/x\\..\\..\\secret', '/public/x%5C..%5C..%5Csecret'],
     // encodeURIComponent throws URIError on a lone surrogate, it becomes U+FFFD instead
@@ -176,110 +166,74 @@ describe('toStandardUrl path escaping', () => {
     '/capture/literal%value',
   ]
 
-  describe('HTTP API (v2)', () => {
-    it.each(decoded)('escapes decoded %s', (rawPath, pathname) => {
-      expect(toStandardUrl(httpApiV2(rawPath))).toBe(pathname)
+  describe.each([
+    ['HTTP API (v2)', httpApiV2],
+    ['HTTP API (v1)', httpApiV1],
+  ] as const)('%s', (_, toEvent) => {
+    it.each(decoded)('escapes decoded %s', (path, pathname) => {
+      expect(toStandardUrl(toEvent(path))).toBe(pathname)
     })
 
     it('decodes back to the delivered path exactly once', () => {
-      for (const [rawPath] of decoded.filter(([path]) => !path.includes('\uD800'))) {
-        const url = new URL(toStandardUrl(httpApiV2(rawPath)), 'http://localhost')
+      for (const [path] of decoded.filter(([path]) => !path.includes('\uD800'))) {
+        const url = new URL(toStandardUrl(toEvent(path)), 'http://localhost')
 
-        expect(safeDecodeURIComponent(url.pathname)).toBe(rawPath)
+        expect(safeDecodeURIComponent(url.pathname)).toBe(path)
       }
     })
-
-    it('keeps an encoded dot segment from climbing out of the routed path', () => {
-      // `GET /public/%252e%252e/secret` reaches the `/public/{proxy+}` route as `/public/%2e%2e/secret`
-      for (const rawPath of ['/public/%2e%2e/secret', '/public/x\\..\\..\\secret']) {
-        const url = new URL(toStandardUrl(httpApiV2(rawPath)), 'http://localhost')
-
-        expect(url.pathname).toMatch(/^\/public\//)
-      }
-    })
-
-    it('treats a missing or non Function URL domainName as an HTTP API', () => {
-      expect(
-        toStandardUrl({ rawPath: '/a%2e%2e', requestContext: { http: { method: 'GET' } } }),
-      ).toBe('/a%252e%252e')
-
-      expect(
-        toStandardUrl({
-          rawPath: '/a%2e%2e',
-          requestContext: { domainName: 'url-id.lambda-url.example.com', http: { method: 'GET' } },
-        }),
-      ).toBe('/a%252e%252e')
-    })
-
-    it('keeps the query string separate from a decoded ? or # in the path', () => {
-      expect(toStandardUrl({ ...httpApiV2('/orders#'), rawQueryString: 'tenant=acme' })).toBe(
-        '/orders%23?tenant=acme',
-      )
-
-      expect(
-        toStandardUrl({ ...httpApiV2('/users/me?admin=true'), rawQueryString: 'tenant=acme' }),
-      ).toBe('/users/me%3Fadmin=true?tenant=acme')
-    })
   })
 
-  describe('HTTP API (v1)', () => {
-    it.each(decoded)('escapes decoded %s', (path, pathname) => {
-      expect(toStandardUrl(httpApiV1(path))).toBe(pathname)
-    })
-
-    it('keeps the query string separate from a decoded ? or # in the path', () => {
-      expect(
-        toStandardUrl({ ...httpApiV1('/orders#'), queryStringParameters: { tenant: 'acme' } }),
-      ).toBe('/orders%23?tenant=acme')
-
-      expect(
-        toStandardUrl({
-          ...httpApiV1('/users/me?admin=true'),
-          queryStringParameters: { tenant: 'acme' },
-        }),
-      ).toBe('/users/me%3Fadmin=true?tenant=acme')
-    })
-  })
-
-  describe('Lambda Function URL', () => {
-    it.each(untouched)('keeps %s as-is', (rawPath) => {
-      expect(toStandardUrl(functionUrl(rawPath))).toBe(rawPath)
-    })
-
-    it('escapes characters that cannot appear literally in an encoded path', () => {
-      expect(toStandardUrl(functionUrl('/a b#c?d'))).toBe('/a%20b%23c%3Fd')
-    })
-  })
-
-  describe('REST API', () => {
+  describe.each([
+    ['Lambda Function URL', functionUrl],
+    ['REST API', restApi],
+  ] as const)('%s', (_, toEvent) => {
     it.each(untouched)('keeps %s as-is', (path) => {
-      expect(toStandardUrl(restApi(path))).toBe(path)
+      expect(toStandardUrl(toEvent(path))).toBe(path)
     })
 
-    it('escapes characters that cannot appear literally in an encoded path', () => {
-      expect(toStandardUrl(restApi('/a b#c?d'))).toBe('/a%20b%23c%3Fd')
+    it('escapes like the URL pathname setter', () => {
+      // `^` is left out: it joined the path percent-encode set in 2023 and Node 20/22 still leave it as-is
+      for (const path of [
+        '/space value',
+        '/hash#value',
+        '/literal?value',
+        '/unicode-λ-世界',
+        '/quote"brace{}angle<>tick`',
+        '/a[b]|c',
+        '/literal%value',
+        '/%20%2F',
+        '/lone\uD800surrogate',
+      ]) {
+        const url = new URL('http://localhost')
+        url.pathname = path
+
+        expect(toStandardUrl(toEvent(path))).toBe(url.pathname)
+      }
     })
   })
 
-  it('escapes encoded paths like the URL pathname setter', () => {
-    // `^` is left out: it joined the path percent-encode set in 2023 and Node 20/22 still leave it as-is
-    for (const path of [
-      '/space value',
-      '/hash#value',
-      '/literal?value',
-      '/unicode-λ-世界',
-      '/quote"brace{}angle<>tick`',
-      '/a[b]|c',
-      '/literal%value',
-      '/%20%2F',
-      '/lone\uD800surrogate',
-    ]) {
-      const url = new URL('http://localhost')
-      url.pathname = path
+  it('treats a v2 event as an HTTP API unless its domainName is a Function URL', () => {
+    expect(toStandardUrl(v2()('/a%2e%2e'))).toBe('/a%252e%252e')
+    expect(toStandardUrl(v2('url-id.lambda-url.example.com')('/a%2e%2e'))).toBe('/a%252e%252e')
+  })
 
-      expect(toStandardUrl(restApi(path))).toBe(url.pathname)
-      expect(toStandardUrl(functionUrl(path))).toBe(url.pathname)
-    }
+  it('keeps the query string separate from a decoded ? or # in the path', () => {
+    expect(toStandardUrl({ ...httpApiV2('/orders#'), rawQueryString: 'tenant=acme' })).toBe(
+      '/orders%23?tenant=acme',
+    )
+    expect(
+      toStandardUrl({ ...httpApiV2('/users/me?admin=true'), rawQueryString: 'tenant=acme' }),
+    ).toBe('/users/me%3Fadmin=true?tenant=acme')
+
+    expect(
+      toStandardUrl({ ...httpApiV1('/orders#'), queryStringParameters: { tenant: 'acme' } }),
+    ).toBe('/orders%23?tenant=acme')
+    expect(
+      toStandardUrl({
+        ...httpApiV1('/users/me?admin=true'),
+        queryStringParameters: { tenant: 'acme' },
+      }),
+    ).toBe('/users/me%3Fadmin=true?tenant=acme')
   })
 
   it('adds a leading slash after escaping', () => {

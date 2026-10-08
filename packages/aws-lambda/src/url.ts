@@ -6,9 +6,9 @@ import type { AnyAPIGatewayProxyEvent } from './types'
 // the WHATWG path percent-encode set, characters that can never appear literally in an encoded path
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
 
-// plus `%` and `\`, a decoded path carries them as data: left as-is, `URL` would decode `%2e%2e`
-// again into a dot segment and treat `\` as `/`, resolving segments API Gateway never routed on
-const DECODED_PATH_CHAR_RE = /[\0-\x20"#%<>?\\^`{}\x7F-\u{10FFFF}]/gu
+// anything but an RFC 3986 path character, a decoded path carries `%`, `\`, `?`, ... as data: left as-is,
+// `URL` would decode `%2e%2e` again into a dot segment or treat `\` as `/`, resolving segments API Gateway never routed on
+const DECODED_PATH_CHAR_RE = /[^A-Za-z0-9\-._~!$&'()*+,;=:@/]/gu
 
 // anchored, so an HTTP API custom domain cannot pass for a Lambda Function URL
 const FUNCTION_URL_DOMAIN_RE = /\.lambda-url\.[a-z0-9-]+\.on\.aws$/
