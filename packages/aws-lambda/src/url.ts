@@ -28,7 +28,8 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
     return event.rawQueryString ? `${pathname}?${event.rawQueryString}` : pathname
   }
 
-  // only HTTP APIs set `version` and deliver `path` url-decoded, REST APIs and ALB still encoded
+  // only HTTP APIs set `version` and deliver `path` url-decoded, REST APIs and ALB still encoded,
+  // decoded is inferred from 2.0 captures: wrongly escaping costs a double-encoding, not escaping a traversal
   const pathname = toPathname(event.path, event.version === '1.0')
 
   const query = new URLSearchParams()
