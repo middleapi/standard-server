@@ -651,6 +651,17 @@ describe('toWebReadableStream', () => {
     expect(source.destroyed).toBe(true) // cancellation still tears the source down
   })
 
+  it('does not throw when a raw buffer stream is cancelled with an error before any read', async () => {
+    const source = new Readable({ read() {} })
+    const reason = new Error('cancelled')
+
+    // No pull has run yet, so the iterator has not attached its error listener.
+    const crashes = await recordUncaught(() => toWebReadableStream(source).cancel(reason))
+
+    expect(crashes).toEqual([])
+    expect(source.errored).toBe(reason)
+  })
+
   it('keeps an aborted HTTP/1 upload from crashing the process', async () => {
     const { handled, crashes } = await runUploadServer('http1', 25)
 
