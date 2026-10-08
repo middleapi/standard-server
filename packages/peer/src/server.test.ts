@@ -161,6 +161,16 @@ describe('serverPeer', () => {
       })
     })
 
+    it('escapes a url `new URL(url, base)` would read as scheme-relative', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.message(makeRequestMessage({ url: '//evil.com/admin?x=1' }), handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(req.url).toBe('/%2Fevil.com/admin?x=1')
+      expect(new URL(req.url, 'http://localhost').host).toBe('localhost')
+    })
+
     it('ignores duplicate request messages for the same id', async () => {
       const handler = vi.fn().mockResolvedValue(jsonResponse())
 

@@ -79,6 +79,24 @@ export async function handle(request: StandardLazyRequest): Promise<StandardResp
 }
 ```
 
+### Request URLs
+
+`url` is the request target without the origin: the path, query and fragment the server received. Resolve it against any base when you need a `URL`:
+
+```ts
+const url = new URL(request.url, 'http://localhost')
+```
+
+WHATWG `URL` reads a reference that starts with `//` (or `/\` for `http:` and `https:`) as scheme-relative: `new URL('//evil.com/admin', 'http://localhost')` has the host `evil.com` and the pathname `/admin`, not the path the server routed. Adapters never emit such a url. When a path starts with `//` or `/\`, they percent-encode the character after the leading `/` and keep the rest as received:
+
+| Request path       | `request.url`        |
+| ------------------ | -------------------- |
+| `//evil.com/admin` | `/%2Fevil.com/admin` |
+| `/\evil.com/admin` | `/%5Cevil.com/admin` |
+| `/users//123`      | `/users//123`        |
+
+Both `new URL(request.url, base)` and `parseStandardUrl()` then read `/%2Fevil.com/admin` as the pathname, and decoding it gives back `//evil.com/admin`, the path the server received. Collapsing the slashes instead would turn `//admin` into `/admin`, a route a proxy in front of the server did not match.
+
 ## Body types
 
 `StandardBodyHint` and `StandardBody` describe the shared body contract used across adapters:

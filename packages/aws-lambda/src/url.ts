@@ -1,5 +1,5 @@
 import type { StandardUrl } from '@standard-server/core'
-import { safeEncodeURIComponent } from '@standard-server/shared'
+import { escapeSchemeRelativePath, safeEncodeURIComponent } from '@standard-server/shared'
 
 import type { AnyAPIGatewayProxyEvent } from './types'
 
@@ -50,5 +50,8 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
 function toPathname(path: string): `/${string}` {
   const encoded = path.replace(UNENCODED_PATH_CHAR_RE, safeEncodeURIComponent)
 
-  return encoded.startsWith('/') ? (encoded as `/${string}`) : `/${encoded}`
+  // `new URL(url, base)` reads a leading `//host` or `/\host` as a host, HTTP APIs may also decode `/%2Fhost` into one
+  return escapeSchemeRelativePath(
+    encoded.startsWith('/') ? (encoded as `/${string}`) : `/${encoded}`,
+  )
 }

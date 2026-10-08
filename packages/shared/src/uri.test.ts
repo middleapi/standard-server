@@ -1,4 +1,4 @@
-import { safeDecodeURIComponent, safeEncodeURIComponent } from './uri'
+import { escapeSchemeRelativePath, safeDecodeURIComponent, safeEncodeURIComponent } from './uri'
 
 describe('safeEncodeURIComponent', () => {
   it('encodes like encodeURIComponent for well-formed input', () => {
@@ -38,5 +38,50 @@ describe('safeDecodeURIComponent', () => {
     expect(safeDecodeURIComponent('%E4%B8%AD%FF%')).toBe('%E4%B8%AD%FF%')
     // decoded output is not decoded again
     expect(safeDecodeURIComponent('%2541%ZZ')).toBe('%41%ZZ')
+  })
+})
+
+describe('escapeSchemeRelativePath', () => {
+  it('keeps paths `URL` resolves against the base as-is', () => {
+    for (const path of [
+      '/',
+      '/x',
+      '/x//y',
+      '/x/\\y',
+      '/%2Fx',
+      '/%5Cx',
+      '/.//x',
+      '/?//x',
+      '/#//x',
+      '/\t',
+    ] as const) {
+      expect(escapeSchemeRelativePath(path)).toBe(path)
+    }
+  })
+
+  it('encodes what follows the leading slash when `URL` would read a host', () => {
+    expect(escapeSchemeRelativePath('//evil.com/admin?x=1')).toBe('/%2Fevil.com/admin?x=1')
+    expect(escapeSchemeRelativePath('///evil.com/admin')).toBe('/%2F/evil.com/admin')
+    expect(escapeSchemeRelativePath('//')).toBe('/%2F')
+    expect(escapeSchemeRelativePath('/\\evil.com/admin')).toBe('/%5Cevil.com/admin')
+    // `URL` strips tabs and newlines before parsing
+    expect(escapeSchemeRelativePath('/\t\r\n/evil.com/admin')).toBe('/%09%0D%0A%2Fevil.com/admin')
+  })
+
+  it('resolves against the base without losing the path', () => {
+    for (const path of [
+      '//evil.com/admin',
+      '///evil.com',
+      '/\\evil.com',
+      '/\t/evil.com',
+    ] as const) {
+      expect(new URL(path, 'http://localhost').host).toBe('evil.com')
+
+      const escaped = escapeSchemeRelativePath(path)
+      const url = new URL(escaped, 'http://localhost')
+      expect(url.host).toBe('localhost')
+      expect(url.pathname).toBe(escaped)
+      expect(safeDecodeURIComponent(url.pathname)).toBe(path)
+    }
   })
 })

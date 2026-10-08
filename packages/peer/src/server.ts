@@ -1,7 +1,12 @@
 import type { StandardBody, StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { cancelStandardBody } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
-import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard-server/shared'
+import {
+  AbortError,
+  escapeSchemeRelativePath,
+  hasAnyDefinedValue,
+  isAsyncIteratorObject,
+} from '@standard-server/shared'
 
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
@@ -88,7 +93,8 @@ export class ServerPeer {
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
       const response = await handleRequest({
-        url: message.json.url,
+        // the client may send `//host` or `/\host`, which `new URL(url, base)` would read as a host
+        url: escapeSchemeRelativePath(message.json.url),
         method: message.json.method ?? 'POST',
         headers: message.json.headers ?? {},
         resolveBody: decoded.resolveBody,

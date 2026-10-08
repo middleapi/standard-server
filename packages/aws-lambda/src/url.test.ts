@@ -136,6 +136,8 @@ describe('toStandardUrl path escaping', () => {
     '/capture/question%3Fvalue',
     '/capture/hash%23value',
     '/capture/slash%2Fvalue',
+    '/%2Fcapture/leading-slash',
+    '/capture//double',
     '/capture/percent%25done',
     '/capture/literal%2525value',
     '/capture/unicode-%CE%BB-%E4%B8%96%E7%95%8C',
@@ -219,6 +221,47 @@ describe('toStandardUrl path escaping', () => {
 
       expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(url.pathname)
     }
+  })
+
+  describe('escapes a path `new URL(url, base)` would read as a host', () => {
+    // a literal `//` or `/\\` prefix, or HTTP APIs decoding a leading `%2F` into one
+    const schemeRelative: [path: string, pathname: string][] = [
+      ['//evil.com/admin/x', '/%2Fevil.com/admin/x'],
+      ['///evil.com/admin/x', '/%2F/evil.com/admin/x'],
+      ['/\\evil.com/admin/x', '/%5Cevil.com/admin/x'],
+      // gains its leading `/` in the adapter
+      ['\\evil.com/admin/x', '/%5Cevil.com/admin/x'],
+      // tabs and newlines are escaped first, `URL` cannot strip them anymore
+      ['/\t/evil.com/admin/x', '/%09/evil.com/admin/x'],
+    ]
+
+    function expectResolvedInPlace(standardUrl: string, pathname: string) {
+      const resolved = new URL(standardUrl, 'http://localhost')
+      expect(resolved.host).toBe('localhost')
+      expect(resolved.pathname).toBe(pathname)
+    }
+
+    it.each(schemeRelative)('v2 %s', (rawPath, pathname) => {
+      const standardUrl = toStandardUrl({
+        rawPath,
+        rawQueryString: 'next=//evil.com',
+        requestContext: { http: { method: 'GET' } },
+      })
+
+      expect(standardUrl).toBe(`${pathname}?next=//evil.com`)
+      expectResolvedInPlace(standardUrl, pathname)
+    })
+
+    it.each(schemeRelative)('v1 %s', (path, pathname) => {
+      const standardUrl = toStandardUrl({
+        httpMethod: 'GET',
+        path,
+        queryStringParameters: { next: '//evil.com' },
+      })
+
+      expect(standardUrl).toBe(`${pathname}?next=%2F%2Fevil.com`)
+      expectResolvedInPlace(standardUrl, pathname)
+    })
   })
 
   it('adds a leading slash after escaping', () => {

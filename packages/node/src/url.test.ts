@@ -46,9 +46,7 @@ describe('toStandardUrl', () => {
   })
 
   it('malicious or malformed input', () => {
-    // origin-form is passed through untouched: never resolved as a host, never normalized
-    expect(toStandardUrl({ url: '//evil.com/ping' } as any)).toBe('//evil.com/ping')
-    expect(toStandardUrl({ url: '////' } as any)).toBe('////')
+    // origin-form is passed through: never resolved as a host, never normalized
     expect(toStandardUrl({ url: '/../../etc/passwd' } as any)).toBe('/../../etc/passwd')
     expect(toStandardUrl({ url: '/%2e%2e/x' } as any)).toBe('/%2e%2e/x')
     expect(toStandardUrl({ url: ':::' } as any)).toBe('/:::')
@@ -66,6 +64,26 @@ describe('toStandardUrl', () => {
     expect(toStandardUrl({ url: 'http://example.com:99999/x' } as any)).toBe(
       '/http://example.com:99999/x',
     )
+  })
+
+  it('escapes a path `new URL(url, base)` would read as a host', () => {
+    const cases: [url: string, standardUrl: string][] = [
+      ['//evil.com/admin/x?next=//evil.com#//h', '/%2Fevil.com/admin/x?next=//evil.com#//h'],
+      ['/\\evil.com/admin/x', '/%5Cevil.com/admin/x'],
+      ['/\t/evil.com/admin/x', '/%09%2Fevil.com/admin/x'],
+      ['////', '/%2F//'],
+      // absolute-form whose pathname starts with `//`
+      ['http://example.com//evil.com/admin/x', '/%2Fevil.com/admin/x'],
+      ['http://example.com/..//evil.com/admin/x', '/%2Fevil.com/admin/x'],
+      // unparseable input that only gains its leading `/` here
+      ['\\\\[::1', '/%5C\\[::1'],
+    ]
+
+    for (const [url, standardUrl] of cases) {
+      expect(toStandardUrl({ url } as any)).toBe(standardUrl)
+      expect(toStandardUrl({ url: '/', originalUrl: url } as any)).toBe(standardUrl)
+      expect(new URL(standardUrl, 'http://localhost').host).toBe('localhost')
+    }
   })
 
   it('absolute-form from a real node:http server (what `curl -x <server> <url>` sends)', async ({
@@ -94,5 +112,38 @@ describe('toStandardUrl', () => {
     })
 
     expect(url).toBe('/ping?x=1')
+  })
+
+  it('scheme-relative origin-form from a real node:http server', async ({ onTestFinished }) => {
+    const urls: string[] = []
+
+    const server = http.createServer((req, res) => {
+      urls.push(toStandardUrl(req))
+      res.end()
+    })
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const { port } = server.address() as AddressInfo
+
+    // node:http hands both request targets to the handler unchanged
+    for (const target of ['//evil.com/admin/x?y=1', '/\\evil.com/admin/x?y=1']) {
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.connect(port, '127.0.0.1', () => {
+          socket.end(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`)
+        })
+        socket.resume()
+        socket.on('close', resolve)
+        socket.on('error', reject)
+      })
+    }
+
+    expect(urls).toEqual(['/%2Fevil.com/admin/x?y=1', '/%5Cevil.com/admin/x?y=1'])
+
+    for (const url of urls) {
+      const resolved = new URL(url, 'http://localhost')
+      expect(resolved.host).toBe('localhost')
+      expect(resolved.pathname).toBe(url.slice(0, url.indexOf('?')))
+    }
   })
 })
