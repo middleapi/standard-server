@@ -28,6 +28,7 @@ import type { NodeHttpResponse } from './types'
  */
 export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array<ArrayBuffer>> {
   const iterator = stream[Symbol.asyncIterator]()
+  stream.on('error', () => {})
   let canceled = false
 
   return new ReadableStream({
@@ -55,10 +56,6 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
         // Errors mean the request is already torn down (e.g. the client aborted)
         void _drainIterator(iterator).catch(() => {})
       } else {
-        // The canceller discarded the stream, so its `error` is expected. Before
-        // the first pull the iterator has no listener yet, and an unhandled
-        // `error` from `destroy` would crash the process.
-        stream.on('error', () => {})
         stream.destroy(reason instanceof Error ? reason : undefined)
       }
     },

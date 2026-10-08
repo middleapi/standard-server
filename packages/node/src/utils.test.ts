@@ -651,15 +651,31 @@ describe('toWebReadableStream', () => {
     expect(source.destroyed).toBe(true) // cancellation still tears the source down
   })
 
-  it('does not throw when a raw buffer stream is cancelled with an error before any read', async () => {
+  it('does not throw when cancelled with an error before any read', async () => {
     const source = new Readable({ read() {} })
     const reason = new Error('cancelled')
 
-    // No pull has run yet, so the iterator has not attached its error listener.
     const crashes = await recordUncaught(() => toWebReadableStream(source).cancel(reason))
 
     expect(crashes).toEqual([])
     expect(source.errored).toBe(reason)
+  })
+
+  it('does not throw when the source errors in the tick it is wrapped', async () => {
+    const source = new Readable({ read() {} })
+    const error = new Error('failed')
+
+    const crashes = await recordUncaught(async () => {
+      const body = await new Promise<ReadableStream>((resolve) => {
+        setImmediate(() => {
+          resolve(toWebReadableStream(source))
+          source.destroy(error)
+        })
+      })
+      await expect(body.getReader().read()).rejects.toBe(error)
+    })
+
+    expect(crashes).toEqual([])
   })
 
   it('keeps an aborted HTTP/1 upload from crashing the process', async () => {
@@ -768,11 +784,11 @@ describe('toWebReadableStream', () => {
 
   it('ignores a request torn down while its cancelled body drains', async () => {
     const req = new http.IncomingMessage(new net.Socket())
-    req.method = 'POST' // a server request, so cancel drains it
+    req.method = 'POST'
 
     const crashes = await recordUncaught(async () => {
       await toWebReadableStream(req).cancel()
-      req.destroy() // e.g. the client aborts mid-drain
+      req.destroy()
     })
 
     expect(crashes).toEqual([])
