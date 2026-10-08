@@ -38,7 +38,9 @@ export function toStandardBody(
     if (rawContentType === undefined && bodyHint === ('event-stream' satisfies StandardBodyHint)) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
-        resolveBody: async () => toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
+        resolveBody: resolveStreamBodyOnce(() =>
+          toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
+        ),
         eventStreamMessageQueue,
       }
     }
@@ -46,7 +48,7 @@ export function toStandardBody(
     if (rawContentType !== undefined) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
-        resolveBody: async () => toOctetStream(octetStreamMessageQueue, cleanup),
+        resolveBody: resolveStreamBodyOnce(() => toOctetStream(octetStreamMessageQueue, cleanup)),
         octetStreamMessageQueue,
       }
     }
@@ -105,6 +107,24 @@ export function toStandardBody(
   }
 
   return { resolveBody }
+}
+
+/**
+ * A streamed body has a single queue, so a second consumer would split its messages
+ * with the first one. Like the fetch and node adapters, reject reading it more than once.
+ */
+function resolveStreamBodyOnce(resolve: () => StandardBody): () => Promise<StandardBody> {
+  let resolved = false
+
+  return async () => {
+    if (resolved) {
+      // native fetch error use TypeError
+      throw new TypeError('Failed to read body: body stream already read')
+    }
+
+    resolved = true
+    return resolve()
+  }
 }
 
 export interface EncodedAtomicStandardBody {
