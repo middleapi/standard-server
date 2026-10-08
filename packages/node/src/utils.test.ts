@@ -765,4 +765,16 @@ describe('toWebReadableStream', () => {
     expect(received).toBe('ok')
     expect(request.rstCode).toBe(http2.constants.NGHTTP2_NO_ERROR)
   })
+
+  it('ignores a request torn down while its cancelled body drains', async () => {
+    const req = new http.IncomingMessage(new net.Socket())
+    req.method = 'POST' // a server request, so cancel drains it
+
+    const crashes = await recordUncaught(async () => {
+      await toWebReadableStream(req).cancel()
+      req.destroy() // e.g. the client aborts mid-drain
+    })
+
+    expect(crashes).toEqual([])
+  })
 })
