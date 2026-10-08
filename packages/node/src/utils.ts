@@ -28,6 +28,7 @@ import type { NodeHttpResponse } from './types'
  */
 export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array<ArrayBuffer>> {
   const iterator = stream[Symbol.asyncIterator]()
+  stream.on('error', () => {})
   let canceled = false
 
   return new ReadableStream({
