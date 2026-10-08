@@ -128,8 +128,6 @@ const payload = await response.resolveBody()
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.
 
-As with the HTTP adapters, a streamed body (an event or octet stream) can be resolved only once: calling `resolveBody()` again throws a `TypeError`, because the stream messages can only be delivered to a single consumer.
-
 ## Codec helpers
 
 Use `encodePeerMessage()` and `decodePeerMessage()` to bridge between the peer protocol and your underlying transport.
