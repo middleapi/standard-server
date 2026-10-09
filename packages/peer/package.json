@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/peer",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Message-based adapter for Standard Server: transport-agnostic requests, responses, and streaming over WebSocket, MessagePort, and custom peer transports",
   "keywords": [
     "adapter",

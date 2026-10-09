@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/fastify",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Fastify adapter for Standard Server: transport-agnostic requests, responses, and streaming on top of Fastify's request and reply objects",
   "keywords": [
     "adapter",

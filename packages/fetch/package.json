@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/fetch",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Fetch API adapter for Standard Server: transport-agnostic requests, responses, and streaming for browsers, workers, Deno, Bun, and any Fetch-based runtime",
   "keywords": [
     "adapter",

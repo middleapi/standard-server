@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/shared",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Internal types and utilities shared across the Standard Server ecosystem",
   "keywords": [
     "internal",

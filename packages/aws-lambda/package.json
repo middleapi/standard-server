@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/aws-lambda",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "AWS Lambda adapter for Standard Server: transport-agnostic requests and responses with Lambda response streaming support",
   "keywords": [
     "adapter",
