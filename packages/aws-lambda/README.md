@@ -57,8 +57,8 @@ Use `toStandardLazyRequest()` to convert the incoming event into a `StandardLazy
 
 ```ts
 import type { AwsLambdaGlobal } from '@standard-server/aws-lambda'
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/aws-lambda'
+import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 
 // injected by the AWS Lambda Node.js runtime when response streaming is enabled
 declare const awslambda: AwsLambdaGlobal

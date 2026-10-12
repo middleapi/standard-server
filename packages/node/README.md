@@ -57,8 +57,9 @@ Use these helpers when you want Standard Server handlers to run in Node runtimes
 Use `toStandardLazyRequest()` to convert an incoming Node request into a `StandardLazyRequest`, then `sendStandardResponse()` to write the resulting `StandardResponse` back to the client.
 
 ```ts
-import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { createServer } from 'node:http'
+
+import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 
 async function handle(request: StandardLazyRequest): Promise<StandardResponse> {
