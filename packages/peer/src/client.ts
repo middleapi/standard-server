@@ -43,6 +43,12 @@ export class ClientPeer {
 
   /**
    * Send a request to the server peer
+   *
+   * A streamed response body (async iterator or `ReadableStream`) keeps the request open until the
+   * server finishes the stream. If you may not read it to the end, cancel it, e.g.
+   * `cancelStandardBody(await response.resolveBody())` from `@standard-server/core`, or abort
+   * `request.signal`. Otherwise a stream that never finishes keeps the request state, its abort
+   * listener, and every streamed message in memory.
    */
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
@@ -178,13 +184,30 @@ export class ClientPeer {
       return
     }
 
+    /**
+     * The server releases the request once it sends the last stream message, so release it here too
+     * instead of waiting for a body the caller may never read. Closing keeps the buffered messages
+     * readable through `resolveBody()`, and the body cleanup then finds no state to cancel.
+     */
     if (message.kind === 'event-stream') {
-      state.eventStreamMessageQueue?.push(message)
+      const queue = state.eventStreamMessageQueue
+      queue?.push(message)
+
+      if (queue && (message.json.event === 'close' || message.json.event === 'error')) {
+        await this.closeById(id)
+      }
+
       return
     }
 
     if (message.kind === 'octet-stream') {
-      state.octetStreamMessageQueue?.push(message)
+      const queue = state.octetStreamMessageQueue
+      queue?.push(message)
+
+      if (queue && message.json.close) {
+        await this.closeById(id)
+      }
+
       return
     }
 
