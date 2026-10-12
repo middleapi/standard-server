@@ -43,10 +43,6 @@ export class ClientPeer {
 
   /**
    * Send a request to the server peer
-   *
-   * A streamed response body (async iterator or `ReadableStream`) keeps the request open until the
-   * server finishes it. If you may not read it to the end, cancel it, e.g.
-   * `cancelStandardBody(await response.resolveBody())`, or abort `request.signal`.
    */
   request(request: StandardRequest): Promise<StandardLazyResponse> {
     return new Promise<StandardLazyResponse>((resolve, reject) => {
