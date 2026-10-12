@@ -1,8 +1,0 @@
-{
-  "extends": "uncheck/tsconfig/middleapi/lib",
-  "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["deno"]
-  },
-  "include": ["./package.json", "src", "tests"]
-}
