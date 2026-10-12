@@ -1,5 +1,7 @@
+import { getEventListeners } from 'node:events'
+
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import { cancelStandardBody, ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
 import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
@@ -355,6 +357,78 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     })
 
     await vi.waitFor(() => expect(cancel).toHaveBeenCalled())
+  })
+
+  it('releases both peers when finished streamed response bodies are never resolved', async () => {
+    const { client, server } = connect(async (request) => ({
+      status: 200,
+      headers: {},
+      body:
+        request.url === '/events'
+          ? (async function* () {
+              yield 1
+              yield 2
+            })()
+          : new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([1, 2]))
+                controller.close()
+              },
+            }),
+    }))
+
+    const controller = new AbortController()
+
+    for (let i = 0; i < 100; i++) {
+      const response = await client.request({
+        url: i % 2 === 0 ? '/events' : '/download',
+        method: 'GET',
+        headers: {},
+        signal: controller.signal,
+      })
+      expect(response.status).toBe(200)
+    }
+
+    await vi.waitFor(() => {
+      expect((client as any).requests.size).toBe(0)
+      expect((server as any).requests.size).toBe(0)
+    })
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+  })
+
+  it('releases both peers when an endless streamed response body is cancelled without reading', async () => {
+    const finalized = vi.fn()
+
+    const { client, server } = connect(async () => ({
+      status: 200,
+      headers: {},
+      body: (async function* () {
+        try {
+          while (true) {
+            yield 'tick'
+            await sleep(1)
+          }
+        } finally {
+          finalized()
+        }
+      })(),
+    }))
+
+    const controller = new AbortController()
+    const response = await client.request({
+      url: '/events',
+      method: 'GET',
+      headers: {},
+      signal: controller.signal,
+    })
+    await cancelStandardBody(await response.resolveBody())
+
+    await vi.waitFor(() => {
+      expect((client as any).requests.size).toBe(0)
+      expect((server as any).requests.size).toBe(0)
+      expect(finalized).toHaveBeenCalledOnce()
+    })
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
   })
 
   it('propagates client aborts to the server handler signal', async () => {

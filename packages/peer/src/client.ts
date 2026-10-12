@@ -191,13 +191,26 @@ export class ClientPeer {
       return
     }
 
+    // by the last stream message the server has already released the request, so release it too
     if (message.kind === 'event-stream') {
-      state.eventStreamMessageQueue?.push(message)
+      const queue = state.eventStreamMessageQueue
+      queue?.push(message)
+
+      if (queue && (message.json.event === 'close' || message.json.event === 'error')) {
+        await this.closeById(id)
+      }
+
       return
     }
 
     if (message.kind === 'octet-stream') {
-      state.octetStreamMessageQueue?.push(message)
+      const queue = state.octetStreamMessageQueue
+      queue?.push(message)
+
+      if (queue && message.json.close) {
+        await this.closeById(id)
+      }
+
       return
     }
 
