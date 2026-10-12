@@ -491,6 +491,7 @@ describe('sendStandardResponse', () => {
             {
               status: 207,
               headers: {},
+              // oxlint-disable-next-line require-yield
               body: (async function* () {
                 throw new Error('foo')
               })(),
