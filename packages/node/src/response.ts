@@ -54,12 +54,9 @@ export async function sendStandardResponse(
         }
       }
 
-      if (resBody === undefined) {
-        // NOTE: Lambda functions don't allow passing undefined to `res.end`
-        res.end()
-      } else if (!('stream' in res) && isBodylessNodeResponse(res, standardResponse.status)) {
-        // http1 would never send the head of a piped long-lived body, see `isBodylessNodeResponse`
+      if (resBody === undefined || isBodylessNodeResponse(res, standardResponse.status)) {
         destroyNodeHttpBody(resBody, undefined, reject)
+        // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
       } else if (typeof resBody === 'string') {
         res.end(resBody)

@@ -98,12 +98,14 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
 }
 
 /**
- * Check the response cannot carry a body: the request is HEAD, or the status is 204, 304 or 1xx.
- *
- * Node's http1 response discards what is written to such a response and holds its head back
- * until `end()`.
+ * Check the response is an http1 one Node treats as bodyless (HEAD, 204, 304, 1xx): it discards
+ * what is written and holds its head back until `end()`, so a piped long-lived body never sends it.
  */
 export function isBodylessNodeResponse(res: NodeHttpResponse, status: number): boolean {
+  if ('stream' in res) {
+    return false // http2 sends the head regardless
+  }
+
   return (
     // `req` is missing on a bare writable
     res.req?.method === 'HEAD' ||

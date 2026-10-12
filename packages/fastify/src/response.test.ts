@@ -674,62 +674,6 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('sends the head and releases the body on an explicit HEAD route', async ({
-      onTestFinished,
-    }) => {
-      const { body, isReleased } = createEndlessBody()
-      let sending: Promise<void> | undefined
-
-      const fastify = Fastify()
-      onTestFinished(() => fastify.close())
-
-      fastify.head('/', async (req, reply) => {
-        sending = sendStandardResponse(reply, {
-          status: 201,
-          headers: { 'x-custom-header': 'custom-value' },
-          body,
-        })
-        await sending
-      })
-
-      await fastify.ready()
-      const res = await request(fastify.server).head('/').timeout(1000)
-
-      await expect(sending).resolves.toBeUndefined()
-
-      expect(res.status).toBe(201)
-      expect(res.headers).toMatchObject({
-        'content-type': 'text/event-stream',
-        'x-custom-header': 'custom-value',
-      })
-
-      await vi.waitFor(() => {
-        expect(isReleased()).toBe(true)
-      })
-    })
-
-    it.for(['get', 'head'] as const)(
-      'keeps the content headers of a blob body on a HEAD request to a %s route',
-      async (route, { onTestFinished }) => {
-        const fastify = Fastify()
-        onTestFinished(() => fastify.close())
-
-        fastify[route]('/', async (req, reply) => {
-          await sendStandardResponse(reply, {
-            status: 200,
-            headers: {},
-            body: new Blob(['foo'], { type: 'text/plain' }),
-          })
-        })
-
-        await fastify.ready()
-        const res = await request(fastify.server).head('/').timeout(1000)
-
-        expect(res.status).toBe(200)
-        expect(res.headers).toMatchObject({ 'content-type': 'text/plain', 'content-length': '3' })
-      },
-    )
-
     it('releases the body on an auto-exposed http2 HEAD route', async ({ onTestFinished }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
@@ -789,35 +733,63 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  it('sends the head and releases the stream body of a 304 response', async ({
-    onTestFinished,
-  }) => {
-    const { body, isReleased } = createEndlessBody()
-    let sending: Promise<void> | undefined
+  describe('bodyless http1 response', () => {
+    it.for([
+      ['an explicit HEAD route', 'head', 'head', 201, { 'content-type': 'text/event-stream' }],
+      ['a 304 status', 'get', 'get', 304, {}],
+    ] as const)(
+      'sends the head and releases a long-lived body on %s',
+      async ([, route, method, status, headers], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+        let sending: Promise<void> | undefined
 
-    const fastify = Fastify()
-    onTestFinished(() => fastify.close())
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
 
-    fastify.get('/', async (req, reply) => {
-      sending = sendStandardResponse(reply, {
-        status: 304,
-        headers: { 'x-custom-header': 'custom-value' },
-        body,
-      })
-      await sending
-    })
+        fastify[route]('/', async (req, reply) => {
+          sending = sendStandardResponse(reply, {
+            status,
+            headers: { 'x-custom-header': 'custom-value' },
+            body,
+          })
+          await sending
+        })
 
-    await fastify.ready()
-    const res = await request(fastify.server).get('/').timeout(1000)
+        await fastify.ready()
+        const res = await request(fastify.server)[method]('/').timeout(1000)
 
-    await expect(sending).resolves.toBeUndefined()
+        await expect(sending).resolves.toBeUndefined()
 
-    expect(res.status).toBe(304)
-    expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
+        expect(res.status).toBe(status)
+        expect(res.headers).toMatchObject({ ...headers, 'x-custom-header': 'custom-value' })
 
-    await vi.waitFor(() => {
-      expect(isReleased()).toBe(true)
-    })
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
+
+    it.for(['get', 'head'] as const)(
+      'keeps the content headers of a blob body on a HEAD request to a %s route',
+      async (route, { onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify[route]('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: new Blob(['foo'], { type: 'text/plain' }),
+          })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).head('/').timeout(1000)
+
+        expect(res.status).toBe(200)
+        expect(res.headers).toMatchObject({ 'content-type': 'text/plain', 'content-length': '3' })
+      },
+    )
   })
 
   it('rejects with the stream error when the client resets an http2 stream with an error code', async ({
