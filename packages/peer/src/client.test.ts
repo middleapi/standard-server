@@ -857,7 +857,7 @@ describe('clientPeer', () => {
           id,
           kind: 'octet-stream',
           json: { close: true },
-          binary: undefined,
+          binary: new Uint8Array(0),
         })
       })
 

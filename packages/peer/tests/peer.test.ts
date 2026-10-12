@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
 import {
@@ -9,7 +9,7 @@ import {
   encodePeerMessage,
   ServerPeer as ServerPeerClass,
 } from '../src'
-import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
+import type { ClientPeerSendMessage, PeerMessage, ServerPeerSendMessage } from '../src/types'
 
 /**
  * Wires a ClientPeer and a ServerPeer together through the real codec,
@@ -49,6 +49,50 @@ function connect(
       await handled
     }
   })
+
+  return wire
+}
+
+/**
+ * Like {@link connect}, but binary messages reach the remote side after an async delay (still in order)
+ * while string messages arrive at once, like a WebSocket with the default `binaryType = 'blob'`
+ * whose handler awaits `event.data.arrayBuffer()`.
+ */
+function connectWithAsyncBinaryDecoding(
+  handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
+): { client: ClientPeer; server: ServerPeer } {
+  const prefix = 'peer:'
+  const wire = {} as { client: ClientPeer; server: ServerPeer }
+
+  function transport(receive: (message: PeerMessage) => Promise<void>) {
+    let binaryChain = Promise.resolve()
+
+    return async (message: PeerMessage) => {
+      const encoded = await encodePeerMessage(message, { prefix })
+      const deliver = async () => {
+        const decoded = decodePeerMessage(encoded, { prefix })
+        if (!decoded.matched) {
+          throw new Error('Failed to decode message on the wire')
+        }
+        await receive(decoded.message)
+      }
+
+      if (typeof encoded === 'string') {
+        void deliver().catch(() => {})
+      } else {
+        // only the decoding is sequential, each message is then handled on its own
+        binaryChain = binaryChain.then(() => sleep(1))
+        void binaryChain.then(deliver).catch(() => {})
+      }
+    }
+  }
+
+  wire.client = new ClientPeerClass(
+    transport((message) => wire.server.message(message as ClientPeerSendMessage, handler)),
+  )
+  wire.server = new ServerPeerClass(
+    transport((message) => wire.client.message(message as ServerPeerSendMessage)),
+  )
 
   return wire
 }
@@ -331,6 +375,47 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     const body = await response.resolveBody()
     expect(body).toBeInstanceOf(ReadableStream)
     expect(await readAll(body as ReadableStream<Uint8Array>)).toEqual([4, 5])
+  })
+
+  it('streams every binary chunk in both directions when binary messages are decoded asynchronously', async () => {
+    const chunks = Array.from({ length: 8 }, (_, i) => new Uint8Array(1024).fill(i + 1))
+
+    function toStream(): ReadableStream<Uint8Array> {
+      return new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(chunk)
+          }
+          controller.close()
+        },
+      })
+    }
+
+    async function readChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8Array[]> {
+      const received: Uint8Array[] = []
+      for await (const chunk of stream) {
+        received.push(chunk)
+      }
+      return received
+    }
+
+    let uploaded: Uint8Array[] | undefined
+
+    const { client } = connectWithAsyncBinaryDecoding(async (request) => {
+      uploaded = await readChunks((await request.resolveBody()) as ReadableStream<Uint8Array>)
+      return { status: 200, headers: {}, body: toStream() }
+    })
+
+    const response = await client.request({
+      url: '/echo',
+      method: 'POST',
+      headers: {},
+      body: toStream(),
+    })
+
+    expect(uploaded).toEqual(chunks)
+    const body = (await response.resolveBody()) as ReadableStream<Uint8Array>
+    expect(await readChunks(body)).toEqual(chunks)
   })
 
   it('does not upload a request body the server cancelled while the request message was still being sent', async () => {

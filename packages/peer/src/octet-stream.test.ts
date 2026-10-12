@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 
 import { Queue } from '@standard-server/shared'
 
+import { encodePeerMessage } from './codec'
 import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
 import type { PeerOctetStreamMessage } from './types'
 
@@ -54,6 +55,48 @@ describe('toOctetStream', () => {
     const r = await reader.read()
     expect(r.done).toBe(true)
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
+  it.each([
+    ['Uint8Array', new Uint8Array(0)],
+    ['Blob', new Blob([])],
+  ])('does not emit the empty %s chunk of a close message', async (_, binary) => {
+    const queue = new Queue<PeerOctetStreamMessage>()
+    const cleanup = vi.fn()
+    const stream = toOctetStream(queue, cleanup)
+
+    queue.push({
+      id: '1',
+      kind: 'octet-stream',
+      json: {},
+      binary: new Uint8Array([1, 2, 3]),
+    })
+    queue.push({
+      id: '1',
+      kind: 'octet-stream',
+      json: { close: true },
+      binary,
+    })
+
+    const reader = stream.getReader()
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: new Uint8Array([1, 2, 3]),
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
+  it('passes through empty chunks before the close message', async () => {
+    const queue = new Queue<PeerOctetStreamMessage>()
+    const stream = toOctetStream(queue, vi.fn())
+
+    queue.push({ id: '1', kind: 'octet-stream', json: {}, binary: new Uint8Array(0) })
+    queue.push({ id: '1', kind: 'octet-stream', json: { close: true }, binary: new Uint8Array(0) })
+
+    const reader = stream.getReader()
+    await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array(0) })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
   })
 
   it('converts Blob binary to Uint8Array', async () => {
@@ -139,8 +182,26 @@ describe('octetStreamTransmitter', () => {
       id: 'msg-1',
       kind: 'octet-stream',
       json: { close: true },
-      binary: undefined,
+      binary: new Uint8Array(0),
     })
+  })
+
+  it('encodes the close message as binary like the data chunks', async () => {
+    const send = vi.fn(async (_message: PeerOctetStreamMessage) => {})
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]))
+        controller.close()
+      },
+    })
+
+    await new OctetStreamTransmitter(stream, 'msg-1', send).transmit()
+
+    const close = send.mock.calls[1]![0]
+    expect(close.json).toEqual({ close: true })
+    expect(close.binary).toBeInstanceOf(Uint8Array)
+    expect(close.binary).toHaveLength(0)
+    expect(await encodePeerMessage(close)).toBeInstanceOf(Uint8Array)
   })
 
   it('copies chunks that view part of a larger buffer, sends whole-buffer chunks as-is', async () => {

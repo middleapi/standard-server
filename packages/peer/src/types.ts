@@ -175,7 +175,8 @@ export interface PeerOctetStreamMessage extends PeerMessage {
   }
 
   /**
-   * Binary chunk. Should be present even when `close` is `true`.
+   * Binary chunk. Should be present even when `close` is `true` (empty if no data is left),
+   * so every message of the stream is encoded as binary and stays in order on the wire.
    */
   binary?: Uint8Array<ArrayBuffer> | Blob | undefined
 }
