@@ -1,5 +1,5 @@
-const LONE_SURROGATE_REGEX =
-  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+// with the u flag a well-formed surrogate pair is one code point, so only lone surrogates match
+const LONE_SURROGATE_REGEX = /[\uD800-\uDFFF]/gu
 const PERCENT_ESCAPES_REGEX = /(?:%[0-9A-F]{2})+/gi
 
 /**

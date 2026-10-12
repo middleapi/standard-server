@@ -1,7 +1,3 @@
-registries:
-  https://npm.jsr.io/:
-    scopes: ['@jsr']
-
 packages:
   - packages/*
   - playgrounds/*

@@ -17,6 +17,9 @@ describe('safeEncodeURIComponent', () => {
     expect(safeEncodeURIComponent('\uDC00\uD800')).toBe('%EF%BF%BD%EF%BF%BD')
     // a well-formed pair next to a lone surrogate is kept intact
     expect(safeEncodeURIComponent('😀\uD83D')).toBe('%F0%9F%98%80%EF%BF%BD')
+    expect(safeEncodeURIComponent('\u{1F600}\uDE00')).toBe('%F0%9F%98%80%EF%BF%BD')
+    expect(safeEncodeURIComponent('\u{10FFFF}\uD800')).toBe('%F4%8F%BF%BF%EF%BF%BD')
+    expect(safeEncodeURIComponent('\uD800\u{10000}\uDFFF')).toBe('%EF%BF%BD%F0%90%80%80%EF%BF%BD')
   })
 })
 
