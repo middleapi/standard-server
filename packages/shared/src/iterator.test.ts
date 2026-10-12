@@ -21,7 +21,9 @@ it('isAsyncIteratorObject', () => {
   expect(isAsyncIteratorObject(gen2())).toBe(false)
 })
 
-it('uses Symbol.for("Symbol.asyncDispose") when Symbol.asyncDispose is not native', async () => {
+it('uses Symbol.for("Symbol.asyncDispose") when Symbol.asyncDispose is not native', async ({
+  onTestFinished,
+}) => {
   onTestFinished(() => {
     vi.unstubAllGlobals()
     vi.resetModules()
@@ -43,11 +45,7 @@ it('uses Symbol.for("Symbol.asyncDispose") when Symbol.asyncDispose is not nativ
   const cleanup = vi.fn()
   const iterator = new AsyncIteratorClass(async () => ({ done: false, value: 1 }), cleanup)
 
-  // the key esbuild's `__using`, Babel's `usingCtx` and core-js use without the native symbol
-  const dispose = (iterator as any)[RealSymbol.for('Symbol.asyncDispose')]
-  expect(typeof dispose).toBe('function')
-
-  await dispose.call(iterator)
+  await (iterator as any)[RealSymbol.for('Symbol.asyncDispose')]()
   expect(cleanup).toHaveBeenCalledTimes(1)
   expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
 })
