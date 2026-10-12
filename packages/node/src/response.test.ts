@@ -9,6 +9,7 @@ import type { StandardResponse } from '@standard-server/core'
 import request from 'supertest'
 
 import * as Body from './body'
+import { toStandardLazyRequest } from './request'
 import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(Body, 'toNodeHttpBody')
@@ -557,7 +558,7 @@ describe('sendStandardResponse', () => {
     it('sends the status and headers', async () => {
       let sending: Promise<void> | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2('HEAD', (_, res) => {
         sending = sendStandardResponse(res, {
           status: 201,
           headers: { 'x-custom-header': 'custom-value' },
@@ -574,7 +575,32 @@ describe('sendStandardResponse', () => {
       expect(response.body).toBe('')
     })
 
-    it('rejects and releases a stream body it cannot send', async () => {
+    it('sends the headers of a buffered body without the body', async () => {
+      let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
+
+      const response = await requestHttp2('HEAD', (req, res) => {
+        signal = toStandardLazyRequest(req, res).signal
+        sending = sendStandardResponse(res, {
+          status: 200,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: { foo: 'bar' },
+        })
+      })
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': 200,
+        'content-type': 'application/json',
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      expect(signal!.aborted).toBe(false)
+    })
+
+    it('resolves and releases a stream body it cannot send', async () => {
       let clean = false
       const body = (async function* () {
         try {
@@ -588,13 +614,14 @@ describe('sendStandardResponse', () => {
       })()
 
       let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2('HEAD', (req, res) => {
+        signal = toStandardLazyRequest(req, res).signal
         sending = sendStandardResponse(res, { status: 201, headers: {}, body })
-        sending.catch(() => {})
       })
 
-      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
+      await expect(sending).resolves.toBeUndefined()
 
       expect(response.headers).toMatchObject({
         ':status': 201,
@@ -602,8 +629,91 @@ describe('sendStandardResponse', () => {
       })
       expect(response.body).toBe('')
 
+      expect(signal!.aborted).toBe(false)
+
       await vi.waitFor(() => {
         expect(clean).toBe(true)
+      })
+    })
+  })
+
+  describe('http2 response with a status that cannot carry a body', () => {
+    it.each([204, 205, 304])('%s with a buffered body', async (status) => {
+      let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
+
+      const response = await requestHttp2('GET', (req, res) => {
+        signal = toStandardLazyRequest(req, res).signal
+        sending = sendStandardResponse(res, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: { foo: 'bar' },
+        })
+      })
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': status,
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      expect(signal!.aborted).toBe(false)
+    })
+
+    it.each([204, 205, 304])('%s with a file body', async (status) => {
+      let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
+
+      const response = await requestHttp2('GET', (req, res) => {
+        signal = toStandardLazyRequest(req, res).signal
+        sending = sendStandardResponse(res, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: new Blob(['foo'], { type: 'text/plain' }),
+        })
+      })
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': status,
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      expect(signal!.aborted).toBe(false)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as Stream.Readable).destroyed).toBe(true)
+    })
+
+    it.each([204, 205])('%s drops the content headers', async (status) => {
+      const response = await requestHttp2('GET', (_, res) => {
+        void sendStandardResponse(res, {
+          status,
+          headers: {},
+          body: new Blob(['foo'], { type: 'text/plain' }),
+        })
+      })
+
+      expect(response.headers).not.toHaveProperty('content-type')
+      expect(response.headers).not.toHaveProperty('content-length')
+    })
+
+    it('304 keeps the content headers', async () => {
+      const response = await requestHttp2('GET', (_, res) => {
+        void sendStandardResponse(res, {
+          status: 304,
+          headers: {},
+          body: new Blob(['foo'], { type: 'text/plain' }),
+        })
+      })
+
+      expect(response.headers).toMatchObject({
+        'content-type': 'text/plain',
+        'content-length': '3',
       })
     })
   })
@@ -662,7 +772,8 @@ describe('sendStandardResponse', () => {
   })
 })
 
-async function requestHttp2Head(
+async function requestHttp2(
+  method: string,
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
 ): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
   const server = http2.createServer(listener)
@@ -671,7 +782,7 @@ async function requestHttp2Head(
   const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
 
   try {
-    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    const reqStream = client.request({ ':path': '/', ':method': method })
 
     const chunks: Buffer[] = []
     reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -681,7 +792,11 @@ async function requestHttp2Head(
       reqStream.once('error', reject)
     })
 
-    await new Promise((r) => reqStream.once('close', r))
+    // a stream error after the response, e.g. a content-length the client rejects, fails too
+    await new Promise((resolve, reject) => {
+      reqStream.once('close', resolve)
+      reqStream.once('error', reject)
+    })
 
     return { headers, body: Buffer.concat(chunks).toString() }
   } finally {

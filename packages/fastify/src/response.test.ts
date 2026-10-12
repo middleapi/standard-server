@@ -7,6 +7,7 @@ import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
 
+import { toStandardLazyRequest } from './request'
 import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
@@ -690,7 +691,10 @@ describe('sendStandardResponse', () => {
         await sending
       })
 
-      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'HEAD',
+      )
 
       await expect(sending).resolves.toBeUndefined()
 
@@ -702,34 +706,149 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('rejects and releases the body on an explicit http2 HEAD route', async ({
+    it('resolves and releases the body on an explicit http2 HEAD route', async ({
       onTestFinished,
     }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
 
       const fastify = Fastify({ http2: true })
       onTestFinished(() => fastify.close())
 
       fastify.head('/', async (req, reply) => {
+        signal = toStandardLazyRequest(req, reply).signal
         sending = sendStandardResponse(reply, {
           status: 201,
           headers: { 'x-custom-header': 'custom-value' },
           body,
         })
-        await sending.catch(() => {})
+        await sending
       })
 
-      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'HEAD',
+      )
 
-      await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
+      await expect(sending).resolves.toBeUndefined()
 
       expect(response.headers).toMatchObject({ ':status': 201, 'x-custom-header': 'custom-value' })
       expect(response.body).toBe('')
 
+      expect(signal!.aborted).toBe(false)
+
       await vi.waitFor(() => {
         expect(isReleased()).toBe(true)
       })
+    })
+  })
+
+  describe('head request with a buffered body', () => {
+    it('sends the headers without the body on an explicit http2 HEAD route', async ({
+      onTestFinished,
+    }) => {
+      let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
+
+      const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
+
+      fastify.head('/', async (req, reply) => {
+        signal = toStandardLazyRequest(req, reply).signal
+        sending = sendStandardResponse(reply, {
+          status: 200,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: { foo: 'bar' },
+        })
+        await sending
+      })
+
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'HEAD',
+      )
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': 200,
+        'content-type': 'application/json',
+        'content-length': '13',
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      expect(signal!.aborted).toBe(false)
+    })
+
+    it.for([
+      ['a buffered', { foo: 'bar' }, '13'],
+      ['a file', new Blob(['foo'], { type: 'text/plain' }), '3'],
+    ] as const)(
+      'keeps the content-length of %s body on an auto-exposed HEAD route',
+      async ([, body, contentLength], { onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, { status: 200, headers: {}, body })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).head('/')
+
+        expect(res.status).toBe(200)
+        expect(res.headers['content-length']).toBe(contentLength)
+      },
+    )
+  })
+
+  describe('http2 response with a status that cannot carry a body', () => {
+    it.for([
+      [204, 'a buffered', () => ({ foo: 'bar' })],
+      [205, 'a buffered', () => ({ foo: 'bar' })],
+      [304, 'a buffered', () => ({ foo: 'bar' })],
+      [204, 'a file', () => new Blob(['foo'], { type: 'text/plain' })],
+      [205, 'a file', () => new Blob(['foo'], { type: 'text/plain' })],
+      [304, 'a file', () => new Blob(['foo'], { type: 'text/plain' })],
+    ] as const)('%s with %s body', async ([status, , createBody], { onTestFinished }) => {
+      let sending: Promise<void> | undefined
+      let signal: AbortSignal | undefined
+
+      const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        signal = toStandardLazyRequest(req, reply).signal
+        sending = sendStandardResponse(reply, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body: createBody(),
+        })
+        await sending
+      })
+
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'GET',
+      )
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(response.headers).toMatchObject({
+        ':status': status,
+        'x-custom-header': 'custom-value',
+      })
+      expect(response.body).toBe('')
+
+      if (status === 304) {
+        expect(response.headers).toHaveProperty('content-type')
+      } else {
+        expect(response.headers).not.toHaveProperty('content-type')
+      }
+
+      expect(signal!.aborted).toBe(false)
     })
   })
 
@@ -781,13 +900,14 @@ function createEndlessBody() {
   return { body, isReleased: () => released }
 }
 
-async function requestHttp2Head(
+async function requestHttp2(
   origin: string,
+  method: string,
 ): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
   const client = http2.connect(origin)
 
   try {
-    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    const reqStream = client.request({ ':path': '/', ':method': method })
 
     const chunks: Buffer[] = []
     reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -797,7 +917,11 @@ async function requestHttp2Head(
       reqStream.once('error', reject)
     })
 
-    await new Promise((r) => reqStream.once('close', r))
+    // a stream error after the response, e.g. a content-length the client rejects, fails too
+    await new Promise((resolve, reject) => {
+      reqStream.once('close', resolve)
+      reqStream.once('error', reject)
+    })
 
     return { headers, body: Buffer.concat(chunks).toString() }
   } finally {

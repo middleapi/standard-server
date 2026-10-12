@@ -3,7 +3,12 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
 import type { NodeHttpResponse } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
+import {
+  canNodeResponseHaveBody,
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+} from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
@@ -39,6 +44,14 @@ export async function sendStandardResponse(
     connection.once('close', resolve)
 
     try {
+      const hasBody = canNodeResponseHaveBody(res, standardResponse.status)
+
+      if (!hasBody && (standardResponse.status === 204 || standardResponse.status === 205)) {
+        // No content to describe, and an http2 client rejects these with a content-length
+        resHeaders['content-type'] = undefined
+        resHeaders['content-length'] = undefined
+      }
+
       // DON'T use `res.writeHead` because it send response immediately in chunked mode
       // while we only need chunked if the response body is stream
       res.statusCode = standardResponse.status
@@ -49,7 +62,11 @@ export async function sendStandardResponse(
         }
       }
 
-      if (resBody === undefined) {
+      if (resBody === undefined || !hasBody) {
+        // Release instead of writing a body the response cannot carry: on http2, Node
+        // ends the stream with the headers, so any write would fail as a write after end
+        destroyNodeHttpBody(resBody, undefined, reject)
+
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
         res.end()
       } else if (typeof resBody === 'string') {

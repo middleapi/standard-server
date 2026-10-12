@@ -87,6 +87,24 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
 }
 
 /**
+ * Check the response can carry a body: HEAD, 1xx, 204 and 304 responses never do,
+ * nor do 205 responses on http2, where Node ends the stream together with the headers,
+ * so writing a body there fails with `ERR_STREAM_WRITE_AFTER_END`.
+ */
+export function canNodeResponseHaveBody(res: NodeHttpResponse, status: number): boolean {
+  // `req` may be missing on a response that is a bare writable stream
+  if (res.req?.method === 'HEAD') {
+    return false
+  }
+
+  if ((status >= 100 && status < 200) || status === 204 || status === 304) {
+    return false
+  }
+
+  return status !== 205 || !('stream' in res)
+}
+
+/**
  * Get the error of the response, preferring its underlying stream's (http2).
  */
 export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): Error | null {

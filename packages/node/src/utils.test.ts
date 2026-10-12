@@ -10,6 +10,7 @@ import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
+  canNodeResponseHaveBody,
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
@@ -210,6 +211,35 @@ describe('canWriteToNodeResponse', () => {
     reqStream.once('close', () => client.close())
 
     await handled
+  })
+})
+
+describe('canNodeResponseHaveBody', () => {
+  const http1Response = (method: string) => ({ req: { method } }) as any
+  const http2Response = (method: string) => ({ req: { method }, stream: {} }) as any
+
+  it.each([200, 201, 206, 404, 500])('allows a body with status %s', (status) => {
+    expect(canNodeResponseHaveBody(http1Response('GET'), status)).toBe(true)
+    expect(canNodeResponseHaveBody(http2Response('GET'), status)).toBe(true)
+  })
+
+  it.each([100, 103, 204, 304])('disallows a body with status %s', (status) => {
+    expect(canNodeResponseHaveBody(http1Response('GET'), status)).toBe(false)
+    expect(canNodeResponseHaveBody(http2Response('GET'), status)).toBe(false)
+  })
+
+  it('disallows a body with status 205 on http2 only', () => {
+    expect(canNodeResponseHaveBody(http1Response('GET'), 205)).toBe(true)
+    expect(canNodeResponseHaveBody(http2Response('GET'), 205)).toBe(false)
+  })
+
+  it('disallows a body on a HEAD response', () => {
+    expect(canNodeResponseHaveBody(http1Response('HEAD'), 200)).toBe(false)
+    expect(canNodeResponseHaveBody(http2Response('HEAD'), 200)).toBe(false)
+  })
+
+  it('allows a body on a response without a request', () => {
+    expect(canNodeResponseHaveBody({} as any, 200)).toBe(true)
   })
 })
 
