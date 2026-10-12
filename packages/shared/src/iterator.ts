@@ -18,12 +18,11 @@ export interface AsyncIteratorClassNextFn<T, TReturn> {
   (): Promise<IteratorResult<T, TReturn>>
 }
 
-const fallbackAsyncDisposeSymbol: unique symbol = Symbol.for('asyncDispose')
-/* v8 ignore start  */
+// same key as esbuild's `__using`, Babel's `usingCtx` and core-js use without a native symbol
+const fallbackAsyncDisposeSymbol: unique symbol = Symbol.for('Symbol.asyncDispose')
 const asyncDisposeSymbol: typeof Symbol extends { asyncDispose: infer T }
   ? T
   : typeof fallbackAsyncDisposeSymbol = (Symbol as any).asyncDispose ?? fallbackAsyncDisposeSymbol
-/* v8 ignore end  */
 
 export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown>
   implements AsyncIteratorObject<T, TReturn, TNext>, AsyncGenerator<T, TReturn, TNext>
@@ -99,7 +98,7 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown>
   }
 
   /**
-   * asyncDispose symbol only available in esnext, we should fallback to Symbol.for('asyncDispose')
+   * Uses the native Symbol.asyncDispose, or Symbol.for('Symbol.asyncDispose') on runtimes without it
    */
   async [asyncDisposeSymbol](): Promise<void> {
     this.isDone = true
