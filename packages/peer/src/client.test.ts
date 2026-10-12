@@ -93,6 +93,24 @@ function makeHangingIter(): AsyncIteratorClass<unknown> {
   )
 }
 
+/**
+ * A native async generator that yields once, then waits forever at an `await`
+ */
+function makeStuckGenerator() {
+  const reachedAwait = promiseWithResolvers<void>()
+  const cleanup = vi.fn()
+  async function* gen() {
+    try {
+      yield 'a'
+      reachedAwait.resolve()
+      await new Promise(() => {})
+    } finally {
+      cleanup()
+    }
+  }
+  return { iter: gen(), reachedAwait: reachedAwait.promise, cleanup }
+}
+
 function getPeerSize(peer: ClientPeer): number {
   return (peer as any).requests.size
 }
@@ -666,6 +684,38 @@ describe('clientPeer', () => {
         // the body is released in the background, after the response already settled
         await vi.waitFor(() => expect(returnSpy).toHaveBeenCalled())
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      })
+
+      it('handles a full response while a native async generator request body is stuck at an await', async () => {
+        const { iter, reachedAwait } = makeStuckGenerator()
+        const returnSpy = vi.spyOn(iter, 'return')
+
+        const { id, promise } = await requestAndGetId(makeRequest({ body: iter }))
+        await reachedAwait
+
+        await peer.message(makeResponseMessage(id, 'done'))
+        const response = await promise
+        expect(await response.resolveBody()).toBe('done')
+
+        expect(returnSpy).toHaveBeenCalledTimes(1)
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
+      })
+
+      it('handles cancel messages while a native async generator request body is stuck at an await', async () => {
+        const { iter, reachedAwait } = makeStuckGenerator()
+        const returnSpy = vi.spyOn(iter, 'return')
+
+        const { id, promise } = await requestAndGetId(makeRequest({ body: iter }))
+        const rejection = expect(promise).rejects.toThrow('Server canceled the request')
+        await reachedAwait
+
+        await peer.message(makeStreamCancelMessage(id))
+        expect(returnSpy).toHaveBeenCalledTimes(1)
+
+        await peer.message(makeCancelMessage(id))
+        await rejection
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
       })
 
       it('silently ignores transport failures when aborting after an event-stream body error', async () => {
@@ -1280,6 +1330,23 @@ describe('clientPeer', () => {
       expect(cancelled).toBe(2)
       await sleep(10)
       expect(send).toHaveBeenCalledTimes(4) // no more messages
+    })
+
+    it('settles while a native async generator request body is stuck at an await', async () => {
+      const { iter, reachedAwait, cleanup } = makeStuckGenerator()
+      const returnSpy = vi.spyOn(iter, 'return')
+
+      const { promise } = await requestAndGetId(makeRequest({ body: iter }))
+      const rejection = expect(promise).rejects.toThrow(AbortError)
+      await reachedAwait
+
+      await peer.close()
+      await rejection
+
+      expect(returnSpy).toHaveBeenCalledTimes(1)
+      // `finally` cannot run until the generator resumes
+      expect(cleanup).not.toHaveBeenCalled()
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'event-stream'])
     })
 
     it('terminates ongoing octet-stream request and messages', async () => {

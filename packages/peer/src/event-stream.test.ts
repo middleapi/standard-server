@@ -1,5 +1,5 @@
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
-import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
+import { AsyncIteratorClass, promiseWithResolvers, Queue, sleep } from '@standard-server/shared'
 
 import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream'
 import type { PeerEventStreamMessage } from './types'
@@ -329,5 +329,114 @@ describe('eventStreamTransmitter', () => {
     await transmitter.cancel()
 
     expect(returnFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancel settles while a native async generator is stuck at an await', async () => {
+    const send = vi.fn(async () => {})
+    const cleanup = vi.fn()
+    const reachedAwait = promiseWithResolvers<void>()
+    async function* gen() {
+      try {
+        yield 'a'
+        reachedAwait.resolve()
+        await new Promise(() => {})
+      } finally {
+        cleanup()
+      }
+    }
+    const iter = gen()
+    const returnSpy = vi.spyOn(iter, 'return')
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
+    const transmitPromise = transmitter.transmit()
+    await reachedAwait.promise
+
+    await transmitter.cancel()
+    await transmitPromise
+
+    expect(returnSpy).toHaveBeenCalledTimes(1)
+    // `finally` cannot run until the generator resumes
+    expect(cleanup).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['resolves', 'rejects'])(
+    'ignores the pending next() and cleans up when the awaited value %s after cancel',
+    async (outcome) => {
+      const send = vi.fn(async () => {})
+      const cleanup = vi.fn()
+      const reachedAwait = promiseWithResolvers<void>()
+      const resume = promiseWithResolvers<void>()
+      async function* gen() {
+        try {
+          yield 'a'
+          reachedAwait.resolve()
+          await resume.promise
+          yield 'b'
+        } finally {
+          cleanup()
+        }
+      }
+
+      const transmitter = new EventStreamTransmitter(gen(), 'msg-1', send)
+      const transmitPromise = transmitter.transmit()
+      await reachedAwait.promise
+
+      await transmitter.cancel()
+      await transmitPromise
+
+      if (outcome === 'resolves') {
+        resume.resolve()
+      } else {
+        resume.reject(new Error('late'))
+      }
+
+      // the queued return() runs `finally` once the generator resumes
+      await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1))
+      expect(send).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('ignores return() failures while a next() is pending', async () => {
+    const returnFn = vi.fn(async () => {
+      throw new Error('return failed')
+    })
+    const iter: AsyncIterator<unknown> = {
+      next: () => new Promise(() => {}),
+      return: returnFn,
+    }
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', vi.fn())
+    const transmitPromise = transmitter.transmit()
+
+    await transmitter.cancel()
+    await transmitPromise
+
+    expect(returnFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('awaits return() when no next() is pending', async () => {
+    const cleanup = vi.fn()
+    async function* gen() {
+      try {
+        yield 'a'
+        yield 'b'
+      } finally {
+        cleanup()
+      }
+    }
+
+    let cleanupCallsOnCancel: number | undefined
+    const send = vi.fn(async () => {
+      // the generator is parked at `yield 'a'` while its value is being sent
+      await transmitter.cancel()
+      cleanupCallsOnCancel = cleanup.mock.calls.length
+    })
+
+    const transmitter = new EventStreamTransmitter(gen(), 'msg-1', send)
+    await transmitter.transmit()
+
+    expect(cleanupCallsOnCancel).toBe(1)
+    expect(send).toHaveBeenCalledTimes(1)
   })
 })

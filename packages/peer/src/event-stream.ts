@@ -46,6 +46,11 @@ export function toAsyncIteratorObject(
 export class EventStreamTransmitter {
   private isDone = false
 
+  /**
+   * Ends the wait on the in-flight `iterator.next()`, only set while one is pending
+   */
+  private settlePendingNext: (() => void) | undefined
+
   constructor(
     private readonly iterator: AsyncIterator<unknown>,
     private readonly messageId: string,
@@ -53,16 +58,35 @@ export class EventStreamTransmitter {
   ) {}
 
   async cancel(): Promise<void> {
-    if (!this.isDone) {
-      this.isDone = true
-      await this.iterator.return?.()
+    if (this.isDone) {
+      return
     }
+
+    this.isDone = true
+
+    const settlePendingNext = this.settlePendingNext
+
+    if (!settlePendingNext) {
+      await this.iterator.return?.()
+      return
+    }
+
+    /**
+     * A native async generator queues `return()` behind the pending `next()`, so it does not
+     * settle until the generator reaches its next `yield` or ends, which may never happen.
+     * Stop waiting for that `next()` and request `return()` without awaiting it.
+     */
+    this.settlePendingNext = undefined
+    settlePendingNext()
+
+    // WARNING: errors that occur here are silently ignored.
+    void Promise.resolve(this.iterator.return?.()).catch(() => {})
   }
 
   async transmit(): Promise<void> {
     while (true) {
       try {
-        const item = await this.iterator.next()
+        const item = await this.next()
 
         if (this.isDone) {
           return
@@ -108,5 +132,25 @@ export class EventStreamTransmitter {
         throw error
       }
     }
+  }
+
+  /**
+   * Like `iterator.next()`, but resolves `done` as soon as the transmitter is cancelled
+   */
+  private next(): Promise<IteratorResult<unknown>> {
+    return new Promise((resolve, reject) => {
+      this.settlePendingNext = () => resolve({ done: true, value: undefined })
+
+      Promise.resolve(this.iterator.next()).then(
+        (item) => {
+          this.settlePendingNext = undefined
+          resolve(item)
+        },
+        (error) => {
+          this.settlePendingNext = undefined
+          reject(error)
+        },
+      )
+    })
   }
 }

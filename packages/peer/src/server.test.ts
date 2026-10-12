@@ -4,6 +4,7 @@ import {
   AbortError,
   AsyncIteratorClass,
   isAsyncIteratorObject,
+  promiseWithResolvers,
   sleep,
 } from '@standard-server/shared'
 
@@ -78,6 +79,24 @@ function makeAsyncIter(values: unknown[]): AsyncIteratorClass<unknown> {
         : { value: undefined, done: true },
     async () => {},
   )
+}
+
+/**
+ * A native async generator that yields once, then waits forever at an `await`
+ */
+function makeStuckGenerator() {
+  const reachedAwait = promiseWithResolvers<void>()
+  const cleanup = vi.fn()
+  async function* gen() {
+    try {
+      yield 'a'
+      reachedAwait.resolve()
+      await new Promise(() => {})
+    } finally {
+      cleanup()
+    }
+  }
+  return { iter: gen(), reachedAwait: reachedAwait.promise, cleanup }
 }
 
 function getPeerSize(peer: ServerPeer): number {
@@ -543,6 +562,27 @@ describe('serverPeer', () => {
         expect(returnFn).toHaveBeenCalled()
         await promise
       })
+
+      it.each(['close', 'cancel message'])(
+        'settles %s while a native async generator is stuck at an await',
+        async (via) => {
+          const { iter, reachedAwait, cleanup } = makeStuckGenerator()
+
+          const promise = peer.message(makeRequestMessage(), async () => eventStreamResponse(iter))
+          await reachedAwait
+
+          if (via === 'close') {
+            await peer.close()
+          } else {
+            await peer.message(makeCancelMessage('1'), vi.fn())
+          }
+          await promise
+
+          // `finally` cannot run until the generator resumes
+          expect(cleanup).not.toHaveBeenCalled()
+          expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response', 'event-stream'])
+        },
+      )
 
       it('sends cancel message when iterator throws non-protocol error', async () => {
         const nonProtocolError = new Error('iterator error')
