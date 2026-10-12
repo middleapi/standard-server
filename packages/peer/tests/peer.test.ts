@@ -1,6 +1,6 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
 import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
-import { promiseWithResolvers } from '@standard-server/shared'
+import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src'
 import {
@@ -437,6 +437,61 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     releaseEncode.resolve()
     await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
   })
+
+  it.each(['event-stream', 'octet-stream'] as const)(
+    'stops an endless %s response the client cancels while the request message is still being sent',
+    async (type) => {
+      let produced = 0
+      let serverSignal: AbortSignal | undefined
+
+      const { client, server } = connect(
+        async (request) => {
+          serverSignal = request.signal
+          return {
+            status: 200,
+            headers: {},
+            body:
+              type === 'event-stream'
+                ? (async function* () {
+                    while (true) {
+                      yield ++produced
+                      await sleep(5)
+                    }
+                  })()
+                : new ReadableStream<Uint8Array>({
+                    async pull(controller) {
+                      controller.enqueue(new Uint8Array([++produced]))
+                      await sleep(5)
+                    },
+                  }),
+          }
+        },
+        // the request `send` resolves only once the server has finished streaming the response
+        { waitForRemote: true },
+      )
+
+      const response = await client.request({ url: '/endless', method: 'GET', headers: {} })
+      const body = await response.resolveBody()
+
+      if (type === 'event-stream') {
+        const iterator = body as AsyncIterator<unknown>
+        await iterator.next()
+        await iterator.return!()
+      } else {
+        const reader = (body as ReadableStream<Uint8Array>).getReader()
+        await reader.read()
+        await reader.cancel()
+      }
+
+      await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
+      expect((server as any).requests.size).toBe(0)
+
+      // the server stops pulling from the response body
+      const producedAtCancel = produced
+      await sleep(50)
+      expect(produced).toBe(producedAtCancel)
+    },
+  )
 
   it('carries malicious __proto__ payloads as inert data without polluting prototypes', async () => {
     let serverBody: Record<string, unknown> | undefined

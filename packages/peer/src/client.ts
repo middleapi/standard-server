@@ -30,8 +30,15 @@ interface ClientPeerRequestStateInternal {
   /**
    * A cancel must not overtake the request message (the server ignores cancels for unknown ids),
    * so until the request message is sent, transmitRequest sends the cancel instead of abortById.
+   * Any server message for the request also proves the server has it, which matters for
+   * transports whose send resolves only once the remote has handled the message.
    */
   requestSent?: boolean | undefined
+  /**
+   * Set when the request is aborted before the request message is sent,
+   * so transmitRequest knows it owes the server a cancel once it is.
+   */
+  cancelPending?: boolean | undefined
   streamCancelled?: boolean | undefined
 }
 
@@ -76,6 +83,7 @@ export class ClientPeer {
     request: StandardRequest,
   ): Promise<void> {
     let untransmittedBody: StandardBody | undefined = request.body
+    let requestMessageSent = false
     let failure: unknown
 
     try {
@@ -105,11 +113,12 @@ export class ClientPeer {
         },
         binary: encodedAtomicBody.binary,
       })
+      requestMessageSent = true
       state.requestSent = true
 
       // The request can already be settled/cancelled while was in flight
       if (this.requests.get(id) !== state) {
-        if (request.signal?.aborted) {
+        if (state.cancelPending) {
           await this.send({ id, kind: 'cancel' })
         }
 
@@ -134,7 +143,9 @@ export class ClientPeer {
     } catch (reason) {
       failure = reason
 
-      if (!state.requestSent) {
+      // a server message can set state.requestSent early, but a request message
+      // that failed to send still fails the request, without a cancel
+      if (!requestMessageSent) {
         await this.closeById(id, reason)
       } else if (!state.streamCancelled) {
         await this.abortById(id, reason)
@@ -159,6 +170,9 @@ export class ClientPeer {
       // request already closed or non-existing
       return
     }
+
+    // the server has the request, even if the request message send has not resolved yet
+    state.requestSent = true
 
     if (message.kind === 'stream/cancel') {
       state.streamCancelled = true
@@ -285,6 +299,9 @@ export class ClientPeer {
     state.octetStreamMessageQueue?.abort(reason)
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
+
+    // until the request message is sent, transmitRequest sends the cancel
+    state.cancelPending = !state.requestSent
 
     const promises = [
       state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
