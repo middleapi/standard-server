@@ -36,8 +36,6 @@ jobs:
 
       - run: pnpm runtime set bun 1
 
-      - run: pnpm runtime set deno 2
-
       - run: pnpm i
 
       - run: pnpm run test:coverage
