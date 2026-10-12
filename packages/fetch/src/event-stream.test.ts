@@ -1,4 +1,9 @@
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  EventStreamEncoderError,
+  getEventMeta,
+  withEventMeta,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
@@ -561,6 +566,41 @@ describe('toEventStream', () => {
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })
+
+    it.each(['ping\n', 'ping\r'])(
+      'throws and releases the iterator when the comment is %j',
+      (comment) => {
+        const iterator = createMockIterator()
+
+        expect(() =>
+          toEventStream(iterator, {
+            initialComment: { enabled: false },
+            keepAlive: { enabled: true, comment },
+          }),
+        ).toThrow(EventStreamEncoderError)
+
+        expect(iterator.next).not.toHaveBeenCalled()
+        expect(iterator.return).toHaveBeenCalledTimes(1)
+      },
+    )
+
+    it('does not validate the comment when disabled', async () => {
+      const reader = toEventStream(
+        (async function* () {
+          yield 'hello'
+        })(),
+        {
+          initialComment: { enabled: false },
+          keepAlive: { enabled: false, comment: 'ping\n' },
+        },
+      )
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
+
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: true })
+    })
   })
 
   describe('initial comment', () => {
@@ -610,8 +650,83 @@ describe('toEventStream', () => {
       await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
       await expect(reader.read()).resolves.toEqual({ done: true })
     })
+
+    it.each(['hi\n', 'hi\r'])(
+      'throws and releases the iterator when the comment is %j',
+      (comment) => {
+        const iterator = createMockIterator()
+
+        expect(() =>
+          toEventStream(iterator, {
+            initialComment: { enabled: true, comment },
+            keepAlive: { enabled: false },
+          }),
+        ).toThrow(EventStreamEncoderError)
+
+        expect(iterator.next).not.toHaveBeenCalled()
+        expect(iterator.return).toHaveBeenCalledTimes(1)
+      },
+    )
+
+    it('does not validate the comment when disabled', async () => {
+      const reader = toEventStream(
+        (async function* () {
+          yield 'hello'
+        })(),
+        {
+          initialComment: { enabled: false, comment: 'hi\n' },
+          keepAlive: { enabled: false },
+        },
+      )
+        .pipeThrough(new TextDecoderStream())
+        .getReader()
+
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'data: "hello"\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: false, value: 'event: close\n\n' })
+      await expect(reader.read()).resolves.toEqual({ done: true })
+    })
+  })
+
+  describe('releasing the iterator after an invalid comment', () => {
+    it('throws the original error when return() rejects', () => {
+      const iterator = createMockIterator()
+      iterator.return.mockRejectedValueOnce(new Error('cleanup'))
+
+      // the rejection must not surface as an unhandled rejection
+      expect(() => toEventStream(iterator, { initialComment: { comment: 'hi\n' } })).toThrow(
+        EventStreamEncoderError,
+      )
+      expect(iterator.return).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws the original error when return() throws synchronously', () => {
+      const iterator = createMockIterator()
+      iterator.return.mockImplementationOnce(() => {
+        throw new Error('cleanup')
+      })
+
+      expect(() => toEventStream(iterator, { initialComment: { comment: 'hi\n' } })).toThrow(
+        EventStreamEncoderError,
+      )
+      expect(iterator.return).toHaveBeenCalledTimes(1)
+    })
+
+    it('works with an iterator without return()', () => {
+      const { next } = createMockIterator()
+
+      expect(() => toEventStream({ next }, { initialComment: { comment: 'hi\n' } })).toThrow(
+        EventStreamEncoderError,
+      )
+    })
   })
 })
+
+function createMockIterator() {
+  return {
+    next: vi.fn(async (): Promise<IteratorResult<unknown>> => ({ done: true, value: undefined })),
+    return: vi.fn(async (): Promise<IteratorResult<unknown>> => ({ done: true, value: undefined })),
+  }
+}
 
 it.each([[[1, 2, 3, 4, 5, 6]], [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 }, { f: 6 }]]])(
   'toEventStream + toAsyncIteratorObject: %#',

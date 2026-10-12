@@ -6,6 +6,8 @@ import type { AddressInfo } from 'node:net'
 import Stream from 'node:stream'
 
 import type { StandardResponse } from '@standard-server/core'
+import { EventStreamEncoderError } from '@standard-server/core'
+import { AsyncIteratorClass } from '@standard-server/shared'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -330,6 +332,37 @@ describe('sendStandardResponse', () => {
     const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
     expect((resBody as any).destroyed).toBe(true)
   })
+
+  it.each([
+    ['initial comment', { initialComment: { comment: 'hi\n' } }],
+    ['keep-alive comment', { keepAlive: { enabled: true, comment: 'ping\n' } }],
+  ])(
+    'rejects and releases the body when the event stream %s is invalid',
+    async (_, eventStream) => {
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const cleanup = vi.fn()
+
+      const responseStream = new Stream.Writable({
+        write(chunk, encoding, callback) {
+          callback()
+        },
+      })
+
+      ;(responseStream as any).setHeader = vi.fn()
+
+      await expect(
+        sendStandardResponse(
+          responseStream as any,
+          { status: 200, headers: {}, body: new AsyncIteratorClass(next, cleanup) },
+          { eventStream },
+        ),
+      ).rejects.toThrow(EventStreamEncoderError)
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(next).not.toHaveBeenCalled()
+      expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+    },
+  )
 
   it('resolves without sending when headers were already flushed', async () => {
     let sendError: any

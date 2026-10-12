@@ -1,4 +1,5 @@
 import type { StandardResponse } from '@standard-server/core'
+import { EventStreamEncoderError } from '@standard-server/core'
 import { AsyncIteratorClass } from '@standard-server/shared'
 
 import * as Body from './body'
@@ -51,6 +52,24 @@ describe('toFetchResponse', () => {
       // the keep-alive interval and release the pending iterator
       await vi.waitFor(() => expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' }))
       expect(next).toHaveBeenCalledTimes(1)
+    })
+
+    it.each([
+      ['initial comment', { initialComment: { comment: 'hi\n' } }],
+      ['keep-alive comment', { keepAlive: { enabled: true, comment: 'ping\n' } }],
+    ])('event-stream body when the %s is invalid', (_, eventStream) => {
+      const next = vi.fn(() => new Promise<never>(() => {}))
+      const cleanup = vi.fn()
+
+      expect(() =>
+        toFetchResponse(
+          { status: 200, headers: {}, body: new AsyncIteratorClass(next, cleanup) },
+          { eventStream },
+        ),
+      ).toThrow(EventStreamEncoderError)
+
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'cancelled' })
+      expect(next).not.toHaveBeenCalled()
     })
 
     it('stream body when a header is invalid', () => {

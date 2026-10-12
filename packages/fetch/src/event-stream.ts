@@ -140,9 +140,37 @@ export function toEventStream(
 ): ReadableStream<Uint8Array<ArrayBuffer>> {
   const keepAliveEnabled = options.keepAlive?.enabled ?? true
   const keepAliveInterval = options.keepAlive?.interval ?? 15000
-  const keepAliveComment = options.keepAlive?.comment ?? ''
   const initialCommentEnabled = options.initialComment?.enabled ?? true
-  const initialComment = options.initialComment?.comment ?? ''
+
+  let keepAliveMessage = ''
+  let initialCommentMessage = ''
+
+  /**
+   * Encode the comments once, up front, so an invalid one throws here as a catchable error,
+   * not later from the stream constructor or a keep-alive timer, where it crashes the process.
+   * Disabled comments are not validated.
+   */
+  try {
+    if (initialCommentEnabled) {
+      initialCommentMessage = encodeEventStreamMessage({
+        comments: [options.initialComment?.comment ?? ''],
+      })
+    }
+
+    if (keepAliveEnabled) {
+      keepAliveMessage = encodeEventStreamMessage({
+        comments: [options.keepAlive?.comment ?? ''],
+      })
+    }
+  } catch (err) {
+    /**
+     * No stream owns the iterator yet, so release it here.
+     * A failing release must not hide the original error or become an unhandled rejection.
+     */
+    ;(async () => iterator.return?.())().catch(() => {})
+
+    throw err
+  }
 
   let cancelled = false
   let timeout: ReturnType<typeof setInterval> | undefined
@@ -150,11 +178,7 @@ export function toEventStream(
   const stream = new ReadableStream<string>({
     start(controller) {
       if (initialCommentEnabled) {
-        controller.enqueue(
-          encodeEventStreamMessage({
-            comments: [initialComment],
-          }),
-        )
+        controller.enqueue(initialCommentMessage)
       }
     },
     async pull(controller) {
@@ -163,11 +187,7 @@ export function toEventStream(
       try {
         if (keepAliveEnabled) {
           timeout = setInterval(() => {
-            controller.enqueue(
-              encodeEventStreamMessage({
-                comments: [keepAliveComment],
-              }),
-            )
+            controller.enqueue(keepAliveMessage)
           }, keepAliveInterval)
         }
 
