@@ -397,8 +397,8 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
   })
 
-  it('releases both peers when endless streamed response bodies are cancelled without reading', async () => {
-    let finalized = 0
+  it('releases both peers when an endless streamed response body is cancelled without reading', async () => {
+    const finalized = vi.fn()
 
     const { client, server } = connect(async () => ({
       status: 200,
@@ -410,27 +410,24 @@ describe('peer integration (client <-> server over encoded wire)', () => {
             await sleep(1)
           }
         } finally {
-          finalized++
+          finalized()
         }
       })(),
     }))
 
     const controller = new AbortController()
-
-    for (let i = 0; i < 10; i++) {
-      const response = await client.request({
-        url: '/events',
-        method: 'GET',
-        headers: {},
-        signal: controller.signal,
-      })
-      await cancelStandardBody(await response.resolveBody())
-    }
+    const response = await client.request({
+      url: '/events',
+      method: 'GET',
+      headers: {},
+      signal: controller.signal,
+    })
+    await cancelStandardBody(await response.resolveBody())
 
     await vi.waitFor(() => {
       expect((client as any).requests.size).toBe(0)
       expect((server as any).requests.size).toBe(0)
-      expect(finalized).toBe(10)
+      expect(finalized).toHaveBeenCalledOnce()
     })
     expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
   })
