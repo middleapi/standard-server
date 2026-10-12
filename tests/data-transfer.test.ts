@@ -1,4 +1,9 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  flattenStandardHeader,
+  unwrapEvent,
+  withEventMeta,
+} from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
@@ -49,7 +54,7 @@ describe.each([
   ['message-port-fetch-streamed', () => createMessagePortClientServerTest({ fetchStreamed: true })],
   ['node-ws', () => createNodeWsClientServerTest()],
   ['node-ws-fetch-streamed', () => createNodeWsClientServerTest({ fetchStreamed: true })],
-])('data transfer: $0', (_, createClientServer) => {
+])('data transfer: $0', (adapter, createClientServer) => {
   const clientServer = createClientServer()
 
   beforeEach(() => {
@@ -229,6 +234,40 @@ describe.each([
     } else {
       expect(await response.resolveBody()).toEqual(createBody())
     }
+  })
+
+  it.each([
+    ['blob', () => new Blob(['<h1>x</h1>'], { type: 'text/html' })],
+    ['file', () => new File(['<h1>x</h1>'], 'x.html', { type: 'text/html' })],
+  ])('%s body with removed content-type header', async (_, createBody) => {
+    clientServer.handler.mockImplementationOnce(async (request) => {
+      expect(flattenStandardHeader(request.headers['content-type'])).toBeUndefined()
+      const body = (await request.resolveBody()) as Blob
+      expect(body).toBeInstanceOf(Blob)
+      expect(await body.text()).toEqual('<h1>x</h1>')
+
+      return {
+        headers: { 'content-type': [] },
+        status: 200,
+        body: createBody(),
+      }
+    })
+
+    const response = await clientServer.request({
+      headers: { 'content-type': [] },
+      method: 'POST',
+      url: '/test',
+      body: createBody(),
+    })
+
+    expect(response.status).toEqual(200)
+    expect(flattenStandardHeader(response.headers['content-type'])).toEqual(
+      // @hono/node-server sets its own default for any body without a content-type
+      adapter === 'hono-fetch' ? 'text/plain; charset=UTF-8' : undefined,
+    )
+    const body = (await response.resolveBody()) as Blob
+    expect(body).toBeInstanceOf(Blob)
+    expect(await body.text()).toEqual('<h1>x</h1>')
   })
 
   it('event stream in parallel', async () => {

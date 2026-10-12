@@ -38,6 +38,22 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
 
+  it.each([
+    ['file', () => new File(['<h1>x</h1>'], 'x.html', { type: 'text/html' })],
+    ['blob', () => new Blob(['<h1>x</h1>'], { type: 'text/html' })],
+  ])('%s body with removed content-type header', async (_, createBody) => {
+    const response = toFetchResponse({
+      status: 200,
+      headers: { 'content-type': [] },
+      body: createBody(),
+    })
+
+    // fetch must not re-add the content-type from the blob type
+    expect(response.headers.get('content-type')).toBe(null)
+    expect(response.headers.get('content-length')).toBe('10')
+    expect(await response.text()).toBe('<h1>x</h1>')
+  })
+
   describe('releases the body when the response cannot be built', () => {
     it('event-stream body when the status cannot have a body', async () => {
       const next = vi.fn(() => new Promise<never>(() => {}))

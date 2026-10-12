@@ -460,12 +460,88 @@ describe('toFetchBody', () => {
     expect(await response.text()).toBe('<script>alert(1)</script>')
   })
 
-  it('file with removed content-type header', () => {
-    const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+  it('file with removed content-type header', async () => {
+    const file = new File(['<script>alert(1)</script>'], 'foo.html', { type: 'text/html' })
+
+    const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': [] }, {})
+
+    expect(headers['content-type']).toEqual([])
+    // the file name is still used for the content-disposition
+    expect(generateContentDispositionSpy).toHaveBeenCalledWith('foo.html')
+
+    // fetch must not re-add the content-type from the file type
+    const response = new Response(body, { headers: toFetchHeaders(headers) })
+    expect(response.headers.get('content-type')).toBe(null)
+    expect(response.headers.get('content-length')).toBe('25')
+    expect(await response.text()).toBe('<script>alert(1)</script>')
+  })
+
+  it('blob with removed content-type header', async () => {
+    const blob = new Blob(['<script>alert(1)</script>'], { type: 'text/html' })
+
+    const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'content-type': [] }, {})
+
+    expect(headers['content-type']).toEqual([])
+
+    const request = new Request('https://example.com', {
+      method: 'POST',
+      body,
+      headers: toFetchHeaders(headers),
+    })
+    expect(request.headers.get('content-type')).toBe(null)
+    expect(request.headers.get('content-length')).toBe('25')
+    expect(await request.text()).toBe('<script>alert(1)</script>')
+  })
+
+  it.each([['application/octet-stream'], [['application/octet-stream']]])(
+    'blob with overridden content-type header: %j',
+    async (contentType) => {
+      const blob = new Blob(['foo'], { type: 'text/html' })
+
+      const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'content-type': contentType }, {})
+
+      expect(body).toBe(blob)
+      expect(headers['content-type']).toEqual(contentType)
+
+      const response = new Response(body, { headers: toFetchHeaders(headers) })
+      expect(response.headers.get('content-type')).toBe('application/octet-stream')
+      expect(await response.text()).toBe('foo')
+    },
+  )
+
+  it('blob with removed content-type header when slicing keeps the type', async () => {
+    // Bun keeps the original type when slicing with an empty type
+    const blob = new Blob(['foo'], { type: 'text/html' })
+    const slice = blob.slice.bind(blob)
+    vi.spyOn(blob, 'slice').mockImplementation((start, end) => slice(start, end, blob.type))
+
+    const [body, headers] = toFetchBody(blob, { ...baseHeaders, 'content-type': [] }, {})
+
+    expect(body).toBeInstanceOf(Blob)
+    expect((body as Blob).type).toBe('')
+
+    const response = new Response(body, { headers: toFetchHeaders(headers) })
+    expect(response.headers.get('content-type')).toBe(null)
+    expect(await response.text()).toBe('foo')
+  })
+
+  it('typeless file with removed content-type header', () => {
+    const file = new File(['foo'], 'foo.bin')
 
     const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': [] }, {})
 
     expect(body).toBe(file)
+    expect(headers['content-type']).toEqual([])
+  })
+
+  it('file with removed content-type header and size=nan', () => {
+    const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+    Object.defineProperty(file, 'size', { value: Number.NaN })
+
+    const [body, headers] = toFetchBody(file, { ...baseHeaders, 'content-type': [] }, {})
+
+    // a stream has no type, so fetch cannot add a content-type
+    expect(body).toBeInstanceOf(ReadableStream)
     expect(headers['content-type']).toEqual([])
   })
 

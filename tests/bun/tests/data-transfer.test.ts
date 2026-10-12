@@ -1,7 +1,12 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import type { StandardHeaders } from '@standard-server/core'
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  flattenStandardHeader,
+  unwrapEvent,
+  withEventMeta,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
 import { NOT_FOUND_HANDLER } from './client-server'
@@ -224,6 +229,48 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         } else {
           expect(await response.resolveBody()).toEqual(createBody() as any)
         }
+      })
+    }
+
+    for (const [name, createBody] of [
+      ['blob', () => new Blob(['<h1>x</h1>'], { type: 'text/html' })],
+      ['file', () => new File(['<h1>x</h1>'], 'x.html', { type: 'text/html' })],
+    ] as const) {
+      it(`${name} body with removed content-type header`, async () => {
+        const receivedContentTypes: (string | undefined)[] = []
+
+        clientServer.setHandler(async (request) => {
+          receivedContentTypes.push(flattenStandardHeader(request.headers['content-type']))
+          const body = (await request.resolveBody()) as Blob
+          expect(body).toBeInstanceOf(Blob)
+          expect(await body.text()).toEqual('<h1>x</h1>')
+
+          return {
+            headers: { 'content-type': [] },
+            status: 200,
+            body: createBody(),
+          }
+        })
+
+        const response = await clientServer.request({
+          headers: { 'content-type': [] },
+          method: 'POST',
+          url: '/test',
+          body: createBody(),
+        })
+
+        expect(response.status).toEqual(200)
+        expect(receivedContentTypes).toEqual([undefined])
+        const contentType = flattenStandardHeader(response.headers['content-type'])
+        if (adapter === 'bun-fetch') {
+          // Bun.serve sets its own default for a blob body without a content-type
+          expect(contentType).not.toContain('text/html')
+        } else {
+          expect(contentType).toBeUndefined()
+        }
+        const body = (await response.resolveBody()) as Blob
+        expect(body).toBeInstanceOf(Blob)
+        expect(await body.text()).toEqual('<h1>x</h1>')
       })
     }
 

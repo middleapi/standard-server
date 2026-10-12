@@ -1,5 +1,6 @@
 import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import {
+  flattenStandardHeader,
   generateContentDisposition,
   getFilenameFromContentDisposition,
   resolveStandardBodyHint,
@@ -135,6 +136,13 @@ export function toFetchBody(
     // BunS3 can use NaN for the size
     if (Number.isFinite(body.size)) {
       headers['content-length'] = body.size.toString()
+
+      // Fetch sets the content-type from `blob.type` when the headers have none,
+      // so a removed content-type must also be removed from the blob itself.
+      if (body.type !== '' && flattenStandardHeader(headers['content-type']) === undefined) {
+        return [toTypelessBlob(body), headers]
+      }
+
       return [body, headers]
     }
 
@@ -168,4 +176,14 @@ export function toFetchBody(
 
   headers['content-type'] = 'application/json'
   return [stringifyJSON(body), headers]
+}
+
+/**
+ * A view of the same bytes without a type.
+ */
+function toTypelessBlob(blob: Blob): Blob {
+  const sliced = blob.slice(0, blob.size, '')
+
+  // FIX: Bun keeps the original type when slicing, but not when constructing with an empty type
+  return sliced.type === '' ? sliced : new Blob([blob], { type: '' })
 }
