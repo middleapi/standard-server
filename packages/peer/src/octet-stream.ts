@@ -11,13 +11,14 @@ export function toOctetStream(
       try {
         const { json, binary } = await queue.pull()
 
-        const bytes =
-          binary &&
-          (binary instanceof Uint8Array ? binary : new Uint8Array(await binary.arrayBuffer()))
+        if (binary) {
+          const bytes =
+            binary instanceof Uint8Array ? binary : new Uint8Array(await binary.arrayBuffer())
 
-        // The empty chunk a close message carries is framing, not data
-        if (bytes && (bytes.byteLength > 0 || !json.close)) {
-          controller.enqueue(bytes)
+          // The empty chunk a close message carries is framing, not data
+          if (bytes.byteLength > 0 || !json.close) {
+            controller.enqueue(bytes)
+          }
         }
 
         if (json.close) {
@@ -83,11 +84,7 @@ export class OctetStreamTransmitter {
         try {
           await this.send({
             json: { close: item.done ? true : undefined },
-            /**
-             * The close message carries an empty chunk so it is encoded as binary like the data.
-             * Otherwise a transport that decodes binary asynchronously (e.g. a WebSocket with
-             * `binaryType = 'blob'`) can deliver the close before the last chunks, truncating the body.
-             */
+            // Empty on close, so the close is encoded as binary too and can't overtake the data
             binary: item.done ? new Uint8Array(0) : toStandaloneBytes(item.value),
             kind: 'octet-stream',
             id: this.messageId,

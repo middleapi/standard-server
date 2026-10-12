@@ -157,6 +157,8 @@ Encoding rules:
 2. Messages with binary payloads are encoded as `Uint8Array` values containing JSON, a delimiter byte, and the raw binary bytes.
 3. The optional `prefix` lets you share the same transport between multiple protocols without collisions.
 
+Every octet-stream message, including the final one, carries binary, so a stream's messages share one encoding. Your transport should still hand messages to the peer in the order they were sent, whether they are strings or `Uint8Array` values. For a WHATWG `WebSocket`, set `binaryType = 'arraybuffer'` so binary messages don't need an async decode that a later string message could overtake.
+
 ## Learn more
 
 For the project overview and the shared contract this adapter implements, see the [core documentation](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md).

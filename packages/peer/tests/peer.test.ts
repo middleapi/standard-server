@@ -69,20 +69,17 @@ function connectWithAsyncBinaryDecoding(
 
     return async (message: PeerMessage) => {
       const encoded = await encodePeerMessage(message, { prefix })
-      const deliver = async () => {
-        const decoded = decodePeerMessage(encoded, { prefix })
-        if (!decoded.matched) {
-          throw new Error('Failed to decode message on the wire')
-        }
-        await receive(decoded.message)
+      const decoded = decodePeerMessage(encoded, { prefix })
+      if (!decoded.matched) {
+        throw new Error('Failed to decode message on the wire')
       }
 
       if (typeof encoded === 'string') {
-        void deliver().catch(() => {})
+        void receive(decoded.message).catch(() => {})
       } else {
-        // only the decoding is sequential, each message is then handled on its own
+        // only the decoding delay is sequential, each message is then handled on its own
         binaryChain = binaryChain.then(() => sleep(1))
-        void binaryChain.then(deliver).catch(() => {})
+        void binaryChain.then(() => receive(decoded.message)).catch(() => {})
       }
     }
   }
