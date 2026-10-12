@@ -457,6 +457,119 @@ describe('toStandardBody', () => {
       expect(await toStandardBody(req!, { hint: 'none' })).toBe(undefined)
     })
 
+    it('throw on read body while the first read is still in progress', async () => {
+      let results: PromiseSettledResult<StandardBody>[] = []
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        results = await Promise.allSettled([
+          toStandardBody(req),
+          toStandardBody(req),
+          toStandardBody(req, { hint: 'none' }),
+        ])
+        res.end()
+      })
+        .post('/')
+        .send({ a: 1 })
+
+      expect(results[0]).toEqual({ status: 'fulfilled', value: { a: 1 } })
+      expect(results[1]).toEqual({ status: 'rejected', reason: expect.any(TypeError) })
+      expect((results[1] as PromiseRejectedResult).reason.message).toMatch(
+        /^Failed to read body: body stream already read/,
+      )
+      expect(results[2]).toEqual({ status: 'fulfilled', value: undefined })
+    })
+
+    it('throw on read body after returning a stream the caller has not read yet', async () => {
+      let standardBody: any
+      let error: unknown
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        standardBody = await toStandardBody(req)
+        error = await toStandardBody(req).catch((e) => e)
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'event-stream')
+        .send('event: message\ndata: 123\n\nevent: close\ndata: 456\n\n')
+
+      expect(error).toBeInstanceOf(TypeError)
+      expect((error as TypeError).message).toMatch(/^Failed to read body: body stream already read/)
+
+      expect(await standardBody.next()).toEqual({ done: false, value: 123 })
+      expect(await standardBody.next()).toEqual({ done: true, value: 456 })
+    })
+
+    it('throw on read body when an octet stream is partly read', async () => {
+      let error: unknown
+      let readSize = 0
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        const reader = ((await toStandardBody(req)) as ReadableStream<Uint8Array>).getReader()
+        let chunk = await reader.read()
+
+        error = await toStandardBody(req, { hint: 'json' }).catch((e) => e)
+
+        for (; !chunk.done; chunk = await reader.read()) {
+          readSize += chunk.value.byteLength
+        }
+        res.end()
+      })
+        .post('/')
+        .set('content-type', 'application/octet-stream')
+        .set('standard-server', 'octet-stream')
+        .send(Buffer.alloc(200_000, 'a'))
+
+      expect(error).toBeInstanceOf(TypeError)
+      expect((error as TypeError).message).toMatch(/^Failed to read body: body stream already read/)
+
+      // the first consumer still gets the whole body
+      expect(readSize).toBe(200_000)
+    })
+
+    it('throw on read body when other middleware partly consumed the stream', async () => {
+      let error: unknown
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        await new Promise<void>((resolve) => {
+          req.once('data', () => {
+            req.pause()
+            resolve()
+          })
+        })
+
+        error = await toStandardBody(req).catch((e) => e)
+
+        await text(req) // drain the rest
+        res.end()
+      })
+        .post('/')
+        .set('standard-server', 'file')
+        .send(Buffer.alloc(200_000, 'a'))
+
+      expect(error).toBeInstanceOf(TypeError)
+      expect((error as TypeError).message).toMatch(/^Failed to read body: body stream already read/)
+    })
+
+    // body-parser 1.x (express 4) assigns `{}` to every request, even the ones it leaves unread
+    it('throw on read body consumed by itself even if a body is assigned', async () => {
+      let standardBody: StandardBody
+      let error: unknown
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        // @ts-expect-error fake body is assigned
+        req.body = {}
+        standardBody = await toStandardBody(req)
+        error = await toStandardBody(req).catch((e) => e)
+        res.end()
+      })
+        .post('/')
+        .send({ a: 1 })
+
+      expect(standardBody).toEqual({ a: 1 })
+      expect(error).toBeInstanceOf(TypeError)
+      expect((error as TypeError).message).toMatch(/^Failed to read body: body stream already read/)
+    })
+
     it('prefers user defined body hint over standard-server header', async () => {
       let standardBody: any
 

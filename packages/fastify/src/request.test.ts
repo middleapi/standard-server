@@ -113,6 +113,40 @@ describe('toStandardLazyRequest', () => {
     expect(standardBody).toEqual(expectedBody)
   })
 
+  it('throw on resolve body while the first resolve is still in progress', async ({
+    onTestFinished,
+  }) => {
+    let results: PromiseSettledResult<unknown>[] = []
+
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    // allow any content type, and leave the body unparsed
+    fastify.addContentTypeParser('*', (req, payload, done) => {
+      done(null, undefined)
+    })
+
+    fastify.all('/', async (req, reply) => {
+      const standardRequest = toStandardLazyRequest(req, reply)
+      results = await Promise.allSettled([
+        standardRequest.resolveBody(),
+        standardRequest.resolveBody(),
+      ])
+    })
+
+    await fastify.ready()
+    await request(fastify.server).post('/').field('foo', 'bar')
+
+    const expectedBody = new FormData()
+    expectedBody.append('foo', 'bar')
+
+    expect(results[0]).toEqual({ status: 'fulfilled', value: expectedBody })
+    expect(results[1]).toEqual({ status: 'rejected', reason: expect.any(TypeError) })
+    expect((results[1] as PromiseRejectedResult).reason.message).toMatch(
+      /^Failed to read body: body stream already read/,
+    )
+  })
+
   it('forwards the body hint to the standard body parser', async ({ onTestFinished }) => {
     let fastifyReq: any
     let standardBody: any
