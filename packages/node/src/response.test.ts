@@ -392,6 +392,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow(
         'test',
@@ -450,6 +451,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
@@ -498,6 +500,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       responseStream.destroy()
 
@@ -512,6 +515,7 @@ describe('sendStandardResponse', () => {
       })
 
       expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+      expect((responseStream as any).writeHead).not.toHaveBeenCalled()
     })
 
     it('rejects when response was destroyed with an error', async () => {
@@ -535,6 +539,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       responseStream.once('error', () => {})
       responseStream.destroy(new Error('test'))
@@ -550,7 +555,75 @@ describe('sendStandardResponse', () => {
       })
 
       expect((responseStream as any).setHeader).not.toHaveBeenCalled()
+      expect((responseStream as any).writeHead).not.toHaveBeenCalled()
     })
+  })
+
+  // Node validates these only when the head is committed, which for a stream body used to
+  // happen on the first asynchronous write, outside the reach of the promise.
+  describe('head rejected on commit with a stream body', () => {
+    it.each(['ReadableStream', 'async generator'] as const)(
+      'http1 invalid status code (%s)',
+      async (kind) => {
+        const { body, isReleased } = createReleasableBody(kind)
+        let sending: Promise<void> | undefined
+
+        await expect(
+          request((req: IncomingMessage, res: ServerResponse) => {
+            sending = sendStandardResponse(res, { status: 1000, headers: {}, body })
+            sending.catch(() => {})
+          }).get('/'),
+        ).rejects.toMatchObject({ code: 'ECONNRESET' })
+
+        await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP_INVALID_STATUS_CODE' })
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
+
+    it.each(['ReadableStream', 'async generator'] as const)(
+      'http2 connection-specific header (%s)',
+      async (kind) => {
+        const { body, isReleased } = createReleasableBody(kind)
+        let sending: Promise<void> | undefined
+
+        const server = http2.createServer((req, res) => {
+          sending = sendStandardResponse(res, {
+            status: 200,
+            headers: { 'keep-alive': 'timeout=5' },
+            body,
+          })
+          sending.catch(() => {})
+        })
+        await new Promise<void>((r) => server.listen(0, r))
+
+        const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+        try {
+          const reqStream = client.request({ ':path': '/' })
+
+          await expect(
+            new Promise((resolve, reject) => {
+              reqStream.once('response', resolve)
+              reqStream.once('error', reject)
+            }),
+          ).rejects.toMatchObject({ code: 'ERR_HTTP2_STREAM_ERROR' })
+
+          await expect(sending).rejects.toMatchObject({
+            code: 'ERR_HTTP2_INVALID_CONNECTION_HEADERS',
+          })
+
+          await vi.waitFor(() => {
+            expect(isReleased()).toBe(true)
+          })
+        } finally {
+          client.close()
+          await new Promise((r) => server.close(r))
+        }
+      },
+    )
   })
 
   describe('http2 HEAD request', () => {
@@ -688,4 +761,31 @@ async function requestHttp2Head(
     client.close()
     await new Promise((r) => server.close(r))
   }
+}
+
+function createReleasableBody(kind: 'ReadableStream' | 'async generator') {
+  let released = false
+
+  const body =
+    kind === 'ReadableStream'
+      ? new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('foo'))
+          },
+          cancel() {
+            released = true
+          },
+        })
+      : (async function* () {
+          try {
+            while (true) {
+              yield 'foo'
+              await new Promise((r) => setTimeout(r, 10))
+            }
+          } finally {
+            released = true
+          }
+        })()
+
+  return { body, isReleased: () => released }
 }

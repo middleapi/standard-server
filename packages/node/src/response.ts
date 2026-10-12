@@ -55,6 +55,12 @@ export async function sendStandardResponse(
       } else if (typeof resBody === 'string') {
         res.end(resBody)
       } else {
+        // Commit the head here so a throw reaches the `catch`: node validates parts of it (http1
+        // status code, http2 connection headers) only on commit, which `pipe` would do on its
+        // first, asynchronous write. http1 keeps the head until that write, so chunked encoding
+        // and content-length still apply. Cast: http1/http2 overload `writeHead` incompatibly.
+        ;(res as { writeHead(statusCode: number): unknown }).writeHead(standardResponse.status)
+
         connection.once('close', () => {
           if (!resBody.closed) {
             resBody.destroy(getNodeResponseError(res) ?? undefined)

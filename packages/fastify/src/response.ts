@@ -60,6 +60,9 @@ export async function sendStandardResponse(
       }
 
       // fastify pipes the stream body itself, no manual piping needed
+      // WARNING: on http2 node validates parts of the head (e.g. connection-specific headers like
+      // `keep-alive`, multiple values for a single-value header) only when fastify's pipe commits
+      // it on the first write, so such an error is an unhandled rejection rather than reaching here
       reply.send(resBody)
     } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
