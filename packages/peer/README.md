@@ -128,19 +128,6 @@ const payload = await response.resolveBody()
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.
 
-A streamed response body (an event stream or an octet stream) keeps its request open on the `ClientPeer` until the server finishes the stream. When the last stream message arrives, the client releases the request on its own, and the buffered messages stay readable through `resolveBody()` for as long as you keep the response. A stream that never finishes stays open, keeping every message the server streams in memory, until you cancel the body, abort the request signal, or close the peer. So if you may not read a streamed body to the end, cancel it; the client then tells the server to stop and releases the request:
-
-```ts
-import { cancelStandardBody } from '@standard-server/core'
-
-const response = await clientPeer.request({ method: 'GET', url: '/events', headers: {} })
-
-if (response.status !== 200) {
-  // does nothing for a body that is not a stream
-  await cancelStandardBody(await response.resolveBody())
-}
-```
-
 ## Codec helpers
 
 Use `encodePeerMessage()` and `decodePeerMessage()` to bridge between the peer protocol and your underlying transport.
