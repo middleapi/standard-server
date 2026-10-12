@@ -1,4 +1,5 @@
 import type { StandardLazyResponse, StandardRequest } from '@standard-server/core'
+import { ErrorEvent } from '@standard-server/core'
 import {
   AbortError,
   AsyncIteratorClass,
@@ -819,6 +820,65 @@ describe('clientPeer', () => {
           new TypeError('Failed to read body: body stream already read'),
         )
       })
+
+      it('releases the request once the stream closes, even if the body is never resolved', async () => {
+        const controller = new AbortController()
+        const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+
+        const { id, promise } = await requestAndGetId(makeRequest({ signal: controller.signal }))
+        await peer.message(makeStreamingResponse(id, 'event-stream'))
+        const response = await promise
+
+        await peer.message(makeEventStreamMessage(id, 'evt1'))
+        expect(getPeerSize(peer)).toBe(1)
+        expect(removeSpy).not.toHaveBeenCalled()
+
+        await peer.message(makeEventStreamMessage(id, 'bye', 'close'))
+        expect(getPeerSize(peer)).toBe(0)
+        expect(removeSpy).toHaveBeenCalledOnce()
+
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
+        await expect(iter.next()).resolves.toEqual({ done: true, value: 'bye' })
+        await expect(iter.next()).resolves.toEqual({ done: true, value: undefined })
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      })
+
+      it('releases the request once the stream errors, even if the body is never resolved', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'event-stream'))
+        const response = await promise
+
+        await peer.message(makeEventStreamMessage(id, 'evt1'))
+        await peer.message(makeEventStreamMessage(id, { code: 'BOOM' }, 'error'))
+        expect(getPeerSize(peer)).toBe(0)
+
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
+        await expect(iter.next()).rejects.toSatisfy((error: ErrorEvent) => {
+          expect(error).toBeInstanceOf(ErrorEvent)
+          expect(error.data).toEqual({ code: 'BOOM' })
+          return true
+        })
+        await expect(iter.next()).resolves.toEqual({ done: true, value: undefined })
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      })
+
+      it('does not send cancel message when canceling the iterator of a finished stream', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'event-stream'))
+        const response = await promise
+
+        await peer.message(makeEventStreamMessage(id, 'evt1'))
+        await peer.message(makeEventStreamMessage(id, 'evt2'))
+        await peer.message(makeEventStreamMessage(id, 'bye', 'close'))
+
+        const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+        await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
+        await iter.return?.()
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      })
     })
   })
 
@@ -1176,6 +1236,45 @@ describe('clientPeer', () => {
         await expect(response.resolveBody()).rejects.toThrow(
           new TypeError('Failed to read body: body stream already read'),
         )
+      })
+
+      it('releases the request once the stream closes, even if the body is never resolved', async () => {
+        const controller = new AbortController()
+        const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+
+        const { id, promise } = await requestAndGetId(makeRequest({ signal: controller.signal }))
+        await peer.message(makeStreamingResponse(id, 'octet-stream'))
+        const response = await promise
+
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([1, 2])))
+        expect(getPeerSize(peer)).toBe(1)
+        expect(removeSpy).not.toHaveBeenCalled()
+
+        await peer.message(makeOctetStreamMessage(id, true, new Uint8Array([3])))
+        expect(getPeerSize(peer)).toBe(0)
+        expect(removeSpy).toHaveBeenCalledOnce()
+
+        const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1, 2]) })
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([3]) })
+        expect(await reader.read()).toEqual({ done: true, value: undefined })
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+      })
+
+      it('does not send cancel message when canceling the ReadableStream of a finished stream', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'octet-stream'))
+        const response = await promise
+
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([1])))
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([2])))
+        await peer.message(makeOctetStreamMessage(id, true))
+
+        const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1]) })
+        await reader.cancel()
+
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
       })
     })
   })
