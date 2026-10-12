@@ -674,6 +674,62 @@ describe('sendStandardResponse', () => {
       })
     })
 
+    it('sends the head and releases the body on an explicit HEAD route', async ({
+      onTestFinished,
+    }) => {
+      const { body, isReleased } = createEndlessBody()
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.head('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
+        await sending
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).head('/').timeout(1000)
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(201)
+      expect(res.headers).toMatchObject({
+        'content-type': 'text/event-stream',
+        'x-custom-header': 'custom-value',
+      })
+
+      await vi.waitFor(() => {
+        expect(isReleased()).toBe(true)
+      })
+    })
+
+    it.for(['get', 'head'] as const)(
+      'keeps the content headers of a blob body on a HEAD request to a %s route',
+      async (route, { onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify[route]('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: new Blob(['foo'], { type: 'text/plain' }),
+          })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).head('/').timeout(1000)
+
+        expect(res.status).toBe(200)
+        expect(res.headers).toMatchObject({ 'content-type': 'text/plain', 'content-length': '3' })
+      },
+    )
+
     it('releases the body on an auto-exposed http2 HEAD route', async ({ onTestFinished }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
@@ -730,6 +786,37 @@ describe('sendStandardResponse', () => {
       await vi.waitFor(() => {
         expect(isReleased()).toBe(true)
       })
+    })
+  })
+
+  it('sends the head and releases the stream body of a 304 response', async ({
+    onTestFinished,
+  }) => {
+    const { body, isReleased } = createEndlessBody()
+    let sending: Promise<void> | undefined
+
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    fastify.get('/', async (req, reply) => {
+      sending = sendStandardResponse(reply, {
+        status: 304,
+        headers: { 'x-custom-header': 'custom-value' },
+        body,
+      })
+      await sending
+    })
+
+    await fastify.ready()
+    const res = await request(fastify.server).get('/').timeout(1000)
+
+    await expect(sending).resolves.toBeUndefined()
+
+    expect(res.status).toBe(304)
+    expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
+
+    await vi.waitFor(() => {
+      expect(isReleased()).toBe(true)
     })
   })
 

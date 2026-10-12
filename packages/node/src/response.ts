@@ -3,7 +3,12 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
 import type { NodeHttpResponse } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  isBodylessNodeResponse,
+} from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
@@ -51,6 +56,10 @@ export async function sendStandardResponse(
 
       if (resBody === undefined) {
         // NOTE: Lambda functions don't allow passing undefined to `res.end`
+        res.end()
+      } else if (!('stream' in res) && isBodylessNodeResponse(res, standardResponse.status)) {
+        // http1 would never send the head of a piped long-lived body, see `isBodylessNodeResponse`
+        destroyNodeHttpBody(resBody, undefined, reject)
         res.end()
       } else if (typeof resBody === 'string') {
         res.end(resBody)

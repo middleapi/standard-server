@@ -6,13 +6,14 @@ import type { AddressInfo } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isBodylessNodeResponse,
   toWebReadableStream,
 } from './utils'
 
@@ -346,6 +347,27 @@ describe('getNodeResponseError', () => {
     reqStream.once('end', () => client.close())
 
     await handled
+  })
+})
+
+describe('isBodylessNodeResponse', () => {
+  it.each([
+    ['GET', 200, false],
+    ['GET', 205, false],
+    ['HEAD', 200, true],
+    ['GET', 204, true],
+    ['GET', 304, true],
+    ['GET', 100, true],
+    ['GET', 199, true],
+  ])('on a %s request with status %i: %s', (method, status, expected) => {
+    expect(isBodylessNodeResponse({ req: { method } } as any, status)).toBe(expected)
+  })
+
+  it('on a bare writable, which has no request', () => {
+    const res = new Writable() as any
+
+    expect(isBodylessNodeResponse(res, 200)).toBe(false)
+    expect(isBodylessNodeResponse(res, 204)).toBe(true)
   })
 })
 

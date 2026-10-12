@@ -1,9 +1,12 @@
+import { Readable } from 'node:stream'
+
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isBodylessNodeResponse,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -59,8 +62,20 @@ export async function sendStandardResponse(
         }
       }
 
-      // fastify pipes the stream body itself, no manual piping needed
-      reply.send(resBody)
+      if (
+        typeof resBody === 'object' &&
+        !('stream' in reply.raw) &&
+        isBodylessNodeResponse(reply.raw, standardResponse.status)
+      ) {
+        // http1 would never send the head of a piped long-lived body, see `isBodylessNodeResponse`.
+        // Send an empty stream rather than no payload: fastify then still keeps the
+        // content-length of a HEAD response and strips the content headers of a 204.
+        destroyNodeHttpBody(resBody, undefined, reject)
+        reply.send(Readable.from([]))
+      } else {
+        // fastify pipes the stream body itself, no manual piping needed
+        reply.send(resBody)
+      }
     } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
 

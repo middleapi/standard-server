@@ -98,6 +98,22 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
 }
 
 /**
+ * Check the response cannot carry a body: the request is HEAD, or the status is 204, 304 or 1xx.
+ *
+ * Node's http1 response discards what is written to such a response and holds its head back
+ * until `end()`.
+ */
+export function isBodylessNodeResponse(res: NodeHttpResponse, status: number): boolean {
+  return (
+    // `req` is missing on a bare writable
+    res.req?.method === 'HEAD' ||
+    status === 204 ||
+    status === 304 ||
+    (status >= 100 && status < 200)
+  )
+}
+
+/**
  * Destroy a body that won't be sent. `onError` is attached first, so an `error`
  * event from `destroy` is never unhandled.
  */

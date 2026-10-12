@@ -553,6 +553,55 @@ describe('sendStandardResponse', () => {
     })
   })
 
+  describe('bodyless http1 response', () => {
+    it.each([
+      ['a HEAD request', 'head', 200, { 'content-type': 'text/event-stream' }],
+      ['a 304 status', 'get', 304, {}],
+      ['a 204 status', 'get', 204, {}],
+    ] as const)(
+      'sends the head and releases a long-lived body on %s',
+      async (_, method, status, headers) => {
+        const { body, isReleased } = createEndlessBody()
+        let sending: Promise<void> | undefined
+
+        const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+          sending = sendStandardResponse(res, {
+            status,
+            headers: { 'x-custom-header': 'custom-value' },
+            body,
+          })
+          await sending
+        })
+          [method]('/')
+          .timeout(1000)
+
+        await expect(sending).resolves.toBeUndefined()
+
+        expect(res.status).toBe(status)
+        expect(res.headers).toMatchObject({ ...headers, 'x-custom-header': 'custom-value' })
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
+
+    it('keeps the content headers of a blob body on a HEAD request', async () => {
+      const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+        await sendStandardResponse(res, {
+          status: 200,
+          headers: {},
+          body: new Blob(['foo'], { type: 'text/plain' }),
+        })
+      })
+        .head('/')
+        .timeout(1000)
+
+      expect(res.status).toBe(200)
+      expect(res.headers).toMatchObject({ 'content-type': 'text/plain', 'content-length': '3' })
+    })
+  })
+
   describe('http2 HEAD request', () => {
     it('sends the status and headers', async () => {
       let sending: Promise<void> | undefined
@@ -661,6 +710,23 @@ describe('sendStandardResponse', () => {
     })
   })
 })
+
+function createEndlessBody() {
+  let released = false
+
+  const body = (async function* () {
+    try {
+      while (true) {
+        yield 'foo'
+        await new Promise((r) => setTimeout(r, 10))
+      }
+    } finally {
+      released = true
+    }
+  })()
+
+  return { body, isReleased: () => released }
+}
 
 async function requestHttp2Head(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
