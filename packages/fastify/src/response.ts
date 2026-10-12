@@ -59,6 +59,12 @@ export async function sendStandardResponse(
         }
       }
 
+      if (typeof resBody === 'object') {
+        // fastify attaches its own listeners only after every onSend hook has finished, so an error
+        // in between would crash the process. Fastify still reports the error once it attaches them.
+        resBody.on('error', () => {})
+      }
+
       // fastify pipes the stream body itself, no manual piping needed
       reply.send(resBody)
     } catch (error) {

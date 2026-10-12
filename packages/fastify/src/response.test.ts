@@ -442,6 +442,72 @@ describe('sendStandardResponse', () => {
       })
     })
 
+    describe('body errors while an async onSend hook runs', () => {
+      it('readable stream', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        // fastify attaches its own stream listeners only after every onSend hook has finished
+        fastify.addHook('onSend', async (req, reply, payload) => {
+          await new Promise((r) => setTimeout(r, 20))
+          return payload
+        })
+
+        let sending: Promise<void> | undefined
+        fastify.get('/', async (req, reply) => {
+          sending = sendStandardResponse(reply, {
+            status: 207,
+            headers: {},
+            body: new ReadableStream({
+              start(controller) {
+                controller.error(new Error('foo'))
+              },
+            }),
+          })
+          await sending
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(500)
+        await expect(sending).resolves.toBeUndefined()
+      })
+
+      it('event stream', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        // fastify attaches its own stream listeners only after every onSend hook has finished
+        fastify.addHook('onSend', async (req, reply, payload) => {
+          await new Promise((r) => setTimeout(r, 20))
+          return payload
+        })
+
+        let sending: Promise<void> | undefined
+        fastify.get('/', async (req, reply) => {
+          sending = sendStandardResponse(
+            reply,
+            {
+              status: 207,
+              headers: {},
+              body: (async function* () {
+                throw new Error('foo')
+              })(),
+            },
+            { eventStream: { initialComment: { enabled: false } } },
+          )
+          await sending
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(500)
+        await expect(sending).resolves.toBeUndefined()
+      })
+    })
+
     it('works with @fastify/cookie', async ({ onTestFinished }) => {
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
