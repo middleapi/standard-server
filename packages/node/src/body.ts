@@ -34,12 +34,17 @@ export async function toStandardBody(
 
   const hint =
     options?.hint ??
-    resolveStandardBodyHint({
-      'standard-server': req.headers['standard-server'],
-      'content-type': req.headers['content-type'],
-      'content-length': req.headers['content-length'],
-      'content-disposition': req.headers['content-disposition'],
-    })
+    resolveStandardBodyHint(
+      {
+        'standard-server': req.headers['standard-server'],
+        'content-type': req.headers['content-type'],
+        'content-length': req.headers['content-length'],
+        'content-disposition': req.headers['content-disposition'],
+        'transfer-encoding': req.headers['transfer-encoding'],
+      },
+      // http/2 has no transfer-encoding, a stream left open after its headers carries a body
+      { hasBody: 'stream' in req && !req.stream.endAfterHeaders },
+    )
 
   if (hint === 'none') {
     return undefined

@@ -97,16 +97,28 @@ const STANDARD_BODY_HINT_SET: ReadonlySet<string> = new Set<StandardBodyHint>([
   'none',
 ])
 
+export interface ResolveStandardBodyHintOptions {
+  /**
+   * Whether the transport reports a body the headers do not, like http/2 DATA frames
+   * or a buffered serverless event body. Leave it unset to rely on the headers alone.
+   */
+  hasBody?: boolean | undefined
+}
+
 /**
- * Resolves how a receiver parses a body from the standard headers alone,
+ * Resolves how a receiver parses a body from the standard headers,
  * mirroring what the body parsers do.
  */
-export function resolveStandardBodyHint(headers: {
-  'standard-server'?: undefined | string | string[]
-  'content-type'?: undefined | string | string[]
-  'content-length'?: undefined | string | string[]
-  'content-disposition'?: undefined | string | string[]
-}): StandardBodyHint {
+export function resolveStandardBodyHint(
+  headers: {
+    'standard-server'?: undefined | string | string[]
+    'content-type'?: undefined | string | string[]
+    'content-length'?: undefined | string | string[]
+    'content-disposition'?: undefined | string | string[]
+    'transfer-encoding'?: undefined | string | string[]
+  },
+  options: ResolveStandardBodyHintOptions = {},
+): StandardBodyHint {
   const hint = flattenStandardHeader(headers['standard-server'])
 
   if (hint !== undefined && STANDARD_BODY_HINT_SET.has(hint)) {
@@ -125,7 +137,14 @@ export function resolveStandardBodyHint(headers: {
       ? getFilenameFromContentDisposition(contentDisposition)
       : undefined
 
-  if (mimeType === undefined && (contentLength === undefined || contentLength === '0')) {
+  // a chunked or transport-framed body has a length, just not in content-length
+  const hasBody = options.hasBody || !!flattenStandardHeader(headers['transfer-encoding'])
+
+  if (
+    mimeType === undefined &&
+    (contentLength === undefined || contentLength === '0') &&
+    !hasBody
+  ) {
     return 'none'
   }
 

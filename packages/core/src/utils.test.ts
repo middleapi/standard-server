@@ -281,6 +281,48 @@ describe('resolveStandardBodyHint', () => {
     expect(resolveStandardBodyHint({})).toBe('none')
     expect(resolveStandardBodyHint({ 'content-length': '0' })).toBe('none')
     expect(resolveStandardBodyHint({ 'content-type': [], 'content-length': [] })).toBe('none')
+    // an empty transfer-encoding frames nothing
+    expect(resolveStandardBodyHint({ 'transfer-encoding': '' })).toBe('none')
+    expect(resolveStandardBodyHint({ 'transfer-encoding': [] })).toBe('none')
+    expect(resolveStandardBodyHint({}, { hasBody: false })).toBe('none')
+  })
+
+  it('a body framed without content-length still resolves by the other content headers', () => {
+    // http/1.1 chunked upload, its length comes from the framing instead of content-length
+    expect(resolveStandardBodyHint({ 'transfer-encoding': 'chunked' })).toBe('octet-stream')
+    expect(resolveStandardBodyHint({ 'transfer-encoding': ['gzip', 'chunked'] })).toBe(
+      'octet-stream',
+    )
+    expect(
+      resolveStandardBodyHint({
+        'transfer-encoding': 'chunked',
+        'content-disposition': 'inline; filename="a.pdf"',
+      }),
+    ).toBe('file')
+    expect(
+      resolveStandardBodyHint({
+        'transfer-encoding': 'chunked',
+        'content-type': 'application/json',
+      }),
+    ).toBe('json')
+
+    // a transport that reports the body itself, like http/2 DATA frames
+    expect(resolveStandardBodyHint({}, { hasBody: true })).toBe('octet-stream')
+    expect(
+      resolveStandardBodyHint(
+        { 'content-length': '0', 'content-disposition': 'inline; filename="a.pdf"' },
+        { hasBody: true },
+      ),
+    ).toBe('file')
+    expect(
+      resolveStandardBodyHint({ 'content-type': 'text/event-stream' }, { hasBody: true }),
+    ).toBe('event-stream')
+
+    // the standard-server header still wins
+    expect(
+      resolveStandardBodyHint({ 'standard-server': 'none', 'transfer-encoding': 'chunked' }),
+    ).toBe('none')
+    expect(resolveStandardBodyHint({ 'standard-server': 'none' }, { hasBody: true })).toBe('none')
   })
 
   it('by content-type', () => {

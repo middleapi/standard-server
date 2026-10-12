@@ -1,3 +1,6 @@
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+
 import type { StandardLazyRequest } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
@@ -111,6 +114,51 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardBodySpy).toBeCalledTimes(1)
     expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: undefined })
     expect(standardBody).toEqual(expectedBody)
+  })
+
+  it('fallback to standard body parser for a chunked body without content headers', async ({
+    onTestFinished,
+  }) => {
+    let fastifyReq: any
+    let streamedText: string | undefined
+
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    // allow any content type, and leave the body unparsed
+    fastify.addContentTypeParser('*', (req, payload, done) => {
+      done(null, undefined)
+    })
+
+    fastify.all('/', async (req, reply) => {
+      fastifyReq = req
+      const standardBody = await toStandardLazyRequest(req, reply).resolveBody()
+
+      // a streaming body must be drained while the request is still alive
+      if (standardBody instanceof ReadableStream) {
+        streamedText = await new Response(standardBody).text()
+      }
+    })
+
+    await fastify.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = fastify.server.address() as AddressInfo
+
+    await new Promise<void>((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port, method: 'POST' }, (res) => {
+        res.resume()
+        res.on('end', resolve)
+      })
+      req.on('error', reject)
+      // writing before end leaves the length unknown, so node frames it as chunked
+      req.write('hello ')
+      req.end('world')
+    })
+
+    expect(fastifyReq.headers['transfer-encoding']).toBe('chunked')
+    expect(fastifyReq.headers['content-type']).toBe(undefined)
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: undefined })
+    expect(streamedText).toBe('hello world')
   })
 
   it('forwards the body hint to the standard body parser', async ({ onTestFinished }) => {

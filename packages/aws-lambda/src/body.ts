@@ -27,7 +27,10 @@ export async function toStandardBody(
   options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
   const headers = toStandardHeaders(event)
-  const hint = options.hint ?? resolveStandardBodyHint(headers)
+  const hint =
+    options.hint ??
+    // the event carries the whole body, whatever framing it arrived with
+    resolveStandardBodyHint(headers, { hasBody: !!event.body })
 
   if (hint === 'none') {
     return undefined

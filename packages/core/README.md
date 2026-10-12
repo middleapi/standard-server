@@ -248,12 +248,14 @@ The hint is chosen in this order:
 1. **Explicit `hint` argument.** If you pass a hint to `resolveBody(hint)`, it always wins.
 2. **The `standard-server` header.** If present and holding a valid hint value, it is used verbatim. Unknown values are ignored.
 3. **Content-header inference:**
-   1. No `content-type`, and `content-length` absent or `0` → `none`.
+   1. No `content-type`, `content-length` absent or `0`, and no request body reported by the transport → `none`. A request body counts as reported when the request carries a `transfer-encoding` header (an HTTP/1.1 chunked upload), when an HTTP/2 request leaves its stream open after the headers, or when an AWS Lambda event has a non-empty `body`. Such a body falls through to the rules below, so it resolves as `octet-stream` (or `file` with a filename), even if no bytes follow.
+      - Responses are inferred from their content headers alone. Node.js frames a body-less response as chunked whenever its head is written before it ends, so a response's `transfer-encoding` does not mean a body follows.
+      - The Fetch adapter does not treat a non-null `request.body` or `response.body` as a body either, because runtimes also expose an empty stream when there is none. Send a `content-type` with bodies a transport frames without `transfer-encoding`, such as a streamed fetch body over HTTP/2.
    2. A common `content-type` → `application/json` parses as `json`, `multipart/form-data` as `form-data`, `application/x-www-form-urlencoded` as `url-search-params`, and `text/event-stream` as `event-stream`. Media type casing and parameters such as `; charset=utf-8` are ignored.
    3. A `content-disposition` carrying a filename, or any `content-length` → `file`.
    4. Anything else → `octet-stream`.
 
-This resolution is implemented once in this package as `resolveStandardBodyHint(headers)` and shared by every HTTP adapter, so the same body parses the same way regardless of which HTTP transport carried it:
+This resolution is implemented once in this package as `resolveStandardBodyHint(headers, { hasBody })` and shared by every HTTP adapter, so the same body parses the same way regardless of which HTTP transport carried it. Pass `hasBody: true` when your transport knows a body is present without a header saying so:
 
 ```ts
 import { resolveStandardBodyHint } from '@standard-server/core'
@@ -269,6 +271,12 @@ resolveStandardBodyHint({
 
 resolveStandardBodyHint({})
 // 'none'
+
+resolveStandardBodyHint({ 'transfer-encoding': 'chunked' })
+// 'octet-stream'
+
+resolveStandardBodyHint({}, { hasBody: true })
+// 'octet-stream'
 ```
 
 Use it when building a custom adapter, or when you need to know how a body will parse without consuming it.

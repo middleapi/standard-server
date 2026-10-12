@@ -22,9 +22,8 @@ describe('toStandardBody', () => {
       await expect(toStandardBody(event({ body: undefined }))).resolves.toBeUndefined()
     })
 
-    it('returns undefined for a body no content header describes', async () => {
-      // the hint comes from the headers alone, so unlabelled bytes are indistinguishable from no body
-      await expect(toStandardBody(event({ body: 'raw-data' }))).resolves.toBeUndefined()
+    it('returns undefined for an empty body no content header describes', async () => {
+      await expect(toStandardBody(event({ body: '' }))).resolves.toBeUndefined()
     })
 
     it('parses an empty body when content-type is present', async () => {
@@ -199,6 +198,25 @@ describe('toStandardBody', () => {
   })
 
   describe('octet-stream', () => {
+    it('streams a body no content header describes', async () => {
+      // the event carries the whole body, so its presence does not depend on content-length
+      const standardBody = (await toStandardBody(
+        event({ headers: {}, body: 'hello world' }),
+      )) as ReadableStream<Uint8Array>
+
+      expect(standardBody).toBeInstanceOf(ReadableStream)
+      await expect(new Response(standardBody).text()).resolves.toBe('hello world')
+    })
+
+    it('streams a base64 body no content header describes', async () => {
+      const standardBody = (await toStandardBody(
+        event({ body: Buffer.from('hello world').toString('base64'), isBase64Encoded: true }),
+      )) as ReadableStream<Uint8Array>
+
+      expect(standardBody).toBeInstanceOf(ReadableStream)
+      await expect(new Response(standardBody).text()).resolves.toBe('hello world')
+    })
+
     it('streams the body on explicit hint', async () => {
       const standardBody = (await toStandardBody(
         event({

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import http from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import http2 from 'node:http2'
 import { Readable } from 'node:stream'
@@ -186,6 +187,42 @@ describe('toStandardBody', () => {
       expect(await standardBody.text()).toBe('foo')
     })
 
+    it('octet-stream for a chunked body without content headers', async ({ onTestFinished }) => {
+      let headers: IncomingMessage['headers'] | undefined
+      let streamedText: string | undefined
+
+      const server = http.createServer(async (req, res) => {
+        headers = req.headers
+        const standardBody = await toStandardBody(req)
+
+        // a streaming body must be drained while the request is still alive
+        if (standardBody instanceof ReadableStream) {
+          streamedText = await new Response(standardBody).text()
+        }
+        res.end()
+      })
+      onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+      await new Promise<void>((r) => server.listen(0, r))
+      const port = (server.address() as any).port
+
+      await new Promise<void>((resolve, reject) => {
+        const req = http.request({ port, method: 'POST' }, (res) => {
+          res.resume()
+          res.on('end', resolve)
+        })
+        req.on('error', reject)
+        // writing before end leaves the length unknown, so node frames it as chunked
+        req.write('hello ')
+        req.end('world')
+      })
+
+      expect(headers?.['transfer-encoding']).toBe('chunked')
+      expect(headers?.['content-type']).toBe(undefined)
+      expect(headers?.['content-length']).toBe(undefined)
+      expect(streamedText).toBe('hello world')
+    })
+
     it('prefer parsed body', async () => {
       let standardBody: StandardBody = {} as any
 
@@ -331,7 +368,7 @@ describe('toStandardBody', () => {
     async function http2Roundtrip(
       onTestFinished: (fn: () => Promise<any>) => void,
       headers: Record<string, string>,
-      body: Buffer,
+      body: Buffer | undefined,
     ): Promise<[standardBody: StandardBody, streamedBytes: Uint8Array | undefined]> {
       let standardBody: StandardBody
       let streamedBytes: Uint8Array | undefined
@@ -359,8 +396,14 @@ describe('toStandardBody', () => {
       onTestFinished(async () => client.close())
 
       await new Promise<void>((resolve) => {
-        const stream = client.request({ ':method': 'POST', ':path': '/', ...headers })
-        stream.end(body)
+        // without a body, END_STREAM rides on the HEADERS frame
+        const stream = client.request(
+          { ':method': 'POST', ':path': '/', ...headers },
+          { endStream: body === undefined },
+        )
+        if (body !== undefined) {
+          stream.end(body)
+        }
         stream.on('response', () => {
           stream.resume()
           stream.on('end', () => resolve())
@@ -435,6 +478,32 @@ describe('toStandardBody', () => {
       expect(streamedBytes).toEqual(new Uint8Array(body))
       expect(toWebReadableStreamSpy).toHaveBeenCalledTimes(1)
       expect(result).toBe(toWebReadableStreamSpy.mock.results[0]!.value)
+    })
+
+    it('octet-stream for a body without content headers', async ({ onTestFinished }) => {
+      // http/2 has no transfer-encoding, the DATA frames alone carry the body
+      const [result, streamedBytes] = await http2Roundtrip(onTestFinished, {}, Buffer.from('hello'))
+
+      expect(result).toBeInstanceOf(ReadableStream)
+      expect(streamedBytes).toEqual(new Uint8Array(Buffer.from('hello')))
+    })
+
+    it('file for a body with only a filename', async ({ onTestFinished }) => {
+      const [result] = (await http2Roundtrip(
+        onTestFinished,
+        { 'content-disposition': 'attachment; filename="foo.bin"' },
+        Buffer.from('hello'),
+      )) as [File, undefined]
+
+      expect(result).toBeInstanceOf(File)
+      expect(result.name).toBe('foo.bin')
+      expect(await result.text()).toBe('hello')
+    })
+
+    it('undefined without a body', async ({ onTestFinished }) => {
+      const [result] = await http2Roundtrip(onTestFinished, {}, undefined)
+
+      expect(result).toBe(undefined)
     })
   })
 

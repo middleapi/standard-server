@@ -23,6 +23,13 @@ export async function toStandardBody(
   re: Request | Response,
   options?: ToStandardBodyOptions,
 ): Promise<StandardBody> {
+  // `re.body !== null` is no body signal: runtimes also expose an empty stream for
+  // a body-less request or response, which must keep resolving to undefined.
+  // Nor is a response's transfer-encoding: node frames a body-less response as chunked
+  // whenever its head is written before it ends.
+  const transferEncoding =
+    re instanceof Request ? (re.headers.get('transfer-encoding') ?? undefined) : undefined
+
   const hint =
     options?.hint ??
     resolveStandardBodyHint({
@@ -30,6 +37,7 @@ export async function toStandardBody(
       'content-type': re.headers.get('content-type') ?? undefined,
       'content-length': re.headers.get('content-length') ?? undefined,
       'content-disposition': re.headers.get('content-disposition') ?? undefined,
+      'transfer-encoding': transferEncoding,
     })
 
   if (hint === 'none') {

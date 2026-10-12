@@ -193,6 +193,67 @@ describe('toStandardBody', () => {
       expect(await reader.read()).toEqual({ done: true, value: undefined })
     })
 
+    it('octet-stream for a chunked body without content headers', async () => {
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('hello '))
+            controller.enqueue(new TextEncoder().encode('world'))
+            controller.close()
+          },
+        }),
+        headers: {
+          // what a server exposes for an http/1.1 chunked upload
+          'transfer-encoding': 'chunked',
+        },
+        duplex: 'half',
+      })
+
+      const standardBody = await toStandardBody(request)
+      expect(standardBody).toBeInstanceOf(ReadableStream)
+      expect(await new Response(standardBody as ReadableStream).text()).toBe('hello world')
+    })
+
+    it('file for a chunked body with only a filename', async () => {
+      // bytes, so fetch adds no content-type of its own
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: new TextEncoder().encode('hello'),
+        headers: {
+          'transfer-encoding': 'chunked',
+          'content-disposition': 'attachment; filename="foo.txt"',
+        },
+      })
+
+      const standardBody = (await toStandardBody(request)) as File
+      expect(standardBody).toBeInstanceOf(File)
+      expect(standardBody.name).toBe('foo.txt')
+      expect(await standardBody.text()).toBe('hello')
+    })
+
+    it('none for a body no header reports', async () => {
+      // `body !== null` is not a body signal: runtimes also expose an empty stream
+      // for a body-less request or response, which must keep resolving to undefined
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: new Uint8Array(),
+      })
+      expect(request.body).not.toBe(null)
+      expect(await toStandardBody(request)).toBe(undefined)
+    })
+
+    it('none for a chunked response without content headers', async () => {
+      // what node sends for a body-less response whose head is written before it ends
+      const response = new Response(new Uint8Array(), {
+        headers: {
+          'transfer-encoding': 'chunked',
+        },
+      })
+
+      expect(await toStandardBody(response)).toBe(undefined)
+    })
+
     it('stream (empty body)', async () => {
       const request = new Request('https://example.com', {
         method: 'POST',
