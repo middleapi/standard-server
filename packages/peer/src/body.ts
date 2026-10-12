@@ -3,6 +3,7 @@ import {
   flattenStandardHeader,
   generateContentDisposition,
   getFilenameFromContentDisposition,
+  normalizeStandardBodyHeaders,
 } from '@standard-server/core'
 import type { AsyncCleanupFn } from '@standard-server/shared'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
@@ -147,6 +148,7 @@ export async function encodeAtomicStandardBody(
   headers: StandardHeaders,
 ): Promise<EncodedAtomicStandardBody> {
   headers = { ...headers }
+  normalizeStandardBodyHeaders(headers)
 
   if (body instanceof ReadableStream) {
     headers['content-type'] ??= 'application/octet-stream'

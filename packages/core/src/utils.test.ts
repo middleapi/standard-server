@@ -6,6 +6,7 @@ import {
   generateContentDisposition,
   getFilenameFromContentDisposition,
   mergeStandardHeaders,
+  normalizeStandardBodyHeaders,
   parseStandardUrl,
   resolveStandardBodyHint,
 } from './utils'
@@ -526,6 +527,91 @@ describe('mergeStandardHeaders', () => {
 
     expect(Object.getPrototypeOf(merged)).toEqual(Object.prototype)
     expect(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value).toEqual(['1', '2'])
+  })
+})
+
+describe('normalizeStandardBodyHeaders', () => {
+  it('folds differently-cased body headers into the lowercase key', () => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'CONTENT-DISPOSITION': 'inline',
+      'Content-Length': '3',
+      'Standard-Server': 'file',
+    }
+
+    normalizeStandardBodyHeaders(headers)
+
+    expect(headers).toStrictEqual({
+      'content-type': 'application/json',
+      'content-disposition': 'inline',
+      'content-length': '3',
+      'standard-server': 'file',
+    })
+  })
+
+  it('leaves other headers and lowercase body headers as is', () => {
+    const headers = {
+      'X-Custom': 'value',
+      'Set-Cookie': ['a=1', 'b=2'],
+      'content-type': 'text/plain',
+      'content-length': undefined,
+    }
+
+    normalizeStandardBodyHeaders(headers)
+
+    expect(headers).toStrictEqual({
+      'X-Custom': 'value',
+      'Set-Cookie': ['a=1', 'b=2'],
+      'content-type': 'text/plain',
+      'content-length': undefined,
+    })
+  })
+
+  it('keeps an empty array, so a cased removal still removes', () => {
+    const headers: Record<string, string[]> = { 'Content-Type': [] }
+
+    normalizeStandardBodyHeaders(headers)
+
+    expect(headers).toStrictEqual({ 'content-type': [] })
+  })
+
+  it('the lowercase key wins unless it is undefined', () => {
+    const lowercaseFirst = { 'content-type': 'a', 'Content-Type': 'b' }
+    normalizeStandardBodyHeaders(lowercaseFirst)
+    expect(lowercaseFirst).toStrictEqual({ 'content-type': 'a' })
+
+    const casedFirst = { 'Content-Type': 'b', 'content-type': 'a' }
+    normalizeStandardBodyHeaders(casedFirst)
+    expect(casedFirst).toStrictEqual({ 'content-type': 'a' })
+
+    const lowercaseRemoval = { 'Content-Type': 'b', 'content-type': [] }
+    normalizeStandardBodyHeaders(lowercaseRemoval)
+    expect(lowercaseRemoval).toStrictEqual({ 'content-type': [] })
+
+    const lowercaseUndefined = { 'content-type': undefined, 'Content-Type': 'b' }
+    normalizeStandardBodyHeaders(lowercaseUndefined)
+    expect(lowercaseUndefined).toStrictEqual({ 'content-type': 'b' })
+  })
+
+  it('then the first cased spelling that is not undefined', () => {
+    const headers = {
+      'Content-Type': undefined,
+      'CONTENT-TYPE': 'first',
+      'content-Type': 'second',
+    }
+
+    normalizeStandardBodyHeaders(headers)
+
+    expect(headers).toStrictEqual({ 'content-type': 'first' })
+  })
+
+  it('works on a null-prototype object', () => {
+    const headers = Object.assign(Object.create(null), { 'Content-Type': 'text/plain' })
+
+    normalizeStandardBodyHeaders(headers)
+
+    expect(Object.keys(headers)).toEqual(['content-type'])
+    expect(headers['content-type']).toBe('text/plain')
   })
 })
 

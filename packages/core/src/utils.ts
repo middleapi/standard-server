@@ -184,6 +184,38 @@ export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): St
   return merged
 }
 
+const STANDARD_BODY_HEADER_NAME_SET: ReadonlySet<string> = new Set([
+  'content-type',
+  'content-disposition',
+  'content-length',
+  'standard-server',
+])
+
+/**
+ * Folds any differently-cased spelling of the headers the body converters manage
+ * (`content-type`, `content-disposition`, `content-length` and `standard-server`)
+ * into its lowercase key, so the converters see the caller's value (`??=` overrides
+ * and `[]` removal keep working) and no cased duplicate reaches the transport.
+ * Other headers are left as is.
+ *
+ * When several spellings are present, the lowercase key wins unless it is `undefined`,
+ * then the first spelling that is not `undefined`, in key order.
+ *
+ * Mutates `headers`, pass a copy.
+ */
+export function normalizeStandardBodyHeaders(headers: StandardHeaders): void {
+  for (const key of Object.keys(headers)) {
+    const lowerKey = key.toLowerCase()
+
+    if (lowerKey === key || !STANDARD_BODY_HEADER_NAME_SET.has(lowerKey)) {
+      continue
+    }
+
+    headers[lowerKey] ??= headers[key]
+    delete headers[key]
+  }
+}
+
 export function parseStandardUrl(
   url: StandardUrl,
 ): [pathname: `/${string}`, search: `?${string}` | undefined, hash: `#${string}` | undefined] {

@@ -184,6 +184,33 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('foo')
   })
 
+  it('chunked (file) with cased overrides of the auto-set headers', async ({ onTestFinished }) => {
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    fastify.get('/', async (req, reply) => {
+      await sendStandardResponse(reply, {
+        status: 207,
+        headers: {
+          'Content-Type': 'image/png',
+          'Standard-Server': 'octet-stream',
+        },
+        body: new Blob(['foo'], { type: 'text/plain' }),
+      })
+    })
+
+    await fastify.ready()
+    const res = await request(fastify.server).get('/')
+
+    expect(res.status).toBe(207)
+    expect(res.headers).toMatchObject({
+      'content-length': '3',
+      'content-type': 'image/png',
+      'standard-server': 'octet-stream',
+    })
+    expect(Buffer.from(res.body).toString()).toEqual('foo')
+  })
+
   it('chunked (async generator)', async ({ onTestFinished }) => {
     async function* gen() {
       yield 'foo'

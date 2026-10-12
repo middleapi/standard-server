@@ -58,7 +58,7 @@ Supporting primitives:
 | `StandardBodyHint` | Parsing hint for lazy body resolution                         |
 | `StandardBody`     | Shared body union used by requests and responses              |
 
-By convention, adapters normalize headers to lowercase keys. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
+By convention, adapters normalize headers to lowercase keys. When sending, the headers adapters set from the body (`content-type`, `content-disposition`, `content-length` and `standard-server`) are matched case-insensitively, so `'Content-Type'` overrides or removes them like `'content-type'` does; if both spellings are present, the lowercase one wins unless it is `undefined`. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
 
 ```ts
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'

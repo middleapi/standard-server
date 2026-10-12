@@ -1,3 +1,4 @@
+import type { StandardHeaders } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
@@ -533,6 +534,150 @@ describe('toFetchBody', () => {
     expect(await reader.read()).toEqual({ done: false, value: 'order2' })
     expect(await reader.read()).toEqual({ done: false, value: 'order3' })
     expect(await reader.read()).toEqual({ done: true })
+  })
+
+  describe('mixed-case body headers', () => {
+    function expectLowercaseKeys(headers: StandardHeaders) {
+      expect(Object.keys(headers)).toEqual(Object.keys(headers).map((key) => key.toLowerCase()))
+    }
+
+    it('json: auto-set headers replace the cased spellings', () => {
+      const [body, headers] = toFetchBody(
+        { a: 1 },
+        {
+          ...baseHeaders,
+          'Content-Type': 'application/json',
+          'Standard-Server': 'file',
+          'Content-Length': '999',
+        },
+      )
+
+      expect(body).toBe('{"a":1}')
+      expectLowercaseKeys(headers)
+      expect(headers).toEqual({
+        'content-type': 'application/json',
+        'x-custom-header': 'custom-value',
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.get('content-type')).toBe('application/json')
+      expect(fetchHeaders.has('standard-server')).toBe(false)
+      expect(fetchHeaders.has('content-length')).toBe(false)
+    })
+
+    it('json: a cased empty array does not remove the json content-type', () => {
+      const [body, headers] = toFetchBody({ a: 1 }, { ...baseHeaders, 'Content-Type': [] })
+
+      expect(body).toBe('{"a":1}')
+      expectLowercaseKeys(headers)
+      expect(headers).toEqual({
+        'content-type': 'application/json',
+        'x-custom-header': 'custom-value',
+      })
+    })
+
+    it('blob: cased overrides win over the auto-set headers', async () => {
+      const blob = new Blob(['foo'], { type: 'text/plain' })
+
+      const [body, headers] = toFetchBody(blob, {
+        ...baseHeaders,
+        'Content-Type': 'image/png',
+        'Content-Disposition': 'attachment; filename="foo.png"',
+        'Standard-Server': 'octet-stream',
+        'Content-Length': '999',
+      })
+
+      expect(body).toBe(blob)
+      expectLowercaseKeys(headers)
+      expect(headers).toEqual({
+        'content-type': 'image/png',
+        'content-disposition': 'attachment; filename="foo.png"',
+        'standard-server': 'octet-stream',
+        // always computed from the blob
+        'content-length': '3',
+        'x-custom-header': 'custom-value',
+      })
+      expect(generateContentDispositionSpy).not.toHaveBeenCalled()
+
+      const response = new Response(body, { headers: toFetchHeaders(headers) })
+      expect(response.headers.get('content-type')).toBe('image/png')
+      expect(response.headers.get('content-length')).toBe('3')
+      expect(await response.text()).toBe('foo')
+    })
+
+    it('blob: a cased empty array removes content-type like the lowercase one', () => {
+      const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+
+      const [body, headers] = toFetchBody(file, { ...baseHeaders, 'Content-Type': [] })
+
+      expectLowercaseKeys(headers)
+      expect(headers['content-type']).toEqual([])
+      expect(toFetchHeaders(headers).has('content-type')).toBe(false)
+      expect([body, headers]).toEqual(toFetchBody(file, { ...baseHeaders, 'content-type': [] }))
+    })
+
+    it('stream: cased overrides win over the auto-set headers', () => {
+      const stream = new ReadableStream()
+
+      const [body, headers] = toFetchBody(stream, {
+        ...baseHeaders,
+        'Content-Type': 'text/plain',
+        'Standard-Server': 'file',
+        'Content-Length': '3',
+      })
+
+      expect(body).toBe(stream)
+      expectLowercaseKeys(headers)
+      expect(headers).toEqual({
+        'content-type': 'text/plain',
+        'standard-server': 'file',
+        'content-length': '3',
+        'x-custom-header': 'custom-value',
+      })
+
+      const fetchHeaders = toFetchHeaders(headers)
+      expect(fetchHeaders.get('content-type')).toBe('text/plain')
+      expect(fetchHeaders.get('standard-server')).toBe('file')
+      expect(fetchHeaders.get('content-length')).toBe('3')
+    })
+
+    it('stream: cased empty arrays remove content-type and standard-server', () => {
+      const stream = new ReadableStream()
+
+      const [body, headers] = toFetchBody(stream, {
+        ...baseHeaders,
+        'Content-Type': [],
+        'Standard-Server': [],
+      })
+
+      expect(body).toBe(stream)
+      expectLowercaseKeys(headers)
+      expect(headers).toEqual({
+        'content-type': [],
+        'standard-server': [],
+        'x-custom-header': 'custom-value',
+      })
+
+      const response = new Response(body, { headers: toFetchHeaders(headers) })
+      expect(response.headers.has('content-type')).toBe(false)
+      expect(response.headers.has('standard-server')).toBe(false)
+    })
+
+    it('the lowercase key wins over a cased duplicate', () => {
+      const blob = new Blob(['foo'], { type: 'text/plain' })
+
+      const [, headers] = toFetchBody(blob, {
+        ...baseHeaders,
+        'content-type': 'image/png',
+        'Content-Type': 'image/gif',
+        'Content-Disposition': undefined,
+        'content-disposition': 'inline',
+      })
+
+      expectLowercaseKeys(headers)
+      expect(headers['content-type']).toBe('image/png')
+      expect(headers['content-disposition']).toBe('inline')
+    })
   })
 })
 

@@ -4,6 +4,7 @@ import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-
 import {
   generateContentDisposition,
   getFilenameFromContentDisposition,
+  normalizeStandardBodyHeaders,
   resolveStandardBodyHint,
 } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
@@ -95,6 +96,9 @@ export interface ToNodeHttpBodyOptions {
  *
  * Binary bodies (Blob, ReadableStream) can override the aut-set standard-server header,
  * enabling pre-encoded body transmission while preserving client-side type interpretation.
+ *
+ * The body headers are matched case-insensitively and come out lowercase,
+ * see `normalizeStandardBodyHeaders`.
  */
 export function toNodeHttpBody(
   body: StandardBody,
@@ -102,6 +106,7 @@ export function toNodeHttpBody(
   options: ToNodeHttpBodyOptions = {},
 ): [body: Readable | undefined | string, headers: StandardHeaders] {
   headers = { ...headers }
+  normalizeStandardBodyHeaders(headers)
 
   if (body instanceof ReadableStream) {
     // Always set the body hint: the length of a stream is unknown here, but the transport

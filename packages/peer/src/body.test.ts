@@ -402,6 +402,33 @@ describe('encodeAtomicStandardBody', () => {
     expect(removedHeaders['content-type']).toEqual([])
   })
 
+  it('folds cased spellings of the body headers into the lowercase key', async () => {
+    const file = new File(['<b>hi</b>'], 'page.html', { type: 'text/html' })
+
+    const { headers } = await encodeAtomicStandardBody(file, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': 'attachment',
+      'Content-Length': '999',
+    })
+    expect(headers).toEqual({
+      'content-type': 'application/octet-stream',
+      'content-disposition': 'attachment',
+      'content-length': '9',
+    })
+
+    const { headers: removedHeaders } = await encodeAtomicStandardBody(file, {
+      'Content-Type': [],
+    })
+    expect(Object.keys(removedHeaders)).not.toContain('Content-Type')
+    expect(removedHeaders['content-type']).toEqual([])
+
+    const { headers: jsonHeaders } = await encodeAtomicStandardBody(
+      { a: 1 },
+      { 'Content-Type': 'application/json', 'Standard-Server': 'file' },
+    )
+    expect(jsonHeaders).toEqual({})
+  })
+
   it('encodes URLSearchParams body', async () => {
     const params = new URLSearchParams('a=1&b=2')
     const { jsonBody, headers, binary } = await encodeAtomicStandardBody(params, {})

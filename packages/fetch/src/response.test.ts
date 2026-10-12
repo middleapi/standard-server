@@ -38,6 +38,17 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
 
+  it('round trips a json body sent with a cased content-type', async () => {
+    const response = toFetchResponse({
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: { a: 1 },
+    })
+
+    expect(response.headers.get('content-type')).toBe('application/json')
+    expect(await toStandardLazyResponse(response).resolveBody()).toEqual({ a: 1 })
+  })
+
   describe('releases the body when the response cannot be built', () => {
     it('event-stream body when the status cannot have a body', async () => {
       const next = vi.fn(() => new Promise<never>(() => {}))

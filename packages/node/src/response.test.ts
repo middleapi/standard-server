@@ -142,6 +142,27 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('foo')
   })
 
+  it('chunked (file) with cased overrides of the auto-set headers', async () => {
+    const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+      await sendStandardResponse(res, {
+        status: 207,
+        headers: {
+          'Content-Type': 'image/png',
+          'Standard-Server': 'octet-stream',
+        },
+        body: new Blob(['foo'], { type: 'text/plain' }),
+      })
+    }).get('/')
+
+    expect(res.status).toBe(207)
+    expect(res.headers).toMatchObject({
+      'content-length': '3',
+      'content-type': 'image/png',
+      'standard-server': 'octet-stream',
+    })
+    expect(Buffer.from(res.body).toString()).toEqual('foo')
+  })
+
   it('chunked (async generator)', async () => {
     async function* gen() {
       yield 'foo'
