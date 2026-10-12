@@ -182,11 +182,7 @@ export class ClientPeer {
       return
     }
 
-    /**
-     * By the last stream message the server has already released the request, so release it here
-     * too instead of waiting for a body the caller may never read. Closing keeps the buffered messages
-     * readable through `resolveBody()`, and the body cleanup then finds no state to cancel.
-     */
+    // by the last stream message the server has already released the request, so release it too
     if (message.kind === 'event-stream') {
       const queue = state.eventStreamMessageQueue
       queue?.push(message)

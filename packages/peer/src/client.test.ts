@@ -833,12 +833,10 @@ describe('clientPeer', () => {
         expect(getPeerSize(peer)).toBe(1)
         expect(removeSpy).not.toHaveBeenCalled()
 
-        // the server already released the request, so nothing waits for the body to be read
         await peer.message(makeEventStreamMessage(id, 'bye', 'close'))
         expect(getPeerSize(peer)).toBe(0)
         expect(removeSpy).toHaveBeenCalledOnce()
 
-        // the buffered events stay readable
         const iter = (await response.resolveBody()) as AsyncIterator<unknown>
         await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
         await expect(iter.next()).resolves.toEqual({ done: true, value: 'bye' })
@@ -879,7 +877,6 @@ describe('clientPeer', () => {
         await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
         await iter.return?.()
 
-        // the server already released the request, so there is nothing to cancel
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
       })
     })
@@ -1253,12 +1250,10 @@ describe('clientPeer', () => {
         expect(getPeerSize(peer)).toBe(1)
         expect(removeSpy).not.toHaveBeenCalled()
 
-        // the server already released the request, so nothing waits for the body to be read
         await peer.message(makeOctetStreamMessage(id, true, new Uint8Array([3])))
         expect(getPeerSize(peer)).toBe(0)
         expect(removeSpy).toHaveBeenCalledOnce()
 
-        // the buffered chunks stay readable
         const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
         expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1, 2]) })
         expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([3]) })
@@ -1279,7 +1274,6 @@ describe('clientPeer', () => {
         expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1]) })
         await reader.cancel()
 
-        // the server already released the request, so there is nothing to cancel
         expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
       })
     })

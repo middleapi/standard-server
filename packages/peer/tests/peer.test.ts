@@ -377,7 +377,6 @@ describe('peer integration (client <-> server over encoded wire)', () => {
             }),
     }))
 
-    // a long-lived signal shared by every request, e.g. one per page or app
     const controller = new AbortController()
 
     for (let i = 0; i < 100; i++) {
@@ -387,7 +386,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
         headers: {},
         signal: controller.signal,
       })
-      expect(response.status).toBe(200) // body ignored
+      expect(response.status).toBe(200)
     }
 
     await vi.waitFor(() => {
