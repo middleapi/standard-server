@@ -171,7 +171,6 @@ export class ClientPeer {
       return
     }
 
-    // the server has the request, even if the request message send has not resolved yet
     state.requestSent = true
 
     if (message.kind === 'stream/cancel') {
@@ -300,7 +299,6 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    // until the request message is sent, transmitRequest sends the cancel
     state.cancelPending = !state.requestSent
 
     const promises = [

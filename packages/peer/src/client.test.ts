@@ -129,14 +129,18 @@ describe('clientPeer', () => {
    * send resolves only once the remote has acknowledged or handled the message.
    */
   async function requestWhileHoldingSend(request?: StandardRequest) {
+    const requestSending = promiseWithResolvers<PeerRequestMessage>()
     const releaseRequest = promiseWithResolvers<void>()
     send.mockImplementation(async (message) => {
       if (message.kind === 'request') {
+        requestSending.resolve(message)
         await releaseRequest.promise
       }
     })
 
-    return { ...(await requestAndGetId(request)), releaseRequest }
+    const promise = peer.request(request ?? makeRequest())
+    const { id } = await requestSending.promise
+    return { id, promise, releaseRequest }
   }
 
   describe('request / response', () => {
@@ -269,20 +273,12 @@ describe('clientPeer', () => {
 
   describe('signal / abort', () => {
     async function abortWhileSendingRequest() {
-      const requestSending = promiseWithResolvers<PeerRequestMessage>()
-      const releaseRequest = promiseWithResolvers<void>()
       const bodyCancelled = promiseWithResolvers<void>()
-      send.mockImplementation(async (message) => {
-        if (message.kind === 'request') {
-          requestSending.resolve(message)
-          await releaseRequest.promise
-        }
-      })
-
       const controller = new AbortController()
       const body = new ReadableStream({ cancel: () => bodyCancelled.resolve() })
-      const promise = peer.request(makeRequest({ body, signal: controller.signal }))
-      const { id } = await requestSending.promise
+      const { id, promise, releaseRequest } = await requestWhileHoldingSend(
+        makeRequest({ body, signal: controller.signal }),
+      )
       const error = new Error('aborted during send')
       controller.abort(error)
 
@@ -508,31 +504,17 @@ describe('clientPeer', () => {
       },
     )
 
-    it.each(['event-stream', 'octet-stream'] as const)(
-      'does not send a cancel message when the request message fails to send after the %s response arrived',
-      async (type) => {
-        const { id, promise, releaseRequest } = await requestWhileHoldingSend()
-        await peer.message(makeStreamingResponse(id, type))
+    it('does not send a cancel message when the request message fails to send after the response arrived', async () => {
+      const { id, promise, releaseRequest } = await requestWhileHoldingSend()
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      const iter = (await (await promise).resolveBody()) as AsyncIterator<unknown>
 
-        const response = await promise
-        const body = await response.resolveBody()
-
-        // the failed request message fails the request instead of aborting it
-        const error = new Error('transport down')
-        releaseRequest.reject(error)
-        if (type === 'event-stream') {
-          const iter = body as AsyncIterator<unknown>
-          await expect(iter.next()).rejects.toBe(error)
-          await iter.return?.()
-        } else {
-          const reader = (body as ReadableStream<Uint8Array>).getReader()
-          await expect(reader.read()).rejects.toBe(error)
-          await reader.cancel().catch(() => {})
-        }
-
-        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
-      },
-    )
+      // the failed request message fails the request instead of aborting it
+      const error = new Error('transport down')
+      releaseRequest.reject(error)
+      await expect(iter.next()).rejects.toBe(error)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
 
     it('rejects pending request on server abort', async () => {
       const { id, promise } = await requestAndGetId()

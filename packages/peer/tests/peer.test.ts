@@ -441,7 +441,7 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   it.each(['event-stream', 'octet-stream'] as const)(
     'stops an endless %s response the client cancels while the request message is still being sent',
     async (type) => {
-      let produced = 0
+      let stopped = false
       let serverSignal: AbortSignal | undefined
 
       const { client, server } = connect(
@@ -453,15 +453,22 @@ describe('peer integration (client <-> server over encoded wire)', () => {
             body:
               type === 'event-stream'
                 ? (async function* () {
-                    while (true) {
-                      yield ++produced
-                      await sleep(5)
+                    try {
+                      while (true) {
+                        yield 'tick'
+                        await sleep(5)
+                      }
+                    } finally {
+                      stopped = true
                     }
                   })()
                 : new ReadableStream<Uint8Array>({
                     async pull(controller) {
-                      controller.enqueue(new Uint8Array([++produced]))
+                      controller.enqueue(new Uint8Array([1]))
                       await sleep(5)
+                    },
+                    cancel: () => {
+                      stopped = true
                     },
                   }),
           }
@@ -471,25 +478,15 @@ describe('peer integration (client <-> server over encoded wire)', () => {
       )
 
       const response = await client.request({ url: '/endless', method: 'GET', headers: {} })
-      const body = await response.resolveBody()
-
-      if (type === 'event-stream') {
-        const iterator = body as AsyncIterator<unknown>
-        await iterator.next()
-        await iterator.return!()
-      } else {
-        const reader = (body as ReadableStream<Uint8Array>).getReader()
-        await reader.read()
-        await reader.cancel()
+      // read one item, then cancel the body
+      for await (const _ of (await response.resolveBody()) as AsyncIterable<unknown>) {
+        break
       }
 
-      await vi.waitFor(() => expect(serverSignal?.aborted).toBe(true))
-      expect((server as any).requests.size).toBe(0)
-
       // the server stops pulling from the response body
-      const producedAtCancel = produced
-      await sleep(50)
-      expect(produced).toBe(producedAtCancel)
+      await vi.waitFor(() => expect(stopped).toBe(true))
+      expect(serverSignal?.aborted).toBe(true)
+      expect((server as any).requests.size).toBe(0)
     },
   )
 
