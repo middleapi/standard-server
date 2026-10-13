@@ -254,4 +254,32 @@ describe('octetStreamTransmitter', () => {
 
     expect(cancelCount).toBe(1)
   })
+
+  it('cancel resolves when the stream fails to clean up', async () => {
+    const stream = new ReadableStream({
+      cancel() {
+        throw new Error('cleanup failed')
+      },
+    })
+
+    const transmitter = new OctetStreamTransmitter(stream, 'msg-1', vi.fn())
+    await expect(transmitter.cancel()).resolves.toBeUndefined()
+  })
+
+  it('rethrow send-error when the stream fails to clean up', async () => {
+    const send = vi.fn(async () => {
+      throw new Error('send failed')
+    })
+    const stream = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array([1]))
+      },
+      cancel() {
+        throw new Error('cleanup failed')
+      },
+    })
+
+    const transmitter = new OctetStreamTransmitter(stream, 'msg-1', send)
+    await expect(transmitter.transmit()).rejects.toThrow('send failed')
+  })
 })

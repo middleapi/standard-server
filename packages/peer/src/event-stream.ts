@@ -55,7 +55,12 @@ export class EventStreamTransmitter {
   async cancel(): Promise<void> {
     if (!this.isDone) {
       this.isDone = true
-      await this.iterator.return?.()
+
+      try {
+        await this.iterator.return?.()
+      } catch {
+        // a source that fails to clean up must not fail the cancel, nor mask a send error
+      }
     }
   }
 

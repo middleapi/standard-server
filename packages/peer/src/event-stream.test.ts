@@ -330,4 +330,31 @@ describe('eventStreamTransmitter', () => {
 
     expect(returnFn).toHaveBeenCalledTimes(1)
   })
+
+  it('cancel resolves when the iterator fails to clean up', async () => {
+    const iter = new AsyncIteratorClass(
+      async () => ({ done: false, value: 'data' }),
+      async () => {
+        throw new Error('cleanup failed')
+      },
+    )
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', vi.fn())
+    await expect(transmitter.cancel()).resolves.toBeUndefined()
+  })
+
+  it('rethrow send-error when the iterator fails to clean up', async () => {
+    const send = vi.fn(async () => {
+      throw new Error('send failed')
+    })
+    const iter = new AsyncIteratorClass(
+      async () => ({ done: false, value: 'data' }),
+      async () => {
+        throw new Error('cleanup failed')
+      },
+    )
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
+    await expect(transmitter.transmit()).rejects.toThrow('send failed')
+  })
 })

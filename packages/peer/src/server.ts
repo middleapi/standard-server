@@ -215,10 +215,9 @@ export class ServerPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    // a response body that fails to clean up must not fail the close
     const promises = [
-      state.eventStreamTransmitter?.cancel().catch(() => {}),
-      state.octetStreamTransmitter?.cancel().catch(() => {}),
+      state.eventStreamTransmitter?.cancel(),
+      state.octetStreamTransmitter?.cancel(),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined

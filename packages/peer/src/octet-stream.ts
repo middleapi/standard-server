@@ -60,7 +60,8 @@ export class OctetStreamTransmitter {
   async cancel(): Promise<void> {
     if (!this.isDone) {
       this.isDone = true
-      await this.reader.cancel()
+      // a source that fails to clean up must not fail the cancel, nor mask a send error
+      await this.reader.cancel().catch(() => {})
     }
   }
 

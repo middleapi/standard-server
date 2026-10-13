@@ -1282,17 +1282,21 @@ describe('clientPeer', () => {
   describe('request body that fails to clean up', () => {
     const cleanupError = new Error('cleanup failed')
 
-    // keeps the body mid-transmission, so cancelling it runs its cleanup
-    function holdStreamSends(): void {
+    // holds the first stream message in flight, so cancelling the body runs its cleanup
+    async function requestWithHeldBody(body: StandardRequest['body']) {
       send.mockImplementation(async (message) => {
         if (message.kind === 'octet-stream' || message.kind === 'event-stream') {
           await new Promise(() => {})
         }
       })
+
+      const { id, promise } = await requestAndGetId(makeRequest({ body }))
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+
+      return { id, promise }
     }
 
     async function requestWithFailingOctetStreamBody() {
-      holdStreamSends()
       const cancel = vi.fn(() => {
         throw cleanupError
       })
@@ -1303,12 +1307,7 @@ describe('clientPeer', () => {
         cancel,
       })
 
-      const { id, promise } = await requestAndGetId(makeRequest({ body }))
-      await vi.waitFor(() =>
-        expect(send.mock.calls.some(([m]) => m.kind === 'octet-stream')).toBe(true),
-      )
-
-      return { id, promise, cancel }
+      return { ...(await requestWithHeldBody(body)), cancel }
     }
 
     it('resolves stream/cancel', async () => {
@@ -1349,7 +1348,6 @@ describe('clientPeer', () => {
     })
 
     it('resolves the final event-stream message', async () => {
-      holdStreamSends()
       let finalized = false
       async function* gen() {
         try {
@@ -1362,10 +1360,7 @@ describe('clientPeer', () => {
         }
       }
 
-      const { id, promise } = await requestAndGetId(makeRequest({ body: gen() }))
-      await vi.waitFor(() =>
-        expect(send.mock.calls.some(([m]) => m.kind === 'event-stream')).toBe(true),
-      )
+      const { id, promise } = await requestWithHeldBody(gen())
 
       await peer.message(makeStreamingResponse(id, 'event-stream'))
       await promise
@@ -1377,7 +1372,6 @@ describe('clientPeer', () => {
     })
 
     it('resolves stream/cancel when the body errored while a send is in flight', async () => {
-      holdStreamSends()
       let controller!: ReadableStreamDefaultController<Uint8Array>
       const body = new ReadableStream<Uint8Array>({
         start(c) {
@@ -1386,10 +1380,7 @@ describe('clientPeer', () => {
         },
       })
 
-      const { id, promise } = await requestAndGetId(makeRequest({ body }))
-      await vi.waitFor(() =>
-        expect(send.mock.calls.some(([m]) => m.kind === 'octet-stream')).toBe(true),
-      )
+      const { id, promise } = await requestWithHeldBody(body)
       controller.error(new Error('source broke'))
 
       await expect(peer.message(makeStreamCancelMessage(id))).resolves.toBeUndefined()
