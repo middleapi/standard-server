@@ -44,17 +44,15 @@ describe('safeDecodeURIComponent', () => {
     expect(safeDecodeURIComponent('%C0%AF')).toBe('%C0%AF')
     expect(safeDecodeURIComponent('%ED%A0%80')).toBe('%ED%A0%80')
     expect(safeDecodeURIComponent('%F4%90%80%80')).toBe('%F4%90%80%80')
-    // one malformed escape keeps the valid ones encoded too
     expect(safeDecodeURIComponent('%E4%B8%AD%ZZ')).toBe('%E4%B8%AD%ZZ')
     expect(safeDecodeURIComponent('%FF-%E2%82%AC')).toBe('%FF-%E2%82%AC')
   })
 
   it('tries decodeURIComponent once on hostile input', () => {
     const decodeSpy = vi.spyOn(globalThis, 'decodeURIComponent')
-    const hostile = '%FFa'.repeat(250_000) // ~1 MB
+    const hostile = '%FFa'.repeat(250_000)
 
     expect(safeDecodeURIComponent(hostile)).toBe(hostile)
-    // not retried in parts, which would throw once per malformed escape
     expect(decodeSpy).toHaveBeenCalledTimes(1)
   })
 })

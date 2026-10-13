@@ -14,6 +14,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('generateContentDisposition', () => {
   it('handle normal filename', () => {
     expect(generateContentDisposition('test.txt')).toEqual(
@@ -218,10 +222,6 @@ it('getFilenameFromContentDisposition', () => {
 })
 
 describe('resolveStandardBodyHint', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('standard-server header wins over content headers', () => {
     expect(
       resolveStandardBodyHint({
@@ -416,44 +416,21 @@ describe('resolveStandardBodyHint', () => {
     // just under the 16 KiB header limit of Node's HTTP server
     const contentDisposition = `attachment; filename*=utf-8''${'%FFa'.repeat(3900)}`
 
-    expect(
-      resolveStandardBodyHint({
-        'content-type': 'application/json',
-        'content-disposition': contentDisposition,
-      }),
-    ).toBe('json')
-    expect(
-      resolveStandardBodyHint({
-        'content-type': 'multipart/form-data; boundary=x',
-        'content-disposition': contentDisposition,
-      }),
-    ).toBe('form-data')
-    expect(
-      resolveStandardBodyHint({
-        'content-type': 'application/x-www-form-urlencoded',
-        'content-disposition': contentDisposition,
-      }),
-    ).toBe('url-search-params')
-    expect(
-      resolveStandardBodyHint({
-        'content-type': 'text/event-stream',
-        'content-disposition': contentDisposition,
-      }),
-    ).toBe('event-stream')
-    expect(
-      resolveStandardBodyHint({
-        'standard-server': 'json',
-        'content-disposition': contentDisposition,
-      }),
-    ).toBe('json')
-    expect(resolveStandardBodyHint({ 'content-disposition': contentDisposition })).toBe('none')
-    // content-length is enough to tell a file
-    expect(
-      resolveStandardBodyHint({ 'content-length': '3', 'content-disposition': contentDisposition }),
-    ).toBe('file')
+    for (const [headers, hint] of [
+      [{ 'content-type': 'application/json' }, 'json'],
+      [{ 'content-type': 'multipart/form-data; boundary=x' }, 'form-data'],
+      [{ 'content-type': 'application/x-www-form-urlencoded' }, 'url-search-params'],
+      [{ 'content-type': 'text/event-stream' }, 'event-stream'],
+      [{ 'standard-server': 'json' }, 'json'],
+      [{}, 'none'],
+      [{ 'content-length': '3' }, 'file'],
+    ] as const) {
+      expect(
+        resolveStandardBodyHint({ ...headers, 'content-disposition': contentDisposition }),
+      ).toBe(hint)
+    }
     expect(decodeSpy).not.toHaveBeenCalled()
 
-    // left to the filename alone, a malformed one is still a filename
     expect(
       resolveStandardBodyHint({
         'content-type': 'application/pdf',

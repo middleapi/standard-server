@@ -180,7 +180,6 @@ describe('toStandardBody', () => {
     expect(body).toBeInstanceOf(File)
     expect(body.name).toBe(filename)
     expect(await body.text()).toBe('file content')
-    // not retried in parts, which would throw once per malformed escape
     expect(decodeSpy).toHaveBeenCalledTimes(1)
 
     expect(cleanup).toHaveBeenCalledTimes(1)

@@ -26,7 +26,6 @@ export function safeDecodeURIComponent(value: string): string {
     // oxlint-disable-next-line no-restricted-globals
     return decodeURIComponent(value)
   } catch {
-    // retrying in parts would let a value with many malformed escapes cost one thrown URIError each
     return value
   }
 }

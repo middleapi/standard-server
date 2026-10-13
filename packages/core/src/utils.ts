@@ -144,7 +144,6 @@ export function resolveStandardBodyHint(headers: {
     return 'file'
   }
 
-  // parsed last, so a request the checks above already decide never pays for decoding the filename
   const contentDisposition = flattenStandardHeader(headers['content-disposition'])
 
   if (
