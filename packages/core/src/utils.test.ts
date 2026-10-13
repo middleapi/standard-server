@@ -197,11 +197,13 @@ it('getFilenameFromContentDisposition', () => {
   )
   expect(getFilenameFromContentDisposition('inline; filename="a\\"')).toEqual(undefined)
 
-  // malformed escapes in filename* are kept as-is, the valid ones are still decoded
+  // a filename* that fails to decode is kept as-is
   expect(
     getFilenameFromContentDisposition("attachment; filename*=utf-8''%E4%B8%AD%ZZ.txt"),
-  ).toEqual('中%ZZ.txt')
-  expect(getFilenameFromContentDisposition('inline; filename*=%E2%82%AC%.txt')).toEqual('€%.txt')
+  ).toEqual('%E4%B8%AD%ZZ.txt')
+  expect(getFilenameFromContentDisposition('inline; filename*=%E2%82%AC%.txt')).toEqual(
+    '%E2%82%AC%.txt',
+  )
 
   // quoted filename* is tolerated
   expect(
@@ -216,6 +218,10 @@ it('getFilenameFromContentDisposition', () => {
 })
 
 describe('resolveStandardBodyHint', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('standard-server header wins over content headers', () => {
     expect(
       resolveStandardBodyHint({
@@ -403,6 +409,58 @@ describe('resolveStandardBodyHint', () => {
         'content-disposition': 'inline; filename="a.pdf"',
       }),
     ).toBe('none')
+  })
+
+  it('decodes the filename only when no other header decides the hint', () => {
+    const decodeSpy = vi.spyOn(globalThis, 'decodeURIComponent')
+    // just under the 16 KiB header limit of Node's HTTP server
+    const contentDisposition = `attachment; filename*=utf-8''${'%FFa'.repeat(3900)}`
+
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'application/json',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('json')
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'multipart/form-data; boundary=x',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('form-data')
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'application/x-www-form-urlencoded',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('url-search-params')
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'text/event-stream',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('event-stream')
+    expect(
+      resolveStandardBodyHint({
+        'standard-server': 'json',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('json')
+    expect(resolveStandardBodyHint({ 'content-disposition': contentDisposition })).toBe('none')
+    // content-length is enough to tell a file
+    expect(
+      resolveStandardBodyHint({ 'content-length': '3', 'content-disposition': contentDisposition }),
+    ).toBe('file')
+    expect(decodeSpy).not.toHaveBeenCalled()
+
+    // left to the filename alone, a malformed one is still a filename
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'application/pdf',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('file')
+    expect(decodeSpy).toHaveBeenCalled()
   })
 
   it('octet-stream when content-length is absent', () => {

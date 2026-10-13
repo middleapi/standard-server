@@ -24,22 +24,37 @@ describe('safeEncodeURIComponent', () => {
 })
 
 describe('safeDecodeURIComponent', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('decodes like decodeURIComponent for well-formed input', () => {
     expect(safeDecodeURIComponent('test')).toBe('test')
     expect(safeDecodeURIComponent('test%20value')).toBe('test value')
     expect(safeDecodeURIComponent('%CE%BB%E4%B8%96%E7%95%8C')).toBe('λ世界')
+    expect(safeDecodeURIComponent('%f0%9f%98%80')).toBe('😀')
     expect(safeDecodeURIComponent('')).toBe('')
   })
 
-  it('keeps malformed escapes as-is and still decodes the valid ones instead of throwing', () => {
-    expect(safeDecodeURIComponent('invalid%20value%')).toBe('invalid value%')
-    expect(safeDecodeURIComponent('%E0%A4%A')).toBe('%E0%A4%A') // Invalid UTF-8 sequence
+  it('returns a value that fails to decode as-is instead of throwing', () => {
+    expect(safeDecodeURIComponent('invalid%20value%')).toBe('invalid%20value%')
     expect(safeDecodeURIComponent('%ZZ')).toBe('%ZZ')
-    expect(safeDecodeURIComponent('%ZZ%e4%b8%ad%')).toBe('%ZZ中%')
-    expect(safeDecodeURIComponent('%FF-%E2%82%AC')).toBe('%FF-€')
-    // a run of escapes that is not valid UTF-8 is kept as a whole
-    expect(safeDecodeURIComponent('%E4%B8%AD%FF%')).toBe('%E4%B8%AD%FF%')
-    // decoded output is not decoded again
-    expect(safeDecodeURIComponent('%2541%ZZ')).toBe('%41%ZZ')
+    // malformed UTF-8: truncated, overlong, surrogate, above U+10FFFF
+    expect(safeDecodeURIComponent('%E4%B8')).toBe('%E4%B8')
+    expect(safeDecodeURIComponent('%C0%AF')).toBe('%C0%AF')
+    expect(safeDecodeURIComponent('%ED%A0%80')).toBe('%ED%A0%80')
+    expect(safeDecodeURIComponent('%F4%90%80%80')).toBe('%F4%90%80%80')
+    // one malformed escape keeps the valid ones encoded too
+    expect(safeDecodeURIComponent('%E4%B8%AD%ZZ')).toBe('%E4%B8%AD%ZZ')
+    expect(safeDecodeURIComponent('%FF-%E2%82%AC')).toBe('%FF-%E2%82%AC')
+  })
+
+  it('tries decodeURIComponent once on hostile input', () => {
+    const decodeSpy = vi.spyOn(globalThis, 'decodeURIComponent')
+    const hostile = '%FFa'.repeat(250_000) // ~1 MB
+
+    expect(safeDecodeURIComponent(hostile)).toBe(hostile)
+    // not retried in parts, which would throw once per malformed escape
+    expect(decodeSpy).toHaveBeenCalledTimes(1)
   })
 })

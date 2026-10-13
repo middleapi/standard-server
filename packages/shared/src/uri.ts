@@ -1,6 +1,5 @@
 // with the u flag a well-formed surrogate pair is one code point, so only lone surrogates match
 const LONE_SURROGATE_REGEX = /[\uD800-\uDFFF]/gu
-const PERCENT_ESCAPES_REGEX = /(?:%[0-9A-F]{2})+/gi
 
 /**
  * `encodeURIComponent` that never throws, lone surrogates become U+FFFD.
@@ -16,7 +15,7 @@ export function safeEncodeURIComponent(value: string): string {
 }
 
 /**
- * `decodeURIComponent` that never throws, runs of `%XX` escapes that fail to decode are kept as-is.
+ * `decodeURIComponent` that never throws, a value that fails to decode is returned as-is.
  */
 export function safeDecodeURIComponent(value: string): string {
   if (!value.includes('%')) {
@@ -27,13 +26,7 @@ export function safeDecodeURIComponent(value: string): string {
     // oxlint-disable-next-line no-restricted-globals
     return decodeURIComponent(value)
   } catch {
-    return value.replace(PERCENT_ESCAPES_REGEX, (escapes) => {
-      try {
-        // oxlint-disable-next-line no-restricted-globals
-        return decodeURIComponent(escapes)
-      } catch {
-        return escapes
-      }
-    })
+    // retrying in parts would let a value with many malformed escapes cost one thrown URIError each
+    return value
   }
 }
