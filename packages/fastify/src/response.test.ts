@@ -469,6 +469,152 @@ describe('sendStandardResponse', () => {
 
       expect(res.text).toEqual('{"foo":"bar"}')
     })
+
+    // fastify only listens to the body stream once every onSend hook has finished,
+    // so an early body error must not be emitted with no listener attached
+    describe('body errors while an async onSend hook is pending', () => {
+      const uncaughtExceptionSpy = vi.fn()
+
+      beforeEach(() => {
+        process.on('uncaughtException', uncaughtExceptionSpy)
+      })
+
+      afterEach(() => {
+        process.off('uncaughtException', uncaughtExceptionSpy)
+      })
+
+      function erroringStream() {
+        return new ReadableStream({
+          start(controller) {
+            setTimeout(() => controller.error(new Error('boom')), 5)
+          },
+        })
+      }
+
+      async function delayHook() {
+        await new Promise((r) => setTimeout(r, 20))
+      }
+
+      it('stream body', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.addHook('onSend', async (req, reply, payload) => {
+          await delayHook()
+          return payload
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: erroringStream(),
+          })
+        })
+
+        fastify.get('/ok', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: { foo: 'bar' },
+          })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(500)
+
+        // the server is still up
+        const okRes = await request(fastify.server).get('/ok')
+
+        expect(okRes.status).toBe(200)
+        expect(okRes.text).toEqual('{"foo":"bar"}')
+
+        expect(uncaughtExceptionSpy).not.toHaveBeenCalled()
+      })
+
+      it('event stream body that throws before yielding', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.addHook('onSend', async (req, reply, payload) => {
+          await delayHook()
+          return payload
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(
+            reply,
+            {
+              status: 200,
+              headers: {},
+              body: (async function* () {
+                await Promise.reject(new Error('boom'))
+                yield 'never reached'
+              })(),
+            },
+            { eventStream: { initialComment: { enabled: false } } },
+          )
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(500)
+        expect(uncaughtExceptionSpy).not.toHaveBeenCalled()
+      })
+
+      it('hook replaces the payload', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.addHook('onSend', async (req, reply) => {
+          await delayHook()
+          reply.header('content-type', 'text/plain')
+          return 'replaced'
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: erroringStream(),
+          })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(200)
+        expect(res.text).toEqual('replaced')
+        expect(uncaughtExceptionSpy).not.toHaveBeenCalled()
+      })
+
+      it('hook throws', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.addHook('onSend', async () => {
+          await delayHook()
+          throw new Error('hook failed')
+        })
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {},
+            body: erroringStream(),
+          })
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        expect(res.status).toBe(500)
+        expect(uncaughtExceptionSpy).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('response closed before sending', () => {

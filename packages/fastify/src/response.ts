@@ -22,6 +22,12 @@ export async function sendStandardResponse(
     options,
   )
 
+  if (typeof resBody === 'object') {
+    // fastify only listens to the stream once onSend hooks finish (and never if a hook
+    // replaces the payload), so keep an early source error from becoming uncaught
+    resBody.on('error', () => {})
+  }
+
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(reply.raw)) {
       const error = getNodeResponseError(reply.raw)
