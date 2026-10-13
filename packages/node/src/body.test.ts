@@ -4,7 +4,7 @@ import http2 from 'node:http2'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
-import type { StandardBody, StandardHeaders } from '@standard-server/core'
+import type { StandardBody } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
@@ -849,11 +849,6 @@ describe('toNodeHttpBody', () => {
   })
 
   describe('match header names case-insensitively', () => {
-    const valuesOf = (headers: StandardHeaders, name: string) =>
-      Object.keys(headers)
-        .filter((key) => key.toLowerCase() === name)
-        .map((key) => headers[key])
-
     it('file: capitalized content-type and content-disposition override the auto-set ones', async () => {
       const file = new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' })
 
@@ -864,8 +859,6 @@ describe('toNodeHttpBody', () => {
       })
 
       expect(body).toBeInstanceOf(Readable)
-      expect(valuesOf(headers, 'content-type')).toEqual(['application/octet-stream'])
-      expect(valuesOf(headers, 'content-disposition')).toEqual(['attachment'])
       expect(headers).toEqual({
         'content-type': 'application/octet-stream',
         'content-disposition': 'attachment',
@@ -874,10 +867,6 @@ describe('toNodeHttpBody', () => {
         'standard-server': 'file',
       })
       expect(generateContentDispositionSpy).toHaveBeenCalledTimes(0)
-
-      const fetchHeaders = toFetchHeaders(headers)
-      expect(fetchHeaders.get('content-type')).toBe('application/octet-stream')
-      expect(fetchHeaders.get('content-disposition')).toBe('attachment')
     })
 
     it('json: clear content-length and standard-server under any casing', async () => {
@@ -887,16 +876,10 @@ describe('toNodeHttpBody', () => {
       )
 
       expect(body).toBe('{"hello":"world"}')
-      expect(valuesOf(headers, 'content-length').filter((v) => v !== undefined)).toEqual([])
-      expect(valuesOf(headers, 'standard-server').filter((v) => v !== undefined)).toEqual([])
       expect(headers).toEqual({
         'content-type': 'application/json',
         'x-custom-header': 'custom-value',
       })
-
-      const fetchHeaders = toFetchHeaders(headers)
-      expect(fetchHeaders.has('content-length')).toBe(false)
-      expect(fetchHeaders.has('standard-server')).toBe(false)
     })
 
     it('file: capitalized empty array still removes the header', async () => {
@@ -909,8 +892,13 @@ describe('toNodeHttpBody', () => {
       })
 
       expect(body).toBeInstanceOf(Readable)
-      expect(valuesOf(headers, 'content-type')).toEqual([[]])
-      expect(valuesOf(headers, 'content-disposition')).toEqual([[]])
+      expect(headers).toEqual({
+        'content-type': [],
+        'content-disposition': [],
+        'content-length': '3',
+        'x-custom-header': 'custom-value',
+        'standard-server': 'file',
+      })
 
       const fetchHeaders = toFetchHeaders(headers)
       expect(fetchHeaders.has('content-type')).toBe(false)

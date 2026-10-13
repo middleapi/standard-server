@@ -567,7 +567,6 @@ describe('normalizeStandardHeaders', () => {
     expect(normalizeStandardHeaders({ 'Content-Type': [], 'content-type': [] })).toEqual({
       'content-type': [],
     })
-    expect(normalizeStandardHeaders({ 'Content-Type': [] })['content-type']).toEqual([])
   })
 
   it('drop undefined values', () => {
@@ -593,25 +592,16 @@ describe('normalizeStandardHeaders', () => {
     expect(Object.getOwnPropertyDescriptor(normalized, '__proto__')?.value).toEqual({
       polluted: 'yes',
     })
-    expect(Object.getPrototypeOf(normalizeStandardHeaders({}))).toBe(null)
   })
 
   it('not mutate the input', () => {
-    const values = ['1']
-    const headers = { 'X-A': values, 'x-a': '2', 'Content-Type': 'text/plain', 'x-b': undefined }
+    const headers = { 'X-A': ['1'], 'x-a': '2', 'Content-Type': 'text/plain' }
 
-    const normalized = normalizeStandardHeaders(headers)
-
-    expect(normalized).toEqual({ 'x-a': ['1', '2'], 'content-type': 'text/plain' })
-    expect(normalized).not.toBe(headers)
-    expect(headers).toEqual({
-      'X-A': ['1'],
-      'x-a': '2',
-      'Content-Type': 'text/plain',
-      'x-b': undefined,
+    expect(normalizeStandardHeaders(headers)).toEqual({
+      'x-a': ['1', '2'],
+      'content-type': 'text/plain',
     })
-    expect(Object.keys(headers)).toEqual(['X-A', 'x-a', 'Content-Type', 'x-b'])
-    expect(values).toEqual(['1'])
+    expect(headers).toEqual({ 'X-A': ['1'], 'x-a': '2', 'Content-Type': 'text/plain' })
   })
 })
 

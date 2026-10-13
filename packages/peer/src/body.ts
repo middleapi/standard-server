@@ -147,8 +147,6 @@ export async function encodeAtomicStandardBody(
   body: StandardBody,
   headers: StandardHeaders,
 ): Promise<EncodedAtomicStandardBody> {
-  // One lowercase key per header, so the defaults and clears below
-  // also see the values set under any other casing
   headers = normalizeStandardHeaders(headers)
 
   if (body instanceof ReadableStream) {

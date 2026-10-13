@@ -58,7 +58,7 @@ Supporting primitives:
 | `StandardBodyHint` | Parsing hint for lazy body resolution                         |
 | `StandardBody`     | Shared body union used by requests and responses              |
 
-By convention, adapters normalize headers to lowercase keys. Header names you send are matched case-insensitively: adapters lowercase them before sending, merging the values of names that differ only in case. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
+By convention, adapters normalize headers to lowercase keys, including the ones you send, so header names are matched case-insensitively and names that differ only in case are merged. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
 
 ```ts
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
@@ -156,7 +156,7 @@ const response: StandardResponse = {
 }
 ```
 
-When sending a file or blob body, adapters automatically set the `content-length`, `content-type`, `content-disposition`, and `standard-server` headers based on the provided body. You can override any of them by explicitly providing a header value under any casing (`Content-Type` works like `content-type`), or remove one entirely by assigning an empty array.
+When sending a file or blob body, adapters automatically set the `content-length`, `content-type`, `content-disposition`, and `standard-server` headers based on the provided body. You can override any of them by explicitly providing a header value (in any casing), or remove one entirely by assigning an empty array.
 
 ### Event-stream body
 

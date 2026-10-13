@@ -96,14 +96,14 @@ export interface ToNodeHttpBodyOptions {
  *
  * Binary bodies (Blob, ReadableStream) can override the aut-set standard-server header,
  * enabling pre-encoded body transmission while preserving client-side type interpretation.
+ *
+ * The returned headers have lowercase names, names differing only in case are merged.
  */
 export function toNodeHttpBody(
   body: StandardBody,
   headers: StandardHeaders,
   options: ToNodeHttpBodyOptions = {},
 ): [body: Readable | undefined | string, headers: StandardHeaders] {
-  // One lowercase key per header, so the defaults and clears below
-  // also see the values set under any other casing
   headers = normalizeStandardHeaders(headers)
 
   if (body instanceof ReadableStream) {

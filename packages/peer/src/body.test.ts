@@ -519,11 +519,6 @@ describe('encodeAtomicStandardBody', () => {
   })
 
   describe('match header names case-insensitively', () => {
-    const valuesOf = (headers: StandardHeaders, name: string) =>
-      Object.keys(headers)
-        .filter((key) => key.toLowerCase() === name)
-        .map((key) => headers[key])
-
     it('file: capitalized content-type and content-disposition override the auto-set ones', async () => {
       const file = new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' })
 
@@ -533,8 +528,6 @@ describe('encodeAtomicStandardBody', () => {
       })
 
       expect(binary).toBe(file)
-      expect(valuesOf(headers, 'content-type')).toEqual(['application/octet-stream'])
-      expect(valuesOf(headers, 'content-disposition')).toEqual(['attachment'])
       expect(headers).toEqual({
         'content-type': 'application/octet-stream',
         'content-disposition': 'attachment',
@@ -559,8 +552,6 @@ describe('encodeAtomicStandardBody', () => {
 
       expect(jsonBody).toEqual({ hello: 'world' })
       expect(binary).toBe(undefined)
-      expect(valuesOf(headers, 'content-type').filter((v) => v !== undefined)).toEqual([])
-      expect(valuesOf(headers, 'standard-server').filter((v) => v !== undefined)).toEqual([])
       expect(headers).toEqual({ 'x-custom': 'value' })
     })
 
@@ -572,8 +563,11 @@ describe('encodeAtomicStandardBody', () => {
         'Content-Disposition': [],
       })
 
-      expect(valuesOf(headers, 'content-type')).toEqual([[]])
-      expect(valuesOf(headers, 'content-disposition')).toEqual([[]])
+      expect(headers).toEqual({
+        'content-type': [],
+        'content-disposition': [],
+        'content-length': '3',
+      })
     })
   })
 })
