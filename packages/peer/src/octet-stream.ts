@@ -9,13 +9,17 @@ export function toOctetStream(
   return new ReadableStream({
     async pull(controller) {
       try {
-        /**
-         * Keep pulling until a chunk is enqueued or the stream is closed: the stream calls `pull`
-         * again only if a read arrived meanwhile, so returning after a message with neither
-         * `binary` nor `close` can leave a pending read with nothing waiting on the queue.
-         */
         while (true) {
           const { json, binary } = await queue.pull()
+
+          /**
+           * Skip messages with neither `binary` nor `close`: the stream calls `pull` again only if
+           * a read arrived meanwhile, so returning without enqueuing or closing can leave a pending
+           * read with nothing waiting on the queue.
+           */
+          if (!binary && !json.close) {
+            continue
+          }
 
           if (binary) {
             controller.enqueue(
@@ -26,12 +30,9 @@ export function toOctetStream(
           if (json.close) {
             await cleanup({ kind: 'success' })
             controller.close()
-            return
           }
 
-          if (binary) {
-            return
-          }
+          return
         }
       } catch (error) {
         await cleanup({ kind: 'error', error })
