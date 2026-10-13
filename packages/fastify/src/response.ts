@@ -52,13 +52,11 @@ export async function sendStandardResponse(
     try {
       reply.status(standardResponse.status)
 
-      const resHeaders = exposeStandardServerHeaders({
-        ...bodyHeaders,
+      const resHeaders = exposeStandardServerHeaders(
+        bodyHeaders,
         // extend, rather than replace, what a CORS plugin already exposed on the reply
-        'access-control-expose-headers':
-          bodyHeaders['access-control-expose-headers'] ??
-          reply.getHeader('access-control-expose-headers')?.toString(),
-      })
+        reply.getHeader('access-control-expose-headers')?.toString(),
+      )
 
       // DON'T pass headers with `undefined` value to fastify, it turns them into empty strings
       for (const key of Object.keys(resHeaders)) {

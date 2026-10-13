@@ -98,18 +98,34 @@ export const STANDARD_SERVER_EXPOSED_HEADERS = ['standard-server', 'content-disp
  * so cross-origin browser clients can read them. A value already set is appended to, names it already
  * lists are skipped, and an empty array opts out.
  *
+ * `preset` is the value already on the outgoing response, like one a CORS middleware set. It is extended
+ * when `headers` do not set their own, and left untouched when nothing needs adding.
+ *
  * Use it on responses only: the header means nothing on a request, and since it is not a CORS-safelisted
  * request header, sending it fails the browser's preflight unless the server allows it.
  */
-export function exposeStandardServerHeaders(headers: StandardHeaders): StandardHeaders {
-  const current = headers['access-control-expose-headers']
+export function exposeStandardServerHeaders(
+  headers: StandardHeaders,
+  preset?: string | string[] | undefined,
+): StandardHeaders {
+  if (
+    flattenStandardHeader(headers['standard-server']) === undefined &&
+    flattenStandardHeader(headers['content-disposition']) === undefined
+  ) {
+    return headers
+  }
+
+  const current = headers['access-control-expose-headers'] ?? preset
 
   if (Array.isArray(current) && current.length === 0) {
     return headers
   }
 
-  const currentValue = flattenStandardHeader(current)
-  const exposed = new Set(currentValue?.split(',').map((name) => name.trim().toLowerCase()))
+  const exposed = new Set(
+    flattenStandardHeader(current)
+      ?.split(',')
+      .map((name) => name.trim().toLowerCase()),
+  )
   const missing = STANDARD_SERVER_EXPOSED_HEADERS.filter(
     (name) => !exposed.has(name) && flattenStandardHeader(headers[name]) !== undefined,
   )
@@ -120,13 +136,13 @@ export function exposeStandardServerHeaders(headers: StandardHeaders): StandardH
 
   const value = missing.join(', ')
 
+  if (Array.isArray(current)) {
+    return { ...headers, 'access-control-expose-headers': [...current, value] }
+  }
+
   return {
     ...headers,
-    'access-control-expose-headers': Array.isArray(current)
-      ? [...current, value]
-      : currentValue?.trim()
-        ? `${currentValue}, ${value}`
-        : value,
+    'access-control-expose-headers': current?.trim() ? `${current}, ${value}` : value,
   }
 }
 

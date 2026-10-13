@@ -629,6 +629,37 @@ describe('exposeStandardServerHeaders', () => {
     const headers = { ...FILE_HEADERS, 'access-control-expose-headers': [] }
 
     expect(exposeStandardServerHeaders(headers)).toBe(headers)
+    expect(exposeStandardServerHeaders(headers, 'x-preset')).toBe(headers)
+  })
+
+  it('extend the value already on the response', () => {
+    expect(exposeStandardServerHeaders(FILE_HEADERS, 'x-preset')).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'x-preset, standard-server, content-disposition',
+    })
+
+    expect(exposeStandardServerHeaders(FILE_HEADERS, ['x-a', 'x-b'])).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': ['x-a', 'x-b', 'standard-server, content-disposition'],
+    })
+
+    // a value set in the headers wins over the preset one
+    expect(
+      exposeStandardServerHeaders(
+        { ...FILE_HEADERS, 'access-control-expose-headers': 'x-a' },
+        'x-preset',
+      ),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'x-a, standard-server, content-disposition',
+    })
+
+    // nothing to add, so the preset value is not written back
+    const headers = { 'content-type': 'application/json' }
+    expect(exposeStandardServerHeaders(headers, 'x-preset')).toBe(headers)
+
+    const listed = { ...FILE_HEADERS }
+    expect(exposeStandardServerHeaders(listed, 'standard-server, content-disposition')).toBe(listed)
   })
 
   it('not mutate the given headers', () => {

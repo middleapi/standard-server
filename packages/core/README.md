@@ -224,9 +224,9 @@ A `StandardBody` is richer than what HTTP content headers can describe. `content
 - A file upload can legitimately carry `content-type: application/json`. Without more information, the receiver would parse it into a JSON value when the sender meant a `File` to be stored as-is.
 - A fixed-size binary payload (`file`) and a binary stream (`octet-stream`) can share any content type. Telling them apart otherwise depends on `content-length`, which proxies may rewrite and some runtimes drop when the payload is empty.
 
-The `standard-server` header closes this gap. It carries the sender's `StandardBodyHint` verbatim — `json`, `form-data`, `url-search-params`, `event-stream`, `octet-stream`, `file`, or `none` — so the receiver reconstructs exactly the body representation the sender had, provided the header reaches it. Browser clients on another origin only see it when the server exposes it, see [Cross-origin (CORS)](#cross-origin-cors).
+The `standard-server` header closes this gap. It carries the sender's `StandardBodyHint` verbatim — `json`, `form-data`, `url-search-params`, `event-stream`, `octet-stream`, `file`, or `none` — so the receiver reconstructs exactly the body representation the sender had, provided the header reaches it (see [Cross-origin (CORS)](#cross-origin-cors)).
 
-Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely. For the other body types, the content headers are enough, so adapters clear it. On responses, adapters also list these headers in `access-control-expose-headers`, see [Cross-origin (CORS)](#cross-origin-cors).
+Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely. For the other body types, the content headers are enough, so adapters clear it. On responses, adapters also list these headers in `access-control-expose-headers`.
 
 The header is optional: when it is absent or invalid, the receiver falls back to content-header inference, so plain HTTP clients work as-is. Just set the header yourself whenever the content type alone could be misread:
 
@@ -257,7 +257,7 @@ Without it, the client sees neither header and falls back to content-header infe
 
 When a file's type comes from an upload, the uploader decides which of these the client gets.
 
-The response senders (`toFetchResponse()`, and `sendStandardResponse()` in the Node.js, Fastify, and AWS Lambda adapters) handle this for you: when a response carries either header, its name is appended to `access-control-expose-headers`. This adds a header to `Blob`, `File`, and `ReadableStream` responses. A value you set is extended rather than replaced, names it already lists are skipped, and assigning an empty array opts out. The Node.js and Fastify adapters also extend a value your CORS middleware has already set on the response. Request serialization (`toFetchBody()`, `toNodeHttpBody()`) never adds it, since it means nothing on a request.
+The response senders (`toFetchResponse()`, and `sendStandardResponse()` in the Node.js, Fastify, and AWS Lambda adapters) handle this for you: when a response carries either header, its name is appended to `access-control-expose-headers`. A value you set is extended rather than replaced, names it already lists are skipped, and assigning an empty array opts out. The Node.js and Fastify adapters also extend a value your CORS middleware has already set on the response. Request serialization (`toFetchBody()`, `toNodeHttpBody()`) never adds it, since it means nothing on a request.
 
 > [!NOTE]
 > `Access-Control-Expose-Headers` only takes effect alongside `Access-Control-Allow-Origin`. The adapters do not handle CORS themselves, so this exposes nothing until your CORS middleware allows the origin.
@@ -284,7 +284,7 @@ Access-Control-Allow-Headers: standard-server, content-disposition
 
 Most CORS middleware allows whatever headers the preflight asks for unless you configure an explicit list. If you do, add these names to it.
 
-When building a custom adapter, call `exposeStandardServerHeaders(headers)` on a response's final headers to apply the same rule.
+When building a custom adapter, call `exposeStandardServerHeaders(headers, preset?)` on a response's final headers to apply the same rule. Pass the value already on the outgoing response, if any, as `preset` so it is extended rather than replaced.
 
 ### Resolution order
 

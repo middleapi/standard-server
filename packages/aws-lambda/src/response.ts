@@ -29,12 +29,11 @@ export async function sendStandardResponse(
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, bodyHeaders] = toNodeHttpBody(
+  const [resBody, resHeaders] = toNodeHttpBody(
     standardResponse.body,
     standardResponse.headers,
     options,
   )
-  const resHeaders = exposeStandardServerHeaders(bodyHeaders)
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(responseStream)) {
@@ -55,7 +54,7 @@ export async function sendStandardResponse(
     responseStream.once('close', resolve)
 
     try {
-      const [headers, setCookies] = toLambdaHeaders(resHeaders)
+      const [headers, setCookies] = toLambdaHeaders(exposeStandardServerHeaders(resHeaders))
 
       // arms the metadata prelude (status, headers, cookies) and
       // returns the stream the body should be written to

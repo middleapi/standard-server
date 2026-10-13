@@ -44,13 +44,11 @@ export async function sendStandardResponse(
       // while we only need chunked if the response body is stream
       res.statusCode = standardResponse.status
 
-      const resHeaders = exposeStandardServerHeaders({
-        ...bodyHeaders,
+      const resHeaders = exposeStandardServerHeaders(
+        bodyHeaders,
         // extend, rather than replace, what a CORS middleware already exposed on the response
-        'access-control-expose-headers':
-          bodyHeaders['access-control-expose-headers'] ??
-          res.getHeader('access-control-expose-headers')?.toString(),
-      })
+        res.getHeader('access-control-expose-headers')?.toString(),
+      )
 
       for (const key of Object.keys(resHeaders)) {
         const value = resHeaders[key]

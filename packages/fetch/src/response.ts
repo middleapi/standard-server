@@ -11,12 +11,15 @@ export function toFetchResponse(
   standardResponse: StandardResponse,
   options: ToFetchResponseOptions = {},
 ): Response {
-  const [body, bodyHeaders] = toFetchBody(standardResponse.body, standardResponse.headers, options)
-  const standardHeaders = exposeStandardServerHeaders(bodyHeaders)
+  const [body, standardHeaders] = toFetchBody(
+    standardResponse.body,
+    standardResponse.headers,
+    options,
+  )
 
   try {
     const response = new Response(body, {
-      headers: toFetchHeaders(standardHeaders),
+      headers: toFetchHeaders(exposeStandardServerHeaders(standardHeaders)),
       status: standardResponse.status,
     })
 
