@@ -49,7 +49,7 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.signal).toBe(toAbortSignalSpy.mock.results[0]!.value)
 
     expect(toStandardUrlSpy).toBeCalledTimes(1)
-    expect(toStandardUrlSpy).toBeCalledWith(event)
+    expect(toStandardUrlSpy).toBeCalledWith(event, {})
     expect(standardRequest.url).toBe('/example?foo=bar')
 
     expect(standardRequest.method).toBe('POST')
@@ -79,6 +79,18 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.url).toBe('/example?foo=bar')
     expect(standardRequest.headers).toEqual({ 'content-type': 'application/json' })
     await expect(standardRequest.resolveBody()).resolves.toEqual({ foo: 'bar' })
+  })
+
+  it('passes url options through', () => {
+    const decodedEvent: APIGatewayProxyEvent = { httpMethod: 'GET', path: '/files/100%' }
+
+    const standardRequest = toStandardLazyRequest(decodedEvent, createResponseStream(), {
+      decodedPath: true,
+    })
+
+    expect(toStandardUrlSpy).toBeCalledTimes(1)
+    expect(toStandardUrlSpy).toBeCalledWith(decodedEvent, { decodedPath: true })
+    expect(standardRequest.url).toBe('/files/100%25')
   })
 
   it('headers is lazy and can override', () => {

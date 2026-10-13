@@ -1,3 +1,4 @@
+import type { AnyAPIGatewayProxyEvent } from './types'
 import { toStandardUrl } from './url'
 
 describe('toStandardUrl (v2)', () => {
@@ -226,5 +227,127 @@ describe('toStandardUrl path escaping', () => {
     expect(toStandardUrl({ rawPath: 'a b', requestContext: { http: { method: 'GET' } } })).toBe(
       '/a%20b',
     )
+  })
+
+  // left as-is, a decoded `%` is decoded a second time downstream and a decoded `\` resolves like a `/`
+  const doubleDecoded: [path: string, pathname: string][] = [
+    ['/%61dmin/users', '/%2561dmin/users'],
+    ['/files/100%', '/files/100%25'],
+    ['/files/a%41b', '/files/a%2541b'],
+    ['/public/x\\..\\..\\admin/deleteUser', '/public/x%5C..%5C..%5Cadmin/deleteUser'],
+  ]
+
+  describe.each([
+    [
+      'v2',
+      (rawPath: string): AnyAPIGatewayProxyEvent => ({
+        rawPath,
+        requestContext: {
+          domainName: 'abc.execute-api.us-east-1.amazonaws.com',
+          http: { method: 'GET' },
+        },
+      }),
+    ],
+    [
+      'v2 custom domain',
+      (rawPath: string): AnyAPIGatewayProxyEvent => ({
+        rawPath,
+        requestContext: { domainName: 'api.example.com', http: { method: 'GET' } },
+      }),
+    ],
+    [
+      'v1',
+      (path: string): AnyAPIGatewayProxyEvent => ({ version: '1.0', httpMethod: 'GET', path }),
+    ],
+  ])('HTTP API (%s)', (_, toEvent) => {
+    it.each(doubleDecoded)('escapes decoded %s', (path, pathname) => {
+      expect(toStandardUrl(toEvent(path))).toBe(pathname)
+    })
+
+    it.each(decoded)('escapes decoded %s', (path, pathname) => {
+      expect(toStandardUrl(toEvent(path))).toBe(pathname)
+    })
+
+    it('does not resolve a decoded \\ into a dot segment', () => {
+      const url = toStandardUrl(toEvent('/public/x\\..\\..\\admin/deleteUser'))
+
+      expect(new URL(url, 'http://localhost').pathname).toBe(
+        '/public/x%5C..%5C..%5Cadmin/deleteUser',
+      )
+    })
+
+    it('decodes back to the delivered path', () => {
+      for (const path of [
+        ...doubleDecoded.map(([path]) => path),
+        // a lone surrogate becomes U+FFFD, it cannot decode back to itself
+        ...decoded.map(([path]) => path).filter((path) => !path.includes('\uD800')),
+        ...untouched,
+      ]) {
+        const segments = toStandardUrl(toEvent(path)).split('/').map(decodeURIComponent)
+
+        expect(segments).toEqual(path.split('/'))
+      }
+    })
+
+    it('keeps the query string', () => {
+      const event = toEvent('/files/100%')
+
+      if ('httpMethod' in event) {
+        event.queryStringParameters = { tenant: 'acme' }
+      } else {
+        event.rawQueryString = 'tenant=acme'
+      }
+
+      expect(toStandardUrl(event)).toBe('/files/100%25?tenant=acme')
+    })
+  })
+
+  describe.each([
+    [
+      'Lambda Function URL',
+      (rawPath: string): AnyAPIGatewayProxyEvent => ({
+        rawPath,
+        requestContext: {
+          domainName: 'xyz.lambda-url.us-east-1.on.aws',
+          http: { method: 'GET' },
+        },
+      }),
+    ],
+    ['REST API', (path: string): AnyAPIGatewayProxyEvent => ({ httpMethod: 'GET', path })],
+  ])('%s', (_, toEvent) => {
+    it.each(untouched)('keeps %s as-is', (path) => {
+      expect(toStandardUrl(toEvent(path))).toBe(path)
+    })
+  })
+
+  it('lets decodedPath override the detection', () => {
+    expect(toStandardUrl({ httpMethod: 'GET', path: '/files/100%' }, { decodedPath: true })).toBe(
+      '/files/100%25',
+    )
+    expect(
+      toStandardUrl(
+        { rawPath: '/a\\b%', requestContext: { http: { method: 'GET' } } },
+        { decodedPath: true },
+      ),
+    ).toBe('/a%5Cb%25')
+
+    expect(
+      toStandardUrl(
+        { version: '1.0', httpMethod: 'GET', path: '/percent%25done' },
+        { decodedPath: false },
+      ),
+    ).toBe('/percent%25done')
+    expect(
+      toStandardUrl(
+        {
+          rawPath: '/percent%25done',
+          requestContext: {
+            domainName: 'abc.execute-api.us-east-1.amazonaws.com',
+            http: { method: 'GET' },
+          },
+        },
+        { decodedPath: false },
+      ),
+    ).toBe('/percent%25done')
   })
 })

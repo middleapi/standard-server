@@ -6,19 +6,40 @@ import type { AnyAPIGatewayProxyEvent } from './types'
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
 
 /**
+ * A decoded path also escapes `%` and `\`, a literal `%` would otherwise be decoded a second time
+ * downstream, and `URL` resolves a `\` like a `/` in http(s) urls.
+ */
+const UNENCODED_DECODED_PATH_CHAR_RE = /[\0-\x20"#%<>?\\^`{}\x7F-\u{10FFFF}]/gu
+
+export interface ToStandardUrlOptions {
+  /**
+   * Whether the event path is already url-decoded.
+   *
+   * @default true for HTTP API events (payload format 1.0 `version: '1.0'`,
+   * payload format 2.0 `requestContext.domainName` other than a Lambda Function URL), false otherwise
+   */
+  decodedPath?: boolean
+}
+
+/**
  * Build a standard url from an API Gateway proxy event.
  *
  * Payload format 1.0 query parameters are re-encoded (delivered url-decoded),
  * payload format 2.0's `rawQueryString` is used as-is.
  */
-export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
+export function toStandardUrl(
+  event: AnyAPIGatewayProxyEvent,
+  options: ToStandardUrlOptions = {},
+): StandardUrl {
+  const decodedPath = options.decodedPath ?? isHttpApiEvent(event)
+
   if (!('httpMethod' in event)) {
-    const pathname = toPathname(event.rawPath)
+    const pathname = toPathname(event.rawPath, decodedPath)
 
     return event.rawQueryString ? `${pathname}?${event.rawQueryString}` : pathname
   }
 
-  const pathname = toPathname(event.path)
+  const pathname = toPathname(event.path, decodedPath)
 
   const query = new URLSearchParams()
 
@@ -47,8 +68,27 @@ export function toStandardUrl(event: AnyAPIGatewayProxyEvent): StandardUrl {
   return search === '' ? pathname : `${pathname}?${search}`
 }
 
-function toPathname(path: string): `/${string}` {
-  const encoded = path.replace(UNENCODED_PATH_CHAR_RE, safeEncodeURIComponent)
+/**
+ * HTTP APIs deliver the path url-decoded, REST APIs and Lambda Function URLs still encoded.
+ * Only a positively identified HTTP API event counts, anything else keeps the path as encoded.
+ */
+function isHttpApiEvent(event: AnyAPIGatewayProxyEvent): boolean {
+  if ('httpMethod' in event) {
+    // REST API events carry no top-level `version`
+    return event.version === '1.0'
+  }
+
+  // Lambda Function URLs share payload format 2.0, only their domain tells them apart
+  const domainName = event.requestContext.domainName
+
+  return typeof domainName === 'string' && !domainName.includes('.lambda-url.')
+}
+
+function toPathname(path: string, decoded: boolean): `/${string}` {
+  const encoded = path.replace(
+    decoded ? UNENCODED_DECODED_PATH_CHAR_RE : UNENCODED_PATH_CHAR_RE,
+    safeEncodeURIComponent,
+  )
 
   return encoded.startsWith('/') ? (encoded as `/${string}`) : `/${encoded}`
 }

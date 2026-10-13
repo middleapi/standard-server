@@ -4,7 +4,10 @@ import { toAbortSignal } from '@standard-server/node'
 import { toStandardBody } from './body'
 import { toStandardHeaders } from './headers'
 import type { AnyAPIGatewayProxyEvent, HttpResponseStream } from './types'
+import type { ToStandardUrlOptions } from './url'
 import { toStandardUrl } from './url'
+
+export interface ToStandardLazyRequestOptions extends ToStandardUrlOptions {}
 
 /**
  * Convert an API Gateway proxy event to a standard lazy request.
@@ -12,13 +15,14 @@ import { toStandardUrl } from './url'
 export function toStandardLazyRequest(
   event: AnyAPIGatewayProxyEvent,
   responseStream: HttpResponseStream,
+  options: ToStandardLazyRequestOptions = {},
 ): StandardLazyRequest {
   // DON'T lazy load signal, because we need register event listener as soon as possible
   // to make the signal abort in time
   const signal = toAbortSignal(responseStream)
 
   return {
-    url: toStandardUrl(event),
+    url: toStandardUrl(event, options),
     method: 'httpMethod' in event ? event.httpMethod : event.requestContext.http.method,
     get headers() {
       // lazy headers to improve performance
