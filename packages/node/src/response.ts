@@ -39,8 +39,8 @@ export async function sendStandardResponse(
     connection.once('close', resolve)
 
     try {
-      // DON'T use `res.writeHead` because it send response immediately in chunked mode
-      // while we only need chunked if the response body is stream
+      // Set the head without committing it yet: `res.end(body)` commits it with a
+      // content-length, which an early `res.writeHead` would turn into chunked encoding
       res.statusCode = standardResponse.status
       for (const key of Object.keys(resHeaders)) {
         const value = resHeaders[key]
@@ -61,8 +61,16 @@ export async function sendStandardResponse(
           }
         })
 
-        // WARNING: errors that occur here are silently ignored and not reported to the Promise
+        // WARNING: a body error only destroys the response; the Promise rejects with it on
+        // http2 (through the stream's error) but resolves on http1 (through `close`)
         resBody.once('error', (error) => res.destroy(error))
+
+        // Commit the head here, as the first piped write would: Node validates some of
+        // it only then (status range, http2 connection-specific or repeated single-value
+        // headers, an http1 `trailer` without chunked encoding), and a throw from inside
+        // the pipe escapes as an unhandled rejection instead of reaching the catch below.
+        // (Both responses take this call, but TS can't call a union of overloads.)
+        ;(res as { writeHead(statusCode: number): unknown }).writeHead(res.statusCode)
 
         resBody.pipe(res)
       }

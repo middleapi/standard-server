@@ -690,7 +690,10 @@ describe('sendStandardResponse', () => {
         await sending
       })
 
-      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'HEAD',
+      )
 
       await expect(sending).resolves.toBeUndefined()
 
@@ -720,7 +723,10 @@ describe('sendStandardResponse', () => {
         await sending.catch(() => {})
       })
 
-      const response = await requestHttp2Head(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      const response = await requestHttp2(
+        await fastify.listen({ port: 0, host: '127.0.0.1' }),
+        'HEAD',
+      )
 
       await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
@@ -730,6 +736,133 @@ describe('sendStandardResponse', () => {
       await vi.waitFor(() => {
         expect(isReleased()).toBe(true)
       })
+    })
+  })
+
+  /**
+   * Node validates some headers only when the head is committed, which fastify does
+   * inside its pipe for a stream body, out of the adapter's reach.
+   */
+  describe('headers node rejects when committing the head', () => {
+    it.for<[string, () => { body: unknown; isReleased: () => boolean }]>([
+      ['stream', createEndlessBody],
+      ['string', () => ({ body: { foo: 'bar' }, isReleased: () => true })],
+    ])(
+      'answers 500 for an http2 connection-specific header (%s body)',
+      async ([, createBody], { onTestFinished }) => {
+        const { body, isReleased } = createBody()
+        let thrownError: any
+
+        const fastify = Fastify({ http2: true })
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          try {
+            await sendStandardResponse(reply, {
+              status: 200,
+              headers: { 'Keep-Alive': 'timeout=5', 'x-custom-header': 'custom-value' },
+              body,
+            })
+          } catch (err) {
+            thrownError = err
+            throw err
+          }
+        })
+
+        const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+        expect(thrownError).toBeInstanceOf(TypeError)
+        expect(thrownError.message).toContain('keep-alive')
+
+        // the reply is left untouched, so fastify's error handler sends a clean response
+        expect(response.headers[':status']).toBe(500)
+        expect(response.headers).not.toHaveProperty('keep-alive')
+        expect(response.headers).not.toHaveProperty('x-custom-header')
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
+
+    it('allows `te: trailers` on http2', async ({ onTestFinished }) => {
+      const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        await sendStandardResponse(reply, {
+          status: 200,
+          headers: { te: 'trailers' },
+          body: { foo: 'bar' },
+        })
+      })
+
+      const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+      expect(response.headers[':status']).toBe(200)
+      expect(response.body).toBe('{"foo":"bar"}')
+    })
+
+    it.for([
+      ['string', () => ({ foo: 'bar' }), '{"foo":"bar"}'],
+      ['file', () => new File(['foo'], 'foo.txt', { type: 'text/plain' }), 'foo'],
+    ] as const)(
+      'joins repeated values of a header on http2 (%s body)',
+      async ([, createBody, text], { onTestFinished }) => {
+        const fastify = Fastify({ http2: true })
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: {
+              'x-content-type-options': ['nosniff', 'nosniff'],
+              'set-cookie': ['foo=bar', 'bar=baz'],
+            },
+            body: createBody(),
+          })
+        })
+
+        const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+
+        expect(response.headers[':status']).toBe(200)
+        expect(response.headers['x-content-type-options']).toBe('nosniff, nosniff')
+        // joining would corrupt cookies
+        expect(response.headers['set-cookie']).toEqual(['foo=bar', 'bar=baz'])
+        expect(response.body).toBe(text)
+      },
+    )
+
+    it('answers 500 for a trailer header on http1 (file body)', async ({ onTestFinished }) => {
+      let thrownError: any
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        try {
+          await sendStandardResponse(reply, {
+            status: 200,
+            headers: { trailer: 'x-checksum' },
+            body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+          })
+        } catch (err) {
+          thrownError = err
+          throw err
+        }
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).get('/')
+
+      expect(thrownError).toBeInstanceOf(TypeError)
+      expect(thrownError.message).toContain('trailer')
+
+      expect(res.status).toBe(500)
+      expect(res.headers).not.toHaveProperty('trailer')
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
     })
   })
 
@@ -781,13 +914,14 @@ function createEndlessBody() {
   return { body, isReleased: () => released }
 }
 
-async function requestHttp2Head(
+async function requestHttp2(
   origin: string,
+  method = 'GET',
 ): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
   const client = http2.connect(origin)
 
   try {
-    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    const reqStream = client.request({ ':path': '/', ':method': method })
 
     const chunks: Buffer[] = []
     reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))

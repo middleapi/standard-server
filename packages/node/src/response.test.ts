@@ -1,11 +1,13 @@
 import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import http from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
 import http2 from 'node:http2'
 import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import Stream from 'node:stream'
 
-import type { StandardResponse } from '@standard-server/core'
+import type { StandardBody, StandardResponse } from '@standard-server/core'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -392,6 +394,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow(
         'test',
@@ -450,6 +453,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).writeHead = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
@@ -660,6 +664,193 @@ describe('sendStandardResponse', () => {
       }
     })
   })
+
+  /**
+   * Node validates some of the head only when committing it, which a stream body
+   * would otherwise leave to its first piped write, out of reach of the Promise.
+   */
+  describe('head rejected when committed', () => {
+    const streamBodies: [string, () => StandardBody][] = [
+      [
+        'readable stream',
+        () =>
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('foo'))
+              controller.close()
+            },
+          }),
+      ],
+      ['file', () => new File(['foo'], 'foo.txt', { type: 'text/plain' })],
+      [
+        'form data',
+        () => {
+          const formData = new FormData()
+          formData.append('foo', 'bar')
+          return formData
+        },
+      ],
+      [
+        'async iterator',
+        () =>
+          (async function* () {
+            yield 'foo'
+          })(),
+      ],
+    ]
+
+    describe.each([1000, 99, Number.NaN])('status %s', (status) => {
+      it.each(streamBodies)(
+        'rejects, destroys the response and the body (%s)',
+        async (_, createBody) => {
+          let destroySpy: any
+          let thrownError: any
+
+          await expect(
+            request(async (req: IncomingMessage, res: ServerResponse) => {
+              destroySpy = vi.spyOn(res, 'destroy')
+
+              try {
+                await sendStandardResponse(res, { status, headers: {}, body: createBody() })
+              } catch (err) {
+                thrownError = err
+              }
+            }).get('/'),
+          ).rejects.toThrow()
+
+          expect(thrownError).toBeInstanceOf(RangeError)
+          expect(thrownError.code).toBe('ERR_HTTP_INVALID_STATUS_CODE')
+
+          expect(destroySpy).toHaveBeenCalledWith(thrownError)
+
+          const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+          expect((resBody as any).destroyed).toBe(true)
+        },
+      )
+    })
+
+    it.each([
+      ['keep-alive', 'timeout=5'],
+      ['transfer-encoding', 'chunked'],
+      ['te', 'gzip'],
+      ['upgrade', 'websocket'],
+    ])(
+      'rejects an http2 connection-specific header (%s) and resets the stream',
+      async (name, value) => {
+        const { body, cancel } = createOpenStream()
+        let sending: Promise<void> | undefined
+
+        const { rstCode } = await requestHttp2((_, res) => {
+          sending = sendStandardResponse(res, { status: 200, headers: { [name]: value }, body })
+          sending.catch(() => {})
+        })
+
+        await expect(sending).rejects.toMatchObject({
+          code: 'ERR_HTTP2_INVALID_CONNECTION_HEADERS',
+        })
+
+        expect(rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
+
+        await vi.waitFor(() => {
+          expect(cancel).toHaveBeenCalledTimes(1)
+        })
+      },
+    )
+
+    it.each([
+      ['file', () => new File(['foo'], 'foo.txt', { type: 'text/plain' })],
+      [
+        'event stream',
+        () =>
+          (async function* () {
+            yield 'foo'
+          })(),
+      ],
+    ])('rejects repeated values for an http2 single-value header (%s)', async (_, createBody) => {
+      let sending: Promise<void> | undefined
+
+      const { rstCode } = await requestHttp2((_, res) => {
+        sending = sendStandardResponse(res, {
+          status: 200,
+          headers: { 'x-content-type-options': ['nosniff', 'nosniff'] },
+          body: createBody(),
+        })
+        sending.catch(() => {})
+      })
+
+      await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP2_HEADER_SINGLE_VALUE' })
+
+      expect(rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    })
+
+    it('rejects an http1 trailer header with a file body (sent with a content-length)', async () => {
+      let destroySpy: any
+      let thrownError: any
+
+      await expect(
+        request(async (req: IncomingMessage, res: ServerResponse) => {
+          destroySpy = vi.spyOn(res, 'destroy')
+
+          try {
+            await sendStandardResponse(res, {
+              status: 200,
+              headers: { trailer: 'x-checksum' },
+              body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+            })
+          } catch (err) {
+            thrownError = err
+          }
+        }).get('/'),
+      ).rejects.toThrow()
+
+      expect(thrownError).toBeInstanceOf(Error)
+      expect(thrownError.code).toBe('ERR_HTTP_TRAILER_INVALID')
+
+      expect(destroySpy).toHaveBeenCalledWith(thrownError)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    })
+
+    it('rejects an http1 trailer header with a stream body over http/1.0 (not chunked)', async () => {
+      const { body, cancel } = createOpenStream()
+      let sending: Promise<void> | undefined
+
+      const server = http.createServer((req, res) => {
+        sending = sendStandardResponse(res, {
+          status: 200,
+          headers: { trailer: 'x-checksum' },
+          body,
+        })
+        sending.catch(() => {})
+      })
+      await new Promise<void>((r) => server.listen(0, r))
+
+      try {
+        const socket = net.connect((server.address() as AddressInfo).port)
+        socket.once('error', () => {})
+        socket.write('GET / HTTP/1.0\r\n\r\n')
+
+        const chunks: Buffer[] = []
+        socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+        await new Promise((r) => socket.once('close', r))
+
+        await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP_TRAILER_INVALID' })
+
+        // the connection is dropped before any byte of the head is sent
+        expect(Buffer.concat(chunks).toString()).toBe('')
+
+        await vi.waitFor(() => {
+          expect(cancel).toHaveBeenCalledTimes(1)
+        })
+      } finally {
+        await new Promise((r) => server.close(r))
+      }
+    })
+  })
 })
 
 async function requestHttp2Head(
@@ -684,6 +875,44 @@ async function requestHttp2Head(
     await new Promise((r) => reqStream.once('close', r))
 
     return { headers, body: Buffer.concat(chunks).toString() }
+  } finally {
+    client.close()
+    await new Promise((r) => server.close(r))
+  }
+}
+
+/**
+ * A stream body that never ends on its own, so it is only released by being destroyed.
+ */
+function createOpenStream() {
+  const cancel = vi.fn()
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('foo'))
+    },
+    cancel,
+  })
+
+  return { body, cancel }
+}
+
+async function requestHttp2(
+  listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
+): Promise<{ rstCode: number | undefined }> {
+  const server = http2.createServer(listener)
+  await new Promise<void>((r) => server.listen(0, r))
+
+  const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+  try {
+    const reqStream = client.request({ ':path': '/' })
+    reqStream.once('error', () => {})
+    reqStream.resume()
+
+    await new Promise((r) => reqStream.once('close', r))
+
+    return { rstCode: reqStream.rstCode }
   } finally {
     client.close()
     await new Promise((r) => server.close(r))
