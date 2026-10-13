@@ -45,7 +45,9 @@ export async function sendStandardResponse(
       for (const key of Object.keys(resHeaders)) {
         const value = resHeaders[key]
         if (value !== undefined) {
-          res.setHeader(key, value)
+          // Copy arrays: node stores them by reference, and later set-cookie writers
+          // (e.g. `res.appendHeader`) push into them, mutating the caller's array.
+          res.setHeader(key, Array.isArray(value) ? [...value] : value)
         }
       }
 

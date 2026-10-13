@@ -55,7 +55,9 @@ export async function sendStandardResponse(
       for (const key of Object.keys(resHeaders)) {
         const value = resHeaders[key]
         if (value !== undefined) {
-          reply.header(key, value)
+          // Copy arrays: fastify stores them by reference, and later set-cookie writers
+          // (e.g. @fastify/cookie on onSend) push into them, mutating the caller's array.
+          reply.header(key, Array.isArray(value) ? [...value] : value)
         }
       }
 

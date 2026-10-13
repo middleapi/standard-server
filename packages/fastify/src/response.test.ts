@@ -469,6 +469,65 @@ describe('sendStandardResponse', () => {
 
       expect(res.text).toEqual('{"foo":"bar"}')
     })
+
+    describe('does not let later set-cookie writers mutate a caller-owned array', () => {
+      it('@fastify/cookie', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        await fastify.register(FastifyCookie)
+
+        const headers = { 'set-cookie': ['theme=dark'] }
+
+        fastify.get('/', async (req, reply) => {
+          const { u } = req.query as { u?: string }
+          if (u) {
+            reply.cookie('session', u)
+          }
+
+          await sendStandardResponse(reply, { status: 200, headers, body: undefined })
+        })
+
+        await fastify.ready()
+        const alice = await request(fastify.server).get('/?u=alice')
+        const anonymous = await request(fastify.server).get('/')
+
+        expect(alice.headers['set-cookie']).toEqual([
+          'theme=dark',
+          expect.stringContaining('session=alice'),
+        ])
+        expect(anonymous.headers['set-cookie']).toEqual(['theme=dark'])
+        expect(headers['set-cookie']).toEqual(['theme=dark'])
+      })
+
+      it('onSend hook', async ({ onTestFinished }) => {
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.addHook('onSend', async (req, reply, payload) => {
+          const { u } = req.query as { u?: string }
+          if (u) {
+            reply.header('set-cookie', `session=${u}`)
+          }
+
+          return payload
+        })
+
+        const headers = { 'set-cookie': ['theme=dark'] }
+
+        fastify.get('/', async (req, reply) => {
+          await sendStandardResponse(reply, { status: 200, headers, body: undefined })
+        })
+
+        await fastify.ready()
+        const alice = await request(fastify.server).get('/?u=alice')
+        const anonymous = await request(fastify.server).get('/')
+
+        expect(alice.headers['set-cookie']).toEqual(['theme=dark', 'session=alice'])
+        expect(anonymous.headers['set-cookie']).toEqual(['theme=dark'])
+        expect(headers['set-cookie']).toEqual(['theme=dark'])
+      })
+    })
   })
 
   describe('response closed before sending', () => {
