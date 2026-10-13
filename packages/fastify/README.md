@@ -117,7 +117,7 @@ Register it inside an encapsulated plugin if you only want it to apply to the ro
 
 ## Fastify behavior to be aware of
 
-Fastify owns the reply lifecycle, so a few of its rules apply to the response the adapter writes:
+Fastify owns routing and the reply lifecycle, so a few of its rules apply to the requests and responses the adapter handles:
 
 - **Empty `content-type` is rejected.** A `Blob` or `File` without a type is sent with an empty `content-type` header, which Fastify answers with `415 Unsupported Media Type` before your handler runs. Normalize it first if clients may send one:
 
@@ -132,6 +132,7 @@ Fastify owns the reply lifecycle, so a few of its rules apply to the response th
 - **JSON responses gain a charset.** Fastify rewrites any `content-type` whose media type contains `json` to include `; charset=utf-8`. The payload itself is never serialized twice, because the adapter always hands Fastify an already-encoded string or stream.
 - **`set-cookie` is merged, not replaced.** Cookies set by plugins such as `@fastify/cookie` are kept, and the ones on your `StandardResponse` are appended to them. Every other header is overwritten.
 - **Streams are managed by Fastify.** Streaming bodies are piped and destroyed by Fastify itself, including when the client aborts mid-response.
+- **Request URLs keep their raw path.** `request.url` comes from Fastify's `req.url`, after any `rewriteUrl`. Absolute-form targets only lose their scheme and authority, and dot segments (`..`) are never resolved, so the handler sees the same path segments Fastify routed on. If your handler canonicalizes the path, do it consistently with any route guards. See [Node behavior to be aware of](https://github.com/middleapi/standard-server/blob/main/packages/node/README.md#node-behavior-to-be-aware-of).
 
 ## Learn more
 

@@ -59,7 +59,7 @@ describe('toStandardUrl', () => {
     expect(toStandardUrl({ url: 'http://evil.com\\@good.com/x' } as any)).toBe('/x')
     expect(toStandardUrl({ url: 'http://example.com:99999/x' } as any)).toBe('/x')
 
-    // absolute-form keeps the raw path like origin-form does: no dot-segment resolution, no decoding
+    // absolute-form keeps the raw path: no dot-segment resolution, no decoding
     expect(toStandardUrl({ url: 'http://example.com/../../etc/passwd' } as any)).toBe(
       '/../../etc/passwd',
     )
@@ -101,7 +101,7 @@ describe('toStandardUrl', () => {
     for (const url of inputs) {
       const result = toStandardUrl({ url } as any)
 
-      expect(result.startsWith('/')).toBe(true)
+      expect(result).toMatch(/^\//)
       expect(result).not.toContain('secret')
       expect(result).not.toContain('host.example')
     }
@@ -121,16 +121,17 @@ describe('toStandardUrl', () => {
     await new Promise<void>((r) => server.listen(0, r))
     const { port } = server.address() as AddressInfo
 
-    const send = async (target: string) => {
+    const send = async (path: string) => {
       const socket = net.connect(port, '127.0.0.1')
-      socket.end(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
+      socket.end(
+        `GET http://127.0.0.1:${port}${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`,
+      )
       await text(socket)
     }
 
-    await send(`http://127.0.0.1:${port}/ping?x=1`)
-    // dot segments and percent-encoding stay raw, like origin-form
-    await send(`http://127.0.0.1:${port}/rpc/public/../admin/x`)
-    await send(`http://127.0.0.1:${port}/rpc/public/%2e%2e/admin/x`)
+    await send('/ping?x=1')
+    await send('/rpc/public/../admin/x')
+    await send('/rpc/public/%2e%2e/admin/x')
 
     expect(urls).toEqual(['/ping?x=1', '/rpc/public/../admin/x', '/rpc/public/%2e%2e/admin/x'])
   })

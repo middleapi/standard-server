@@ -97,7 +97,7 @@ createServer(async (req, res) => {
 
 ## Node behavior to be aware of
 
-- **Request URLs keep their raw path.** `request.url` comes from `req.originalUrl` (set by Express) or `req.url`, in this adapter and in `@standard-server/fastify`. Origin-form targets (`/rpc/ping`) pass through unchanged, and absolute-form targets (`http://host/rpc/ping`, sent by clients that treat the server as a proxy) only lose their scheme and authority. Dot segments (`..`) and percent-encoding (`%2e%2e`) are never resolved, matching the path Express and Fastify route on. If your handler canonicalizes the path before routing, do it consistently with any framework path guards, otherwise `/rpc/public/../admin/x` can skip a guard on `/rpc/admin` and still reach the protected route.
+- **Request URLs keep their raw path.** `request.url` comes from `req.originalUrl` (set by Express) or `req.url`. Origin-form targets (`/rpc/ping`) pass through unchanged, and absolute-form targets (`http://host/rpc/ping`, sent by clients that treat the server as a proxy) only lose their scheme and authority. Dot segments (`..`) are never resolved, as Express and Fastify don't resolve them when routing either, and percent-encoding (`%2e%2e`) is passed through as received. If your handler canonicalizes the path before routing, do it consistently with any framework path guards, otherwise `/rpc/public/../admin/x` can skip a guard on `/rpc/admin` and still reach the protected route.
 
 ## Learn more
 
