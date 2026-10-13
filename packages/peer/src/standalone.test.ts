@@ -1,9 +1,9 @@
 import { toStandaloneValue, toStandaloneView } from './standalone'
 
-function expectStandaloneBuffer(value: unknown, text: string): void {
+function expectStandaloneBuffer(value: Buffer, text: string): void {
   expect(value).toBeInstanceOf(Buffer)
-  expect((value as Buffer).buffer.byteLength).toBe((value as Buffer).byteLength)
-  expect((value as Buffer).toString()).toBe(text)
+  expect(value.buffer.byteLength).toBe(value.byteLength)
+  expect(value.toString()).toBe(text)
 }
 
 describe('toStandaloneView', () => {
@@ -36,16 +36,16 @@ describe('toStandaloneValue', () => {
 
     const a = Buffer.from('a')
     const b = Buffer.from('b')
-    const value = { a, list: [1, { b }], keep: { n: 1 } }
+    const value = { a, list: [1, { b }] as const, keep: { n: 1 } }
 
     const copied = toStandaloneValue(value)
 
     expectStandaloneBuffer(copied.a, 'a')
-    expectStandaloneBuffer((copied.list[1] as { b: Buffer }).b, 'b')
+    expectStandaloneBuffer(copied.list[1].b, 'b')
     expect(copied.keep).toBe(value.keep) // containers without partial views are reused
     // the input is left untouched
     expect(value.a).toBe(a)
-    expect((value.list[1] as { b: Buffer }).b).toBe(b)
+    expect(value.list[1].b).toBe(b)
   })
 
   it('returns values without partial views by identity and does not walk other containers', () => {
@@ -94,7 +94,7 @@ describe('toStandaloneValue', () => {
     expect(copied.list[1].self).toBe(copied)
     expect(cyclic.list[0]).toBe(cyclic)
 
-    // a back-reference copies the containers on the cycle, even without partial views
+    // cycles without partial views terminate too
     const clean: any = { n: 1 }
     clean.self = clean
     expect(toStandaloneValue(clean)).toEqual(clean)

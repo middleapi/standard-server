@@ -558,8 +558,8 @@ describe('peer integration (client <-> server over structured clone)', () => {
   }
 
   it('does not send the backing buffer of pooled Buffers in bodies or event data', async () => {
-    const pooled = Buffer.from('SECRET-neighbour-allocation')
-    expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
+    const file = Buffer.from('z')
+    expect(file.buffer.byteLength).toBeGreaterThan(file.byteLength) // Node's shared Buffer pool
 
     let requestBody: any
     const { client } = connect(
@@ -585,7 +585,7 @@ describe('peer integration (client <-> server over structured clone)', () => {
       url: '/upload',
       method: 'POST',
       headers: {},
-      body: { file: Buffer.from('z') },
+      body: { file },
     })
     const responseBody = (await response.resolveBody()) as any
 

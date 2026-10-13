@@ -125,7 +125,7 @@ const payload = await response.resolveBody()
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.
 
 > [!NOTE]
-> Peer messages are structured-clone compatible, so they can also be posted without `encodePeerMessage()`. Structured clone sends a typed array together with its whole `ArrayBuffer`, so the peers copy any view that covers only part of its buffer (such as Node's pooled `Buffer`) before sending it, whether it is an octet-stream chunk or sits in a JSON body or event data, directly or inside arrays and plain objects. Views inside other containers (`Map`, `Set`, class instances) are sent as-is; use `encodePeerMessage()` if your payloads can contain them.
+> Peer messages are structured-clone compatible, so they can also be posted without `encodePeerMessage()`. Structured clone sends a typed array together with its whole `ArrayBuffer`, so `ClientPeer`, `ServerPeer` and `EventStreamTransmitter` copy any view that covers only part of its buffer (such as Node's pooled `Buffer`) in bodies, event data and octet-stream chunks, directly or inside arrays and plain objects. Views inside other containers (`Map`, `Set`, class instances) and in messages you build yourself are sent as-is, so copy those before sending, e.g. with `new Uint8Array(view)`.
 
 ## Body resolution
 

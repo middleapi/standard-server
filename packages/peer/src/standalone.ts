@@ -17,7 +17,7 @@ export function toStandaloneView<T extends ArrayBufferView>(view: T): T {
 
   // Not `view.slice()`: `Buffer#slice` returns a view, not a copy.
   // The generic `%TypedArray%.prototype.slice` copies and keeps the subclass, so a `Buffer` stays a `Buffer`.
-  return Uint8Array.prototype.slice.call(view as unknown as Uint8Array) as unknown as T
+  return Uint8Array.prototype.slice.call(view) as unknown as T
 }
 
 type Container = Record<PropertyKey, unknown>
@@ -44,11 +44,7 @@ export function toStandaloneValue<T>(value: T): T {
   return replacePartialViews(value, new Map()) as T
 }
 
-function replacePartialViews(value: unknown, replacements: Replacements): unknown {
-  if (typeof value !== 'object' || value === null) {
-    return value
-  }
-
+function replacePartialViews(value: object, replacements: Replacements): unknown {
   if (ArrayBuffer.isView(value)) {
     return toStandaloneView(value)
   }
@@ -72,12 +68,17 @@ function replacePartialViews(value: unknown, replacements: Replacements): unknow
 
   // Indexed loop instead of `for...of` over `keys()`, which allocates an iterator per container
   const keys = isArray ? undefined : Object.keys(container)
-  const length = keys === undefined ? (value as unknown[]).length : keys.length
+  const length = (keys ?? (value as unknown[])).length
   let copy: Container | undefined
 
   for (let index = 0; index < length; index++) {
-    const key = keys === undefined ? index : keys[index]!
+    const key = keys?.[index] ?? index
     const item = container[key]
+
+    if (typeof item !== 'object' || item === null) {
+      continue
+    }
+
     const replacedItem = replacePartialViews(item, replacements)
 
     if (replacedItem !== item) {

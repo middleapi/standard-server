@@ -332,32 +332,24 @@ describe('encodeAtomicStandardBody', () => {
   })
 
   it('encodes JSON object body', async () => {
-    const { jsonBody, headers, binary } = await encodeAtomicStandardBody({ a: 1, b: [2, 3] }, {})
+    const body = { a: 1, b: [2, 3] }
+    const { jsonBody, headers, binary } = await encodeAtomicStandardBody(body, {})
 
-    expect(jsonBody).toEqual({ a: 1, b: [2, 3] })
+    expect(jsonBody).toBe(body)
     expect(binary).toBe(undefined)
     expect(headers['standard-server']).toBe(undefined)
     expect(headers['content-type']).toBe(undefined)
   })
 
-  it('copies views of part of a larger buffer in a JSON body, without mutating it', async () => {
+  it('copies views of part of a larger buffer in a JSON body', async () => {
     const pooled = Buffer.from('hi')
-    const body = { list: [pooled] }
     expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
 
-    const { jsonBody } = await encodeAtomicStandardBody(body, {})
-    const copied = (jsonBody as typeof body).list[0]!
+    const { jsonBody } = await encodeAtomicStandardBody({ list: [pooled] }, {})
+    const copied = (jsonBody as { list: Buffer[] }).list[0]!
 
-    expect(copied).toBeInstanceOf(Buffer)
-    expect(copied.buffer.byteLength).toBe(2)
+    expect(copied.buffer.byteLength).toBe(copied.byteLength)
     expect(copied.toString()).toBe('hi')
-    expect(body.list[0]).toBe(pooled)
-  })
-
-  it('returns a JSON body without partial views by identity', async () => {
-    const body = { a: 1, b: [2, { c: new Uint8Array([1, 2, 3]) }] }
-
-    expect((await encodeAtomicStandardBody(body, {})).jsonBody).toBe(body)
   })
 
   it('encodes FormData body', async () => {

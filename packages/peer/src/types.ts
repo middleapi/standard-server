@@ -12,8 +12,9 @@ import type {
  * All payloads should be compatible with the structured clone algorithm.
  *
  * Structured clone sends a typed array with its whole `ArrayBuffer`, so `ClientPeer`, `ServerPeer`
- * and the stream transmitters copy views that cover only part of their buffer (e.g. Node's pooled
- * `Buffer`) in bodies, event data and octet-stream chunks, except inside `Map`, `Set` or class instances.
+ * and `EventStreamTransmitter` copy views that cover only part of their buffer (e.g. Node's pooled
+ * `Buffer`) in bodies, event data and octet-stream chunks, except inside `Map`, `Set` or class
+ * instances. Messages you build yourself are sent as-is.
  */
 export interface PeerMessage {
   /**
