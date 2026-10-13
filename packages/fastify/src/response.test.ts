@@ -645,6 +645,12 @@ describe('sendStandardResponse', () => {
   })
 
   describe('head request with a stream body', () => {
+    // fastify's own auto HEAD handling doesn't apply to these, `all` registers HEAD too
+    const explicitHeadRoutes = [
+      ['an explicit HEAD route', 'head', '/'],
+      ['a catch-all route', 'all', '/*'],
+    ] as const
+
     it('releases the body on an auto-exposed HEAD route', async ({ onTestFinished }) => {
       const { body, isReleased } = createEndlessBody()
       let sending: Promise<void> | undefined
@@ -728,46 +734,43 @@ describe('sendStandardResponse', () => {
       expect(res.headers).toMatchObject({ 'content-length': '3', 'content-type': 'text/plain' })
     })
 
-    it.for([
-      ['an explicit HEAD route', 'head', '/'],
-      ['a catch-all route', 'all', '/*'],
-    ] as const)('releases the body on %s', async ([_, method, url], { onTestFinished }) => {
-      const { body, isReleased } = createEndlessBody()
-      let sending: Promise<void> | undefined
+    it.for(explicitHeadRoutes)(
+      'releases the body on %s',
+      async ([_, method, url], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+        let sending: Promise<void> | undefined
 
-      const fastify = Fastify()
-      onTestFinished(() => fastify.close())
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
 
-      fastify[method](url, async (req, reply) => {
-        sending = sendStandardResponse(reply, {
-          status: 201,
-          headers: { 'x-custom-header': 'custom-value' },
-          body,
+        fastify[method](url, async (req, reply) => {
+          sending = sendStandardResponse(reply, {
+            status: 201,
+            headers: { 'x-custom-header': 'custom-value' },
+            body,
+          })
+          await sending
         })
-        await sending
-      })
 
-      await fastify.ready()
-      const res = await request(fastify.server).head('/').timeout(2000)
+        await fastify.ready()
+        const res = await request(fastify.server).head('/').timeout(2000)
 
-      await expect(sending).resolves.toBeUndefined()
+        await expect(sending).resolves.toBeUndefined()
 
-      expect(res.status).toBe(201)
-      expect(res.headers).toMatchObject({
-        'content-type': 'text/event-stream',
-        'x-custom-header': 'custom-value',
-      })
-      expect(res.text).toBeFalsy()
+        expect(res.status).toBe(201)
+        expect(res.headers).toMatchObject({
+          'content-type': 'text/event-stream',
+          'x-custom-header': 'custom-value',
+        })
+        expect(res.text).toBeFalsy()
 
-      await vi.waitFor(() => {
-        expect(isReleased()).toBe(true)
-      })
-    })
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
 
-    it.for([
-      ['an explicit HEAD route', 'head', '/'],
-      ['a catch-all route', 'all', '/*'],
-    ] as const)(
+    it.for(explicitHeadRoutes)(
       'cancels the body without reading it on %s',
       async ([_, method, url], { onTestFinished }) => {
         const { body, cancel, pulled } = createCountingStream()

@@ -583,17 +583,26 @@ describe('sendStandardResponse', () => {
       })
     })
 
-    it('cancels a stream body without reading it', async () => {
+    it.each([
+      ['head', 200],
+      ['get', 204],
+      ['get', 304],
+    ] as const)('cancels a stream body without reading it on %s %i', async (method, status) => {
       const { body, cancel, pulled } = createCountingStream()
       let sending: Promise<void> | undefined
 
       const res = await request((req: IncomingMessage, res: ServerResponse) => {
-        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
-      }).head('/')
+        sending = sendStandardResponse(res, {
+          status,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
+      })[method]('/')
 
       await expect(sending).resolves.toBeUndefined()
 
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(status)
+      expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
       expect(cancel).toHaveBeenCalledTimes(1)
       expect(pulled()).toBeLessThan(1024 * 1024)
     })
@@ -653,28 +662,6 @@ describe('sendStandardResponse', () => {
           expect(resBody.destroyed).toBe(true)
         })
       }
-    })
-  })
-
-  describe('http1 status without a body', () => {
-    it.each([204, 304])('cancels a stream body without reading it on %i', async (status) => {
-      const { body, cancel, pulled } = createCountingStream()
-      let sending: Promise<void> | undefined
-
-      const res = await request((req: IncomingMessage, res: ServerResponse) => {
-        sending = sendStandardResponse(res, {
-          status,
-          headers: { 'x-custom-header': 'custom-value' },
-          body,
-        })
-      }).get('/')
-
-      await expect(sending).resolves.toBeUndefined()
-
-      expect(res.status).toBe(status)
-      expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
-      expect(cancel).toHaveBeenCalledTimes(1)
-      expect(pulled()).toBeLessThan(1024 * 1024)
     })
   })
 

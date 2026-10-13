@@ -1,5 +1,4 @@
 import { Buffer } from 'node:buffer'
-import type { ServerResponse } from 'node:http'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
 import type { Readable } from 'node:stream'
@@ -103,7 +102,7 @@ export function isBodylessNodeResponse(
   }
 
   return (
-    (res as Partial<ServerResponse>).req?.method === 'HEAD' ||
+    ('req' in res && res.req?.method === 'HEAD') ||
     (status >= 100 && status < 200) ||
     status === 204 ||
     status === 304
