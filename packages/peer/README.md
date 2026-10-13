@@ -124,6 +124,24 @@ const payload = await response.resolveBody()
 > [!TIP]
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.
 
+## Closing
+
+`close(reason?)` ends every in-flight request on a peer: `ClientPeer` rejects pending requests and errors their response streams, and `ServerPeer` aborts each handler's `signal` and stops its streams. Call it when the underlying transport closes or errors, so nothing keeps waiting on a connection that is gone:
+
+```ts
+// client side
+clientSocket.addEventListener('close', () => {
+  void clientPeer.close()
+})
+
+// server side
+serverSocket.addEventListener('close', () => {
+  void serverPeer.close()
+})
+```
+
+A closed `ServerPeer` ignores any request message it receives afterwards, so a handler can never start after the connection is gone. It cannot be reused: create a new `ServerPeer` for each connection. A `ClientPeer` stays usable after `close()`, so a reconnecting transport can keep the same instance.
+
 ## Body resolution
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.

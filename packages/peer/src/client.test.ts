@@ -1279,6 +1279,126 @@ describe('clientPeer', () => {
     })
   })
 
+  describe('request body that fails to clean up', () => {
+    const cleanupError = new Error('cleanup failed')
+
+    // keeps the body mid-transmission, so cancelling it runs its cleanup
+    function holdStreamSends(): void {
+      send.mockImplementation(async (message) => {
+        if (message.kind === 'octet-stream' || message.kind === 'event-stream') {
+          await new Promise(() => {})
+        }
+      })
+    }
+
+    async function requestWithFailingOctetStreamBody() {
+      holdStreamSends()
+      const cancel = vi.fn(() => {
+        throw cleanupError
+      })
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1]))
+        },
+        cancel,
+      })
+
+      const { id, promise } = await requestAndGetId(makeRequest({ body }))
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([m]) => m.kind === 'octet-stream')).toBe(true),
+      )
+
+      return { id, promise, cancel }
+    }
+
+    it('resolves stream/cancel', async () => {
+      const { id, promise, cancel } = await requestWithFailingOctetStreamBody()
+
+      await expect(peer.message(makeStreamCancelMessage(id))).resolves.toBeUndefined()
+      expect(cancel).toHaveBeenCalledOnce()
+
+      await peer.message(makeResponseMessage(id, 'ok'))
+      expect(await (await promise).resolveBody()).toBe('ok')
+    })
+
+    it('resolves a server cancel and rejects the request', async () => {
+      const { id, promise, cancel } = await requestWithFailingOctetStreamBody()
+
+      await expect(peer.message(makeCancelMessage(id))).resolves.toBeUndefined()
+      await expect(promise).rejects.toThrow(AbortError)
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('resolves close', async () => {
+      const { promise, cancel } = await requestWithFailingOctetStreamBody()
+
+      await expect(peer.close()).resolves.toBeUndefined()
+      await expect(promise).rejects.toThrow(AbortError)
+      expect(cancel).toHaveBeenCalledOnce()
+    })
+
+    it('resolves cancelling the response body', async () => {
+      const { id, promise, cancel } = await requestWithFailingOctetStreamBody()
+
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const body = (await (await promise).resolveBody()) as ReadableStream
+
+      await expect(body.cancel()).resolves.toBeUndefined()
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(send).toHaveBeenLastCalledWith({ id, kind: 'cancel' })
+    })
+
+    it('resolves the final event-stream message', async () => {
+      holdStreamSends()
+      let finalized = false
+      async function* gen() {
+        try {
+          yield 'a'
+          yield 'b'
+        } finally {
+          finalized = true
+          // oxlint-disable-next-line no-unsafe-finally
+          throw cleanupError
+        }
+      }
+
+      const { id, promise } = await requestAndGetId(makeRequest({ body: gen() }))
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([m]) => m.kind === 'event-stream')).toBe(true),
+      )
+
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      await promise
+
+      await expect(
+        peer.message(makeEventStreamMessage(id, undefined, 'close')),
+      ).resolves.toBeUndefined()
+      expect(finalized).toBe(true)
+    })
+
+    it('resolves stream/cancel when the body errored while a send is in flight', async () => {
+      holdStreamSends()
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c
+          c.enqueue(new Uint8Array([1]))
+        },
+      })
+
+      const { id, promise } = await requestAndGetId(makeRequest({ body }))
+      await vi.waitFor(() =>
+        expect(send.mock.calls.some(([m]) => m.kind === 'octet-stream')).toBe(true),
+      )
+      controller.error(new Error('source broke'))
+
+      await expect(peer.message(makeStreamCancelMessage(id))).resolves.toBeUndefined()
+
+      await peer.message(makeResponseMessage(id, 'ok'))
+      expect(await (await promise).resolveBody()).toBe('ok')
+    })
+  })
+
   describe('close', () => {
     it('rejects all pending requests', async () => {
       const p1 = peer.request(makeRequest({ url: '/a' }))

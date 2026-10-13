@@ -883,6 +883,54 @@ describe('serverPeer', () => {
       await peer.close()
     })
 
+    it('ignores request messages after close', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.close()
+      await peer.message(makeRequestMessage(), handler)
+
+      expect(handler).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toBe(0)
+    })
+
+    it('ignores event-stream request messages after close', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.close()
+      await peer.message(
+        makeRequestMessage({ headers: { 'standard-server': 'event-stream' } }),
+        handler,
+      )
+      await peer.message(makeEventStreamMessage('1', 'hello'), handler)
+
+      expect(handler).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+      expect(getPeerSize(peer)).toBe(0)
+    })
+
+    it('resolves when an active response body fails to clean up', async () => {
+      const error = new Error('cleanup failed')
+      let resolveNext!: (v: IteratorResult<unknown>) => void
+      const iter = new AsyncIteratorClass<unknown>(
+        () =>
+          new Promise((r) => {
+            resolveNext = r
+          }),
+        async () => {
+          resolveNext({ value: undefined, done: true })
+          throw error
+        },
+      )
+
+      const promise = peer.message(makeRequestMessage(), async () => eventStreamResponse(iter))
+      await vi.waitFor(() => expect(resolveNext).toBeDefined())
+
+      await expect(peer.close()).resolves.toBeUndefined()
+      await promise
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['response'])
+    })
+
     it('closes event-stream message queues', async () => {
       const { handler, box } = deferredHandler()
       const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })

@@ -25,6 +25,7 @@ interface ServerPeerRequestStateInternal {
 
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
+  private closed = false
 
   constructor(private readonly send: (message: ServerPeerSendMessage) => Promise<void>) {}
 
@@ -49,6 +50,11 @@ export class ServerPeer {
 
     if (message.kind === 'octet-stream') {
       this.requests.get(id)?.octetStreamMessageQueue?.push(message)
+      return
+    }
+
+    if (this.closed) {
+      // nothing would ever abort a handler started after close
       return
     }
 
@@ -176,7 +182,12 @@ export class ServerPeer {
     }
   }
 
+  /**
+   * Abort all in-flight requests and ignore any request received afterwards.
+   * A closed peer cannot be reused; create a new one per connection.
+   */
   async close(reason?: unknown): Promise<void> {
+    this.closed = true
     reason ??= new AbortError('Peer was closed')
 
     await Promise.all(Array.from(this.requests.keys()).map((id) => this.closeById(id, reason)))
@@ -204,9 +215,10 @@ export class ServerPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
+    // a response body that fails to clean up must not fail the close
     const promises = [
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
+      state.eventStreamTransmitter?.cancel().catch(() => {}),
+      state.octetStreamTransmitter?.cancel().catch(() => {}),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined

@@ -162,9 +162,10 @@ export class ClientPeer {
 
     if (message.kind === 'stream/cancel') {
       state.streamCancelled = true
+      // a request body that fails to clean up must not surface as an unhandled rejection
       const promise = Promise.all([
-        state.eventStreamTransmitter?.cancel(),
-        state.octetStreamTransmitter?.cancel(),
+        state.eventStreamTransmitter?.cancel().catch(() => {}),
+        state.octetStreamTransmitter?.cancel().catch(() => {}),
       ])
       state.eventStreamTransmitter = undefined
       state.octetStreamTransmitter = undefined
@@ -266,9 +267,10 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
+    // a request body that fails to clean up must not surface as an unhandled rejection
     const promises = [
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
+      state.eventStreamTransmitter?.cancel().catch(() => {}),
+      state.octetStreamTransmitter?.cancel().catch(() => {}),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
@@ -301,8 +303,9 @@ export class ClientPeer {
 
     const promises = [
       state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
+      // a request body that fails to clean up must not surface as an unhandled rejection
+      state.eventStreamTransmitter?.cancel().catch(() => {}),
+      state.octetStreamTransmitter?.cancel().catch(() => {}),
     ]
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
