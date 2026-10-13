@@ -257,14 +257,15 @@ describe('toAbortSignal', async () => {
   })
 
   describe('on pipelined http1 requests', () => {
-    // Node only gives the socket to the first request: the responses queued behind it never
-    // emit `close` or `error` when the client disconnects, only their requests error
+    // see `onNodeResponseClose`
     const PIPELINED = 20
+    const GET = 'GET / HTTP/1.1\r\nHost: x\r\n\r\n'
 
-    async function listen(
+    async function pipeline(
       onTestFinished: (fn: () => Promise<any>) => void,
       listener: http.RequestListener,
-    ): Promise<number> {
+      requests = GET.repeat(PIPELINED),
+    ): Promise<net.Socket> {
       const server = http.createServer(listener)
       onTestFinished(
         () =>
@@ -275,18 +276,19 @@ describe('toAbortSignal', async () => {
       )
 
       await new Promise<void>((r) => server.listen(0, r))
-      return (server.address() as AddressInfo).port
+
+      const socket = net.connect((server.address() as AddressInfo).port, '127.0.0.1')
+      socket.write(requests)
+
+      return socket
     }
 
     it('aborts every queued request when the client disconnects', async ({ onTestFinished }) => {
       const signals: AbortSignal[] = []
 
-      const port = await listen(onTestFinished, (req, res) => {
+      const socket = await pipeline(onTestFinished, (req, res) => {
         signals.push(toAbortSignal(res))
       })
-
-      const socket = net.connect(port, '127.0.0.1')
-      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
 
       await vi.waitFor(() => expect(signals).toHaveLength(PIPELINED))
       expect(signals.filter((signal) => signal.aborted)).toHaveLength(0)
@@ -305,17 +307,18 @@ describe('toAbortSignal', async () => {
     })
 
     it('on queued request already errored', async ({ onTestFinished }) => {
+      let started = 0
       const signals: AbortSignal[] = []
 
-      const port = await listen(onTestFinished, async (req, res) => {
+      const socket = await pipeline(onTestFinished, async (req, res) => {
+        started++
         // the request errors once the client disconnects, the queued response stays open
         await new Promise((r) => req.once('close', r))
         signals.push(toAbortSignal(res))
       })
 
-      const socket = net.connect(port, '127.0.0.1')
-      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
-      setTimeout(() => socket.destroy(), 50)
+      await vi.waitFor(() => expect(started).toBe(PIPELINED))
+      socket.destroy()
 
       await vi.waitFor(() => expect(signals).toHaveLength(PIPELINED))
 
@@ -329,34 +332,27 @@ describe('toAbortSignal', async () => {
 
     it('does not abort requests that read their body and end', async ({ onTestFinished }) => {
       const signals: AbortSignal[] = []
+      const POST = 'POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n'
 
-      const port = await listen(onTestFinished, async (req, res) => {
-        const signal = toAbortSignal(res)
-        signals.push(signal)
+      const socket = await pipeline(
+        onTestFinished,
+        async (req, res) => {
+          signals.push(toAbortSignal(res))
 
-        const body = await text(req)
+          const body = await text(req)
 
-        // the request closes, without an error, before the response ends
-        await vi.waitFor(() => expect(req.closed).toBe(true))
-        expect(req.errored).toBe(null)
-        expect(signal.aborted).toBe(false)
+          // the request closes, without an error, before the response ends
+          await vi.waitFor(() => expect(req.closed).toBe(true))
+          expect(req.errored).toBe(null)
 
-        res.end(body)
-      })
-
-      const socket = net.connect(port, '127.0.0.1')
-      for (let i = 0; i < 3; i++) {
-        socket.write(
-          `POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n${i === 2 ? 'Connection: close\r\n' : ''}\r\nbody`,
-        )
-      }
+          res.end(body)
+        },
+        `${POST}\r\nbody${POST}\r\nbody${POST}Connection: close\r\n\r\nbody`,
+      )
 
       const received = await text(socket)
 
       expect(received.match(/HTTP\/1\.1 200 /g)).toHaveLength(3)
-      expect(signals).toHaveLength(3)
-
-      await new Promise((r) => setTimeout(r, 50))
 
       for (const signal of signals) {
         expect(signal.aborted).toBe(false)

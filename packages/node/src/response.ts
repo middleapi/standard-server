@@ -7,7 +7,7 @@ import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
-  onNodeRequestErrored,
+  onNodeResponseClose,
 } from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
@@ -41,14 +41,8 @@ export async function sendStandardResponse(
     const connection = 'stream' in res ? res.stream : res
 
     connection.once('error', reject)
-    connection.once('close', resolve)
-
-    // a queued pipelined http1 response never closes, see `onNodeRequestErrored`
-    onNodeRequestErrored(res, () => {
-      if (typeof resBody === 'object' && !resBody.closed) {
-        resBody.destroy()
-      }
-
+    onNodeResponseClose(res, () => {
+      destroyNodeHttpBody(resBody, getNodeResponseError(res), reject)
       resolve()
     })
 
@@ -69,12 +63,6 @@ export async function sendStandardResponse(
       } else if (typeof resBody === 'string') {
         res.end(resBody)
       } else {
-        connection.once('close', () => {
-          if (!resBody.closed) {
-            resBody.destroy(getNodeResponseError(res) ?? undefined)
-          }
-        })
-
         // WARNING: errors that occur here are silently ignored and not reported to the Promise
         resBody.once('error', (error) => res.destroy(error))
 

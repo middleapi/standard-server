@@ -664,8 +664,7 @@ describe('sendStandardResponse', () => {
   })
 
   describe('pipelined http1 requests whose client disconnects', () => {
-    // Node only gives the socket to the first request: the responses queued behind it never
-    // emit `close` or `error` when the client disconnects, only their requests error
+    // see `onNodeResponseClose`
     const PIPELINED = 20
 
     async function pipeline(
@@ -689,61 +688,52 @@ describe('sendStandardResponse', () => {
       return socket
     }
 
-    function subscribe(onCleanup: () => void) {
-      return (async function* () {
-        try {
-          while (true) {
-            yield 'foo'
-            await new Promise((r) => setTimeout(r, 10))
-          }
-        } finally {
-          onCleanup()
-        }
-      })()
-    }
-
     it('resolves and cancels every streamed body', async ({ onTestFinished }) => {
-      let started = 0
+      const bodies: ReturnType<typeof createEndlessBody>[] = []
       let resolved = 0
-      let cleaned = 0
 
       const socket = await pipeline(onTestFinished, async (req, res) => {
-        started++
-        await sendStandardResponse(res, {
-          status: 200,
-          headers: {},
-          body: subscribe(() => cleaned++),
-        })
+        const endless = createEndlessBody()
+        bodies.push(endless)
+
+        await sendStandardResponse(res, { status: 200, headers: {}, body: endless.body })
         resolved++
       })
 
-      await vi.waitFor(() => expect(started).toBe(PIPELINED))
+      await vi.waitFor(() => expect(bodies).toHaveLength(PIPELINED))
       // let the bodies stream into their responses
       await new Promise((r) => setTimeout(r, 50))
       expect(resolved).toBe(0)
-      expect(cleaned).toBe(0)
+      expect(bodies.filter(({ isReleased }) => isReleased())).toHaveLength(0)
 
       socket.destroy()
 
       await vi.waitFor(() => {
         expect(resolved).toBe(PIPELINED)
-        expect(cleaned).toBe(PIPELINED)
+        expect(bodies.filter(({ isReleased }) => isReleased())).toHaveLength(PIPELINED)
       })
     })
 
     it('resolves and destroys the body when sent after the disconnect', async ({
       onTestFinished,
     }) => {
+      let started = 0
       let resolved = 0
 
       const socket = await pipeline(onTestFinished, async (req, res) => {
+        started++
         // the request errors once the client disconnects, the queued response stays open
         await new Promise((r) => req.once('close', r))
-        await sendStandardResponse(res, { status: 200, headers: {}, body: subscribe(() => {}) })
+        await sendStandardResponse(res, {
+          status: 200,
+          headers: {},
+          body: createEndlessBody().body,
+        })
         resolved++
       })
 
-      setTimeout(() => socket.destroy(), 50)
+      await vi.waitFor(() => expect(started).toBe(PIPELINED))
+      socket.destroy()
 
       await vi.waitFor(() => expect(resolved).toBe(PIPELINED))
 
@@ -755,6 +745,23 @@ describe('sendStandardResponse', () => {
     })
   })
 })
+
+function createEndlessBody() {
+  let released = false
+
+  const body = (async function* () {
+    try {
+      while (true) {
+        yield 'foo'
+        await new Promise((r) => setTimeout(r, 10))
+      }
+    } finally {
+      released = true
+    }
+  })()
+
+  return { body, isReleased: () => released }
+}
 
 async function requestHttp2Head(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,

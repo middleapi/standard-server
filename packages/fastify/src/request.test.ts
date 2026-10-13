@@ -148,8 +148,7 @@ describe('toStandardLazyRequest', () => {
   it('aborts every pipelined http1 request when the client disconnects', async ({
     onTestFinished,
   }) => {
-    // Node only gives the socket to the first request: the responses queued behind it never
-    // emit `close` or `error` when the client disconnects, only their requests error
+    // see `onNodeResponseClose` of @standard-server/node
     const PIPELINED = 20
     const signals: AbortSignal[] = []
 

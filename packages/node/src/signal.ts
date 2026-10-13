@@ -3,7 +3,7 @@ import type Stream from 'node:stream'
 import { AbortError } from '@standard-server/shared'
 
 import type { NodeHttpResponse } from './types'
-import { getNodeResponseError, onNodeRequestErrored } from './utils'
+import { getNodeResponseError, onNodeResponseClose } from './utils'
 
 export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSignal {
   const controller = new AbortController()
@@ -19,14 +19,8 @@ export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSig
     }
   }
 
-  if (stream.destroyed) {
-    onClose()
-  } else {
-    stream.once('error', (error) => controller.abort(error))
-    stream.once('close', onClose)
-    // a queued pipelined http1 response never closes, see `onNodeRequestErrored`
-    onNodeRequestErrored(res, onClose)
-  }
+  stream.once('error', (error) => controller.abort(error))
+  onNodeResponseClose(res, onClose)
 
   return controller.signal
 }

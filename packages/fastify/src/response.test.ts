@@ -766,8 +766,7 @@ describe('sendStandardResponse', () => {
   })
 
   describe('pipelined http1 requests whose client disconnects', () => {
-    // Node only gives the socket to the first request: the responses queued behind it never
-    // emit `close` or `error` when the client disconnects, only their requests error
+    // see `onNodeResponseClose` of @standard-server/node
     const PIPELINED = 20
 
     async function pipeline(fastify: ReturnType<typeof Fastify>): Promise<net.Socket> {
@@ -813,12 +812,14 @@ describe('sendStandardResponse', () => {
     it('resolves and destroys the body when sent after the disconnect', async ({
       onTestFinished,
     }) => {
+      let started = 0
       let resolved = 0
 
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
 
       fastify.get('/', async (req, reply) => {
+        started++
         // the request errors once the client disconnects, the queued response stays open
         await new Promise((r) => req.raw.once('close', r))
         await sendStandardResponse(reply, {
@@ -830,7 +831,9 @@ describe('sendStandardResponse', () => {
       })
 
       const socket = await pipeline(fastify)
-      setTimeout(() => socket.destroy(), 50)
+
+      await vi.waitFor(() => expect(started).toBe(PIPELINED))
+      socket.destroy()
 
       await vi.waitFor(() => expect(resolved).toBe(PIPELINED))
 

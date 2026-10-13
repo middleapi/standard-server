@@ -80,39 +80,53 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
  */
 export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
   return (
-    !('headersSent' in res && res.headersSent) &&
-    !res.writableEnded &&
-    !('stream' in res ? res.stream : res).destroyed &&
-    !getHttp1Request(res)?.errored
+    !('headersSent' in res && res.headersSent) && !res.writableEnded && !isNodeResponseClosed(res)
   )
 }
 
 /**
- * Call `listener` once the request of an http1 response errors, right away if
- * it already has.
+ * Call `listener` once the response closes, right away if it already has.
  *
  * Node's http1 server only gives the socket to the first of pipelined requests.
  * When the connection drops, the responses queued behind it never emit `close`
- * or `error` ("Abort socket._httpMessage ?" in `abortIncoming` of Node's
+ * ("Abort socket._httpMessage ?" in `abortIncoming` of Node's
  * `lib/_http_server.js`); only their requests are destroyed, with an
- * `ECONNRESET` error. A plain request `close` doesn't count: it fires before
- * the response ends in every normal request.
+ * `ECONNRESET` error, so that error counts as the response closing too. A plain
+ * request `close` doesn't: it fires before the response ends in every normal
+ * request.
  */
-export function onNodeRequestErrored(
+export function onNodeResponseClose(
   res: Stream.Writable | NodeHttpResponse,
   listener: () => void,
 ): void {
-  const req = getHttp1Request(res)
-
-  if (req?.errored) {
+  if (isNodeResponseClosed(res)) {
     listener()
-  } else {
-    req?.once('close', () => {
+    return
+  }
+
+  let closed = false
+  const onClose = () => {
+    if (!closed) {
+      closed = true
+      listener()
+    }
+  }
+
+  ;('stream' in res ? res.stream : res).once('close', onClose)
+
+  const req = getHttp1Request(res)
+  // a request that already closed without an error never emits `close` again
+  if (req && !req.closed) {
+    req.once('close', () => {
       if (req.errored) {
-        listener()
+        onClose()
       }
     })
   }
+}
+
+function isNodeResponseClosed(res: Stream.Writable | NodeHttpResponse): boolean {
+  return ('stream' in res ? res.stream : res).destroyed || !!getHttp1Request(res)?.errored
 }
 
 function getHttp1Request(res: Stream.Writable | NodeHttpResponse): IncomingMessage | undefined {
