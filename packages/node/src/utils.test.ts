@@ -6,13 +6,14 @@ import type { AddressInfo } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  onNodeRequestErrored,
   toWebReadableStream,
 } from './utils'
 
@@ -210,6 +211,103 @@ describe('canWriteToNodeResponse', () => {
     reqStream.once('close', () => client.close())
 
     await handled
+  })
+
+  it('on queued pipelined http1 response whose client disconnected', async ({ onTestFinished }) => {
+    const { socket, responses } = await pipelineHttp1Requests(onTestFinished, 2)
+    const queued = responses[1]!
+
+    expect(canWriteToNodeResponse(queued)).toBe(true)
+
+    socket.destroy()
+    await new Promise((r) => queued.req.once('close', r))
+
+    expect(canWriteToNodeResponse(queued)).toBe(false)
+  })
+})
+
+describe('onNodeRequestErrored', () => {
+  it('on queued pipelined http1 response whose client disconnected', async ({ onTestFinished }) => {
+    const { socket, responses } = await pipelineHttp1Requests(onTestFinished, 2)
+    const queued = responses[1]!
+
+    const listener = vi.fn()
+    onNodeRequestErrored(queued, listener)
+
+    expect(listener).not.toHaveBeenCalled()
+
+    socket.destroy()
+
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(1))
+
+    // right away once the request already errored
+    const lateListener = vi.fn()
+    onNodeRequestErrored(queued, lateListener)
+
+    expect(lateListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('on http1 request that closes before its response ends', async ({ onTestFinished }) => {
+    const listener = vi.fn()
+
+    const server = createServer(async (req, res) => {
+      onNodeRequestErrored(res, listener)
+
+      await text(req)
+      await vi.waitFor(() => expect(req.closed).toBe(true))
+
+      res.end('ok')
+    })
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const { port } = server.address() as AddressInfo
+
+    const response = await fetch(`http://127.0.0.1:${port}`, { method: 'POST', body: 'body' })
+
+    expect(await response.text()).toBe('ok')
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('ignores a plain writable', () => {
+    const stream = new Writable({ write: (chunk, encoding, callback) => callback() })
+    stream.once('error', () => {})
+
+    const listener = vi.fn()
+    onNodeRequestErrored(stream, listener)
+    stream.destroy(new Error('test'))
+
+    expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('ignores an http2 response', async ({ onTestFinished }) => {
+    const listener = vi.fn()
+
+    const server = createHttp2Server()
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    const closed = new Promise<void>((resolve) => {
+      server.on('request', (req, res) => {
+        onNodeRequestErrored(res, listener)
+        res.stream.once('error', () => {})
+        res.once('close', () => resolve())
+      })
+    })
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const { port } = server.address() as AddressInfo
+
+    const client = http2Connect(`http://127.0.0.1:${port}`)
+    onTestFinished(async () => client.close())
+
+    const reqStream = client.request({ ':path': '/' })
+    reqStream.once('error', () => {})
+    setTimeout(() => reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR), 50)
+
+    await closed
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(listener).not.toHaveBeenCalled()
   })
 })
 
@@ -794,3 +892,35 @@ describe('toWebReadableStream', () => {
     expect(crashes).toEqual([])
   })
 })
+
+/**
+ * Pipelines `count` requests on one socket, so every response but the first is queued
+ * behind it, and resolves once all of them are handled.
+ */
+async function pipelineHttp1Requests(
+  onTestFinished: (fn: () => Promise<any>) => void,
+  count: number,
+): Promise<{ socket: net.Socket; responses: http.ServerResponse[] }> {
+  const responses: http.ServerResponse[] = []
+
+  const server = createServer((req, res) => {
+    responses.push(res)
+  })
+  onTestFinished(
+    () =>
+      new Promise<any>((r) => {
+        server.closeAllConnections()
+        server.close(r)
+      }),
+  )
+
+  await new Promise<void>((resolve) => server.listen(0, resolve))
+  const { port } = server.address() as AddressInfo
+
+  const socket = net.connect(port, '127.0.0.1')
+  socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(count))
+
+  await vi.waitFor(() => expect(responses).toHaveLength(count))
+
+  return { socket, responses }
+}

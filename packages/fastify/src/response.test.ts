@@ -1,5 +1,7 @@
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import { Readable, Writable } from 'node:stream'
 
 import FastifyCookie from '@fastify/cookie'
@@ -760,6 +762,83 @@ describe('sendStandardResponse', () => {
 
     await vi.waitFor(() => {
       expect(isReleased()).toBe(true)
+    })
+  })
+
+  describe('pipelined http1 requests whose client disconnects', () => {
+    // Node only gives the socket to the first request: the responses queued behind it never
+    // emit `close` or `error` when the client disconnects, only their requests error
+    const PIPELINED = 20
+
+    async function pipeline(fastify: ReturnType<typeof Fastify>): Promise<net.Socket> {
+      await fastify.listen({ port: 0, host: '127.0.0.1' })
+
+      const socket = net.connect((fastify.server.address() as AddressInfo).port, '127.0.0.1')
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
+
+      return socket
+    }
+
+    it('resolves and cancels every streamed body', async ({ onTestFinished }) => {
+      const bodies: ReturnType<typeof createEndlessBody>[] = []
+      let resolved = 0
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        const endless = createEndlessBody()
+        bodies.push(endless)
+
+        await sendStandardResponse(reply, { status: 200, headers: {}, body: endless.body })
+        resolved++
+      })
+
+      const socket = await pipeline(fastify)
+
+      await vi.waitFor(() => expect(bodies).toHaveLength(PIPELINED))
+      // let the bodies stream into their responses
+      await new Promise((r) => setTimeout(r, 50))
+      expect(resolved).toBe(0)
+      expect(bodies.filter(({ isReleased }) => isReleased())).toHaveLength(0)
+
+      socket.destroy()
+
+      await vi.waitFor(() => {
+        expect(resolved).toBe(PIPELINED)
+        expect(bodies.filter(({ isReleased }) => isReleased())).toHaveLength(PIPELINED)
+      })
+    })
+
+    it('resolves and destroys the body when sent after the disconnect', async ({
+      onTestFinished,
+    }) => {
+      let resolved = 0
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        // the request errors once the client disconnects, the queued response stays open
+        await new Promise((r) => req.raw.once('close', r))
+        await sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body: createEndlessBody().body,
+        })
+        resolved++
+      })
+
+      const socket = await pipeline(fastify)
+      setTimeout(() => socket.destroy(), 50)
+
+      await vi.waitFor(() => expect(resolved).toBe(PIPELINED))
+
+      const bodies = toNodeHttpBodySpy.mock.results.map((result) => result.value[0])
+      expect(bodies).toHaveLength(PIPELINED)
+      await vi.waitFor(() => {
+        expect(bodies.filter((body) => body.destroyed)).toHaveLength(PIPELINED)
+      })
     })
   })
 })

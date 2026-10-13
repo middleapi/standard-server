@@ -1,8 +1,10 @@
 import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import http from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
 import http2 from 'node:http2'
 import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import Stream from 'node:stream'
 
 import type { StandardResponse } from '@standard-server/core'
@@ -658,6 +660,98 @@ describe('sendStandardResponse', () => {
         client.close()
         await new Promise((r) => server.close(r))
       }
+    })
+  })
+
+  describe('pipelined http1 requests whose client disconnects', () => {
+    // Node only gives the socket to the first request: the responses queued behind it never
+    // emit `close` or `error` when the client disconnects, only their requests error
+    const PIPELINED = 20
+
+    async function pipeline(
+      onTestFinished: (fn: () => Promise<any>) => void,
+      listener: http.RequestListener,
+    ): Promise<net.Socket> {
+      const server = http.createServer(listener)
+      onTestFinished(
+        () =>
+          new Promise<any>((r) => {
+            server.closeAllConnections()
+            server.close(r)
+          }),
+      )
+
+      await new Promise<void>((r) => server.listen(0, r))
+
+      const socket = net.connect((server.address() as AddressInfo).port, '127.0.0.1')
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
+
+      return socket
+    }
+
+    function subscribe(onCleanup: () => void) {
+      return (async function* () {
+        try {
+          while (true) {
+            yield 'foo'
+            await new Promise((r) => setTimeout(r, 10))
+          }
+        } finally {
+          onCleanup()
+        }
+      })()
+    }
+
+    it('resolves and cancels every streamed body', async ({ onTestFinished }) => {
+      let started = 0
+      let resolved = 0
+      let cleaned = 0
+
+      const socket = await pipeline(onTestFinished, async (req, res) => {
+        started++
+        await sendStandardResponse(res, {
+          status: 200,
+          headers: {},
+          body: subscribe(() => cleaned++),
+        })
+        resolved++
+      })
+
+      await vi.waitFor(() => expect(started).toBe(PIPELINED))
+      // let the bodies stream into their responses
+      await new Promise((r) => setTimeout(r, 50))
+      expect(resolved).toBe(0)
+      expect(cleaned).toBe(0)
+
+      socket.destroy()
+
+      await vi.waitFor(() => {
+        expect(resolved).toBe(PIPELINED)
+        expect(cleaned).toBe(PIPELINED)
+      })
+    })
+
+    it('resolves and destroys the body when sent after the disconnect', async ({
+      onTestFinished,
+    }) => {
+      let resolved = 0
+
+      const socket = await pipeline(onTestFinished, async (req, res) => {
+        // the request errors once the client disconnects, the queued response stays open
+        await new Promise((r) => req.once('close', r))
+        await sendStandardResponse(res, { status: 200, headers: {}, body: subscribe(() => {}) })
+        resolved++
+      })
+
+      setTimeout(() => socket.destroy(), 50)
+
+      await vi.waitFor(() => expect(resolved).toBe(PIPELINED))
+
+      const bodies = toNodeHttpBodySpy.mock.results.map((result) => result.value[0])
+      expect(bodies).toHaveLength(PIPELINED)
+      await vi.waitFor(() => {
+        expect(bodies.filter((body) => body.destroyed)).toHaveLength(PIPELINED)
+      })
     })
   })
 })

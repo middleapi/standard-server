@@ -3,7 +3,12 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
 import type { NodeHttpResponse } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  onNodeRequestErrored,
+} from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
@@ -37,6 +42,15 @@ export async function sendStandardResponse(
 
     connection.once('error', reject)
     connection.once('close', resolve)
+
+    // a queued pipelined http1 response never closes, see `onNodeRequestErrored`
+    onNodeRequestErrored(res, () => {
+      if (typeof resBody === 'object' && !resBody.closed) {
+        resBody.destroy()
+      }
+
+      resolve()
+    })
 
     try {
       // DON'T use `res.writeHead` because it send response immediately in chunked mode

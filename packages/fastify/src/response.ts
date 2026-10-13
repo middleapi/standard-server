@@ -4,6 +4,7 @@ import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  onNodeRequestErrored,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -39,14 +40,18 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
 
-    connection.once('error', reject)
-    connection.once('close', () => {
+    const onClose = () => {
       if (typeof resBody === 'object' && !resBody.closed) {
         resBody.destroy()
       }
 
       resolve()
-    })
+    }
+
+    connection.once('error', reject)
+    connection.once('close', onClose)
+    // a queued pipelined http1 response never closes, see `onNodeRequestErrored`
+    onNodeRequestErrored(reply.raw, onClose)
 
     try {
       reply.status(standardResponse.status)

@@ -82,8 +82,41 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
   return (
     !('headersSent' in res && res.headersSent) &&
     !res.writableEnded &&
-    !('stream' in res ? res.stream : res).destroyed
+    !('stream' in res ? res.stream : res).destroyed &&
+    !getHttp1Request(res)?.errored
   )
+}
+
+/**
+ * Call `listener` once the request of an http1 response errors, right away if
+ * it already has.
+ *
+ * Node's http1 server only gives the socket to the first of pipelined requests.
+ * When the connection drops, the responses queued behind it never emit `close`
+ * or `error` ("Abort socket._httpMessage ?" in `abortIncoming` of Node's
+ * `lib/_http_server.js`); only their requests are destroyed, with an
+ * `ECONNRESET` error. A plain request `close` doesn't count: it fires before
+ * the response ends in every normal request.
+ */
+export function onNodeRequestErrored(
+  res: Stream.Writable | NodeHttpResponse,
+  listener: () => void,
+): void {
+  const req = getHttp1Request(res)
+
+  if (req?.errored) {
+    listener()
+  } else {
+    req?.once('close', () => {
+      if (req.errored) {
+        listener()
+      }
+    })
+  }
+}
+
+function getHttp1Request(res: Stream.Writable | NodeHttpResponse): IncomingMessage | undefined {
+  return 'stream' in res || !('req' in res) ? undefined : res.req
 }
 
 /**

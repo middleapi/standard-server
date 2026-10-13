@@ -1,5 +1,9 @@
+import http from 'node:http'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import Stream from 'node:stream'
+import { text } from 'node:stream/consumers'
 
 import { AbortError } from '@standard-server/shared'
 
@@ -249,6 +253,114 @@ describe('toAbortSignal', async () => {
       }, 50)
 
       await handled
+    })
+  })
+
+  describe('on pipelined http1 requests', () => {
+    // Node only gives the socket to the first request: the responses queued behind it never
+    // emit `close` or `error` when the client disconnects, only their requests error
+    const PIPELINED = 20
+
+    async function listen(
+      onTestFinished: (fn: () => Promise<any>) => void,
+      listener: http.RequestListener,
+    ): Promise<number> {
+      const server = http.createServer(listener)
+      onTestFinished(
+        () =>
+          new Promise<any>((r) => {
+            server.closeAllConnections()
+            server.close(r)
+          }),
+      )
+
+      await new Promise<void>((r) => server.listen(0, r))
+      return (server.address() as AddressInfo).port
+    }
+
+    it('aborts every queued request when the client disconnects', async ({ onTestFinished }) => {
+      const signals: AbortSignal[] = []
+
+      const port = await listen(onTestFinished, (req, res) => {
+        signals.push(toAbortSignal(res))
+      })
+
+      const socket = net.connect(port, '127.0.0.1')
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
+
+      await vi.waitFor(() => expect(signals).toHaveLength(PIPELINED))
+      expect(signals.filter((signal) => signal.aborted)).toHaveLength(0)
+
+      socket.destroy()
+
+      await vi.waitFor(() => {
+        expect(signals.filter((signal) => signal.aborted)).toHaveLength(PIPELINED)
+      })
+
+      for (const signal of signals) {
+        expect(signal.reason).toEqual(
+          new AbortError('Writable stream closed before it finished writing'),
+        )
+      }
+    })
+
+    it('on queued request already errored', async ({ onTestFinished }) => {
+      const signals: AbortSignal[] = []
+
+      const port = await listen(onTestFinished, async (req, res) => {
+        // the request errors once the client disconnects, the queued response stays open
+        await new Promise((r) => req.once('close', r))
+        signals.push(toAbortSignal(res))
+      })
+
+      const socket = net.connect(port, '127.0.0.1')
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
+      setTimeout(() => socket.destroy(), 50)
+
+      await vi.waitFor(() => expect(signals).toHaveLength(PIPELINED))
+
+      for (const signal of signals) {
+        expect(signal.aborted).toBe(true)
+        expect(signal.reason).toEqual(
+          new AbortError('Writable stream closed before it finished writing'),
+        )
+      }
+    })
+
+    it('does not abort requests that read their body and end', async ({ onTestFinished }) => {
+      const signals: AbortSignal[] = []
+
+      const port = await listen(onTestFinished, async (req, res) => {
+        const signal = toAbortSignal(res)
+        signals.push(signal)
+
+        const body = await text(req)
+
+        // the request closes, without an error, before the response ends
+        await vi.waitFor(() => expect(req.closed).toBe(true))
+        expect(req.errored).toBe(null)
+        expect(signal.aborted).toBe(false)
+
+        res.end(body)
+      })
+
+      const socket = net.connect(port, '127.0.0.1')
+      for (let i = 0; i < 3; i++) {
+        socket.write(
+          `POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n${i === 2 ? 'Connection: close\r\n' : ''}\r\nbody`,
+        )
+      }
+
+      const received = await text(socket)
+
+      expect(received.match(/HTTP\/1\.1 200 /g)).toHaveLength(3)
+      expect(signals).toHaveLength(3)
+
+      await new Promise((r) => setTimeout(r, 50))
+
+      for (const signal of signals) {
+        expect(signal.aborted).toBe(false)
+      }
     })
   })
 })

@@ -1,3 +1,6 @@
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
+
 import type { StandardLazyRequest } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
@@ -140,5 +143,42 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardBodySpy).toBeCalledTimes(1)
     expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: 'json' })
     expect(standardBody).toEqual({ foo: 'bar' })
+  })
+
+  it('aborts every pipelined http1 request when the client disconnects', async ({
+    onTestFinished,
+  }) => {
+    // Node only gives the socket to the first request: the responses queued behind it never
+    // emit `close` or `error` when the client disconnects, only their requests error
+    const PIPELINED = 20
+    const signals: AbortSignal[] = []
+
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    fastify.get('/', (req, reply) => {
+      signals.push(toStandardLazyRequest(req, reply).signal!)
+    })
+
+    await fastify.listen({ port: 0, host: '127.0.0.1' })
+
+    const socket = net.connect((fastify.server.address() as AddressInfo).port, '127.0.0.1')
+    socket.write('GET / HTTP/1.1\r\nHost: x\r\n\r\n'.repeat(PIPELINED))
+
+    await vi.waitFor(() => expect(signals).toHaveLength(PIPELINED))
+    expect(signals.filter((signal) => signal.aborted)).toHaveLength(0)
+
+    socket.destroy()
+
+    await vi.waitFor(() => {
+      expect(signals.filter((signal) => signal.aborted)).toHaveLength(PIPELINED)
+    })
+
+    for (const signal of signals) {
+      expect(signal.reason).toMatchObject({
+        name: 'AbortError',
+        message: 'Writable stream closed before it finished writing',
+      })
+    }
   })
 })
