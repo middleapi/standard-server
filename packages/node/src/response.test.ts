@@ -338,14 +338,14 @@ describe('sendStandardResponse', () => {
       const user = new URL(req.url!, 'http://localhost').searchParams.get('u')
 
       // like cookie-session: append a cookie right before the head is written
-      const writeHead = res.writeHead
-      res.writeHead = function (this: ServerResponse, ...args: any[]) {
+      const writeHead = res.writeHead.bind(res)
+      vi.spyOn(res, 'writeHead').mockImplementation((...args) => {
         if (user) {
           res.appendHeader('set-cookie', `sid=${user}`)
         }
 
-        return writeHead.apply(this, args as any)
-      } as any
+        return writeHead(...args)
+      })
 
       await sendStandardResponse(res, { status: 200, headers, body: undefined })
     }
