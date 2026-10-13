@@ -10,7 +10,7 @@ import { text } from 'node:stream/consumers'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import type { StandardResponse } from '@standard-server/core'
-import { toStandardLazyResponse } from '@standard-server/fetch'
+import { toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -641,7 +641,7 @@ describe('sendStandardResponse', () => {
 
         const response = toStandardLazyResponse(
           new Response(Readable.toWeb(reqStream) as ReadableStream, {
-            headers: Object.entries(headers).filter(([key]) => !key.startsWith(':')) as any,
+            headers: toFetchHeaders(headers),
           }),
         )
 

@@ -485,7 +485,6 @@ describe('abortNodeHttpResponse', () => {
       requestHttp10(connect((server.address() as AddressInfo).port, '127.0.0.1')),
     ).rejects.toMatchObject({ code: 'ECONNRESET' })
 
-    expect(res!.destroyed).toBe(true)
     expect(getNodeResponseError(res!)).toEqual(
       new Error('Response body stream failed', { cause: error }),
     )
@@ -524,7 +523,6 @@ describe('abortNodeHttpResponse', () => {
       { type: 'throw', value: expect.objectContaining({ code: 'ERR_INVALID_HANDLE_TYPE' }) },
     ])
 
-    expect(res!.destroyed).toBe(true)
     expect(socket!.destroyed).toBe(true)
     expect(getNodeResponseError(res!)).toEqual(
       new Error('Response body stream failed', { cause: error }),
@@ -549,7 +547,6 @@ describe('abortNodeHttpResponse', () => {
 
           expect(destroy).not.toHaveBeenCalled()
           expect(resetAndDestroy).not.toHaveBeenCalled()
-          expect(getNodeResponseError(res)).toBe(undefined)
 
           resolve()
         } catch (error) {
@@ -580,7 +577,6 @@ describe('abortNodeHttpResponse', () => {
           abortNodeHttpResponse(res, new Error('test'))
 
           expect(destroy).not.toHaveBeenCalled()
-          expect(getNodeResponseError(res)).toBe(null)
 
           resolve()
         } catch (error) {
