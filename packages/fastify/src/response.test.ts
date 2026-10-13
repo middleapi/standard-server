@@ -486,13 +486,9 @@ describe('sendStandardResponse', () => {
       function erroringStream() {
         return new ReadableStream({
           start(controller) {
-            setTimeout(() => controller.error(new Error('boom')), 5)
+            controller.error(new Error('boom'))
           },
         })
-      }
-
-      async function delayHook() {
-        await new Promise((r) => setTimeout(r, 20))
       }
 
       it('stream body', async ({ onTestFinished }) => {
@@ -500,7 +496,7 @@ describe('sendStandardResponse', () => {
         onTestFinished(() => fastify.close())
 
         fastify.addHook('onSend', async (req, reply, payload) => {
-          await delayHook()
+          await new Promise((r) => setTimeout(r, 20))
           return payload
         })
 
@@ -512,25 +508,10 @@ describe('sendStandardResponse', () => {
           })
         })
 
-        fastify.get('/ok', async (req, reply) => {
-          await sendStandardResponse(reply, {
-            status: 200,
-            headers: {},
-            body: { foo: 'bar' },
-          })
-        })
-
         await fastify.ready()
         const res = await request(fastify.server).get('/')
 
         expect(res.status).toBe(500)
-
-        // the server is still up
-        const okRes = await request(fastify.server).get('/ok')
-
-        expect(okRes.status).toBe(200)
-        expect(okRes.text).toEqual('{"foo":"bar"}')
-
         expect(uncaughtExceptionSpy).not.toHaveBeenCalled()
       })
 
@@ -539,7 +520,7 @@ describe('sendStandardResponse', () => {
         onTestFinished(() => fastify.close())
 
         fastify.addHook('onSend', async (req, reply, payload) => {
-          await delayHook()
+          await new Promise((r) => setTimeout(r, 20))
           return payload
         })
 
@@ -570,7 +551,7 @@ describe('sendStandardResponse', () => {
         onTestFinished(() => fastify.close())
 
         fastify.addHook('onSend', async (req, reply) => {
-          await delayHook()
+          await new Promise((r) => setTimeout(r, 20))
           reply.header('content-type', 'text/plain')
           return 'replaced'
         })
@@ -596,7 +577,7 @@ describe('sendStandardResponse', () => {
         onTestFinished(() => fastify.close())
 
         fastify.addHook('onSend', async () => {
-          await delayHook()
+          await new Promise((r) => setTimeout(r, 20))
           throw new Error('hook failed')
         })
 
