@@ -690,10 +690,7 @@ describe('sendStandardResponse', () => {
         await sending
       })
 
-      const response = await requestHttp2(
-        await fastify.listen({ port: 0, host: '127.0.0.1' }),
-        'HEAD',
-      )
+      const response = await requestHttp2(fastify, 'HEAD')
 
       await expect(sending).resolves.toBeUndefined()
 
@@ -723,10 +720,7 @@ describe('sendStandardResponse', () => {
         await sending.catch(() => {})
       })
 
-      const response = await requestHttp2(
-        await fastify.listen({ port: 0, host: '127.0.0.1' }),
-        'HEAD',
-      )
+      const response = await requestHttp2(fastify, 'HEAD')
 
       await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
@@ -769,7 +763,7 @@ describe('sendStandardResponse', () => {
           }
         })
 
-        const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+        const response = await requestHttp2(fastify)
 
         expect(thrownError).toBeInstanceOf(TypeError)
         expect(thrownError.message).toContain('keep-alive')
@@ -797,7 +791,7 @@ describe('sendStandardResponse', () => {
         })
       })
 
-      const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      const response = await requestHttp2(fastify)
 
       expect(response.headers[':status']).toBe(200)
       expect(response.body).toBe('{"foo":"bar"}')
@@ -823,7 +817,7 @@ describe('sendStandardResponse', () => {
           })
         })
 
-        const response = await requestHttp2(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+        const response = await requestHttp2(fastify)
 
         expect(response.headers[':status']).toBe(200)
         expect(response.headers['x-content-type-options']).toBe('nosniff, nosniff')
@@ -915,10 +909,10 @@ function createEndlessBody() {
 }
 
 async function requestHttp2(
-  origin: string,
+  fastify: { listen(options: { port: number; host: string }): Promise<string> },
   method = 'GET',
 ): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
-  const client = http2.connect(origin)
+  const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
 
   try {
     const reqStream = client.request({ ':path': '/', ':method': method })

@@ -561,13 +561,13 @@ describe('sendStandardResponse', () => {
     it('sends the status and headers', async () => {
       let sending: Promise<void> | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2((_, res) => {
         sending = sendStandardResponse(res, {
           status: 201,
           headers: { 'x-custom-header': 'custom-value' },
           body: undefined,
         })
-      })
+      }, 'HEAD')
 
       await expect(sending).resolves.toBeUndefined()
 
@@ -593,10 +593,10 @@ describe('sendStandardResponse', () => {
 
       let sending: Promise<void> | undefined
 
-      const response = await requestHttp2Head((_, res) => {
+      const response = await requestHttp2((_, res) => {
         sending = sendStandardResponse(res, { status: 201, headers: {}, body })
         sending.catch(() => {})
-      })
+      }, 'HEAD')
 
       await expect(sending).rejects.toMatchObject({ code: 'ERR_STREAM_WRITE_AFTER_END' })
 
@@ -670,6 +670,12 @@ describe('sendStandardResponse', () => {
    * would otherwise leave to its first piped write, out of reach of the Promise.
    */
   describe('head rejected when committed', () => {
+    const createFile = () => new File(['foo'], 'foo.txt', { type: 'text/plain' })
+    const createEventStream = () =>
+      (async function* () {
+        yield 'foo'
+      })()
+
     const streamBodies: [string, () => StandardBody][] = [
       [
         'readable stream',
@@ -681,7 +687,7 @@ describe('sendStandardResponse', () => {
             },
           }),
       ],
-      ['file', () => new File(['foo'], 'foo.txt', { type: 'text/plain' })],
+      ['file', createFile],
       [
         'form data',
         () => {
@@ -690,42 +696,40 @@ describe('sendStandardResponse', () => {
           return formData
         },
       ],
-      [
-        'async iterator',
-        () =>
-          (async function* () {
-            yield 'foo'
-          })(),
-      ],
+      ['event stream', createEventStream],
     ]
 
+    async function expectHttp1Rejection(response: StandardResponse, code: string) {
+      let destroySpy: any
+      let thrownError: any
+
+      await expect(
+        request(async (req: IncomingMessage, res: ServerResponse) => {
+          destroySpy = vi.spyOn(res, 'destroy')
+
+          try {
+            await sendStandardResponse(res, response)
+          } catch (err) {
+            thrownError = err
+          }
+        }).get('/'),
+      ).rejects.toThrow()
+
+      expect(thrownError).toBeInstanceOf(Error)
+      expect(thrownError.code).toBe(code)
+
+      expect(destroySpy).toHaveBeenCalledWith(thrownError)
+
+      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
+      expect((resBody as any).destroyed).toBe(true)
+    }
+
     describe.each([1000, 99, Number.NaN])('status %s', (status) => {
-      it.each(streamBodies)(
-        'rejects, destroys the response and the body (%s)',
-        async (_, createBody) => {
-          let destroySpy: any
-          let thrownError: any
-
-          await expect(
-            request(async (req: IncomingMessage, res: ServerResponse) => {
-              destroySpy = vi.spyOn(res, 'destroy')
-
-              try {
-                await sendStandardResponse(res, { status, headers: {}, body: createBody() })
-              } catch (err) {
-                thrownError = err
-              }
-            }).get('/'),
-          ).rejects.toThrow()
-
-          expect(thrownError).toBeInstanceOf(RangeError)
-          expect(thrownError.code).toBe('ERR_HTTP_INVALID_STATUS_CODE')
-
-          expect(destroySpy).toHaveBeenCalledWith(thrownError)
-
-          const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
-          expect((resBody as any).destroyed).toBe(true)
-        },
+      it.each(streamBodies)('rejects, destroys the response and the body (%s)', (_, createBody) =>
+        expectHttp1Rejection(
+          { status, headers: {}, body: createBody() },
+          'ERR_HTTP_INVALID_STATUS_CODE',
+        ),
       )
     })
 
@@ -758,14 +762,8 @@ describe('sendStandardResponse', () => {
     )
 
     it.each([
-      ['file', () => new File(['foo'], 'foo.txt', { type: 'text/plain' })],
-      [
-        'event stream',
-        () =>
-          (async function* () {
-            yield 'foo'
-          })(),
-      ],
+      ['file', createFile],
+      ['event stream', createEventStream],
     ])('rejects repeated values for an http2 single-value header (%s)', async (_, createBody) => {
       let sending: Promise<void> | undefined
 
@@ -786,34 +784,11 @@ describe('sendStandardResponse', () => {
       expect((resBody as any).destroyed).toBe(true)
     })
 
-    it('rejects an http1 trailer header with a file body (sent with a content-length)', async () => {
-      let destroySpy: any
-      let thrownError: any
-
-      await expect(
-        request(async (req: IncomingMessage, res: ServerResponse) => {
-          destroySpy = vi.spyOn(res, 'destroy')
-
-          try {
-            await sendStandardResponse(res, {
-              status: 200,
-              headers: { trailer: 'x-checksum' },
-              body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
-            })
-          } catch (err) {
-            thrownError = err
-          }
-        }).get('/'),
-      ).rejects.toThrow()
-
-      expect(thrownError).toBeInstanceOf(Error)
-      expect(thrownError.code).toBe('ERR_HTTP_TRAILER_INVALID')
-
-      expect(destroySpy).toHaveBeenCalledWith(thrownError)
-
-      const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
-      expect((resBody as any).destroyed).toBe(true)
-    })
+    it('rejects an http1 trailer header with a file body (sent with a content-length)', () =>
+      expectHttp1Rejection(
+        { status: 200, headers: { trailer: 'x-checksum' }, body: createFile() },
+        'ERR_HTTP_TRAILER_INVALID',
+      ))
 
     it('rejects an http1 trailer header with a stream body over http/1.0 (not chunked)', async () => {
       const { body, cancel } = createOpenStream()
@@ -853,34 +828,6 @@ describe('sendStandardResponse', () => {
   })
 })
 
-async function requestHttp2Head(
-  listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
-): Promise<{ headers: http2.IncomingHttpHeaders; body: string }> {
-  const server = http2.createServer(listener)
-  await new Promise<void>((r) => server.listen(0, r))
-
-  const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
-
-  try {
-    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
-
-    const chunks: Buffer[] = []
-    reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
-
-    const headers = await new Promise<http2.IncomingHttpHeaders>((resolve, reject) => {
-      reqStream.once('response', resolve)
-      reqStream.once('error', reject)
-    })
-
-    await new Promise((r) => reqStream.once('close', r))
-
-    return { headers, body: Buffer.concat(chunks).toString() }
-  } finally {
-    client.close()
-    await new Promise((r) => server.close(r))
-  }
-}
-
 /**
  * A stream body that never ends on its own, so it is only released by being destroyed.
  */
@@ -899,20 +846,29 @@ function createOpenStream() {
 
 async function requestHttp2(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
-): Promise<{ rstCode: number | undefined }> {
+  method = 'GET',
+): Promise<{ headers?: http2.IncomingHttpHeaders; body: string; rstCode: number | undefined }> {
   const server = http2.createServer(listener)
   await new Promise<void>((r) => server.listen(0, r))
 
   const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
 
   try {
-    const reqStream = client.request({ ':path': '/' })
+    const reqStream = client.request({ ':path': '/', ':method': method })
+    // a stream reset by the server errors; tests assert on `rstCode` instead
     reqStream.once('error', () => {})
-    reqStream.resume()
+
+    let headers: http2.IncomingHttpHeaders | undefined
+    reqStream.once('response', (responseHeaders) => {
+      headers = responseHeaders
+    })
+
+    const chunks: Buffer[] = []
+    reqStream.on('data', (chunk: Buffer) => chunks.push(chunk))
 
     await new Promise((r) => reqStream.once('close', r))
 
-    return { rstCode: reqStream.rstCode }
+    return { headers, body: Buffer.concat(chunks).toString(), rstCode: reqStream.rstCode }
   } finally {
     client.close()
     await new Promise((r) => server.close(r))

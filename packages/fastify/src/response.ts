@@ -49,15 +49,10 @@ export async function sendStandardResponse(
     })
 
     try {
-      // Before `reply.status` and `reply.header`: a throw then leaves the reply untouched,
-      // so fastify's error handler can still send a clean 500
+      // Before touching the reply, so a throw leaves it untouched
       const headers = toFastifyHeaders(resHeaders, 'stream' in reply.raw)
 
-      reply.status(standardResponse.status)
-
-      for (const key of Object.keys(headers)) {
-        reply.header(key, headers[key])
-      }
+      reply.status(standardResponse.status).headers(headers)
 
       // fastify pipes the stream body itself, no manual piping needed
       reply.send(resBody)
@@ -85,7 +80,8 @@ const HTTP2_CONNECTION_SPECIFIC_HEADERS = new Set([
 /**
  * Reject the headers Node only rejects once fastify commits the head: with a stream
  * body that happens inside fastify's pipe, out of the adapter's reach, and otherwise
- * fastify's error handler resends the stored headers and throws again.
+ * fastify's error handler resends the stored headers and throws again. Rejected here,
+ * before they are stored, the error handler can still send a clean 500.
  */
 function toFastifyHeaders(
   standardHeaders: StandardHeaders,
