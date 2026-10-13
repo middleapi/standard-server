@@ -24,3 +24,11 @@ updates:
         update-types:
           - minor
           - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      # gives a hijacked action release time to be caught before it is proposed
+      default-days: 7
