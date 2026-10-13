@@ -1,3 +1,5 @@
+import { PayloadTooLargeError } from '@standard-server/shared'
+
 import * as Body from './body'
 import * as Headers from './headers'
 import { toStandardLazyRequest } from './request'
@@ -38,7 +40,23 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardHeadersSpy).toBeCalledWith(request.headers)
 
     expect(toStandardBodySpy).toBeCalledTimes(1)
-    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json' })
+    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json', maxBodySize: undefined })
+  })
+
+  it('forwards maxBodySize to the body parser', async () => {
+    const request = new Request('https://example.com', {
+      method: 'POST',
+      body: JSON.stringify({ foo: 'bar' }),
+      headers: {
+        'content-type': 'application/json',
+      },
+    })
+
+    const body = toStandardLazyRequest(request, { maxBodySize: 4 }).resolveBody('json')
+
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json', maxBodySize: 4 })
+    await expect(body).rejects.toBeInstanceOf(PayloadTooLargeError)
   })
 
   it('headers is lazy and can override', async () => {

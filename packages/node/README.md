@@ -43,12 +43,12 @@ This package is the Node.js adapter for that model. It converts between native N
 
 The package exposes four groups of helpers:
 
-| Group                   | Exports                                                                                                                | Purpose                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                    | Adapt Node request and response objects to Standard Server         |
-| Body and event streams  | `toStandardBody()`, `toNodeHttpBody()`, `toAsyncIteratorObject()`, `toEventStream()`                                   | Parse incoming bodies and serialize outgoing bodies, including SSE |
-| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                             | Normalize Node request metadata and connection lifecycle state     |
-| Types and option shapes | `NodeHttpRequest`, `NodeHttpResponse`, `ToStandardBodyOptions`, `ToNodeHttpBodyOptions`, `SendStandardResponseOptions` | Type request/response inputs and serializer options                |
+| Group                   | Exports                                                                                                                                                | Purpose                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                                                    | Adapt Node request and response objects to Standard Server         |
+| Body and event streams  | `toStandardBody()`, `toNodeHttpBody()`, `toAsyncIteratorObject()`, `toEventStream()`                                                                   | Parse incoming bodies and serialize outgoing bodies, including SSE |
+| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                                                             | Normalize Node request metadata and connection lifecycle state     |
+| Types and option shapes | `NodeHttpRequest`, `NodeHttpResponse`, `ToStandardLazyRequestOptions`, `ToStandardBodyOptions`, `ToNodeHttpBodyOptions`, `SendStandardResponseOptions` | Type request/response inputs and serializer options                |
 
 Use these helpers when you want Standard Server handlers to run in Node runtimes such as `node:http`, `node:http2`, Express-style middleware, or frameworks that expose Node-compatible request and response objects.
 
@@ -94,6 +94,19 @@ createServer(async (req, res) => {
 
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
+
+### Limiting the body size
+
+The `json`, `url-search-params`, `form-data`, and `file` hints read the whole body into memory, and set no size limit by default. Pass `maxBodySize`, in bytes, to cap them:
+
+```ts
+const standardRequest = toStandardLazyRequest(req, res, { maxBodySize: 1024 * 1024 }) // 1 MiB
+```
+
+A larger body makes `resolveBody()` reject with a `PayloadTooLargeError` (from `@standard-server/shared`) whose `status` is `413`. A larger `content-length` is rejected before anything is read. Otherwise the bytes are counted as they arrive, and once they pass the limit the rest of the request is read and discarded instead of destroyed, so the connection can still carry your `413` response. `octet-stream` and `event-stream` bodies are never limited, since they resolve to streams you consume chunk by chunk. `toStandardBody()` accepts the same `maxBodySize` option.
+
+> [!NOTE]
+> The limit is opt-in because reverse proxies, platforms, and frameworks in front of the adapter often cap request bodies already. Set it when nothing in front of your handler does.
 
 ## Learn more
 

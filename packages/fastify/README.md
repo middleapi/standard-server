@@ -45,10 +45,10 @@ This package is the Fastify adapter for that model. It builds on [`@standard-ser
 
 The package exposes two helpers and their option shapes:
 
-| Group                   | Exports                                                                                                 | Purpose                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                     | Adapt Fastify request and reply objects to Standard Server |
-| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `SendStandardResponseOptions` | Type handler inputs and serializer options                 |
+| Group                   | Exports                                                                                                                                 | Purpose                                                    |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                                     | Adapt Fastify request and reply objects to Standard Server |
+| Types and option shapes | `AnyFastifyRequest`, `AnyFastifyReply`, `FastifyRequest`, `FastifyReply`, `ToStandardLazyRequestOptions`, `SendStandardResponseOptions` | Type handler inputs and serializer options                 |
 
 Both helpers accept `AnyFastifyRequest` and `AnyFastifyReply`, which are `FastifyRequest` and `FastifyReply` widened over every raw server. That is what lets the same call site work for `Fastify()`, `Fastify({ http2: true })`, typed route generics, hooks, and encapsulated plugins alike.
 
@@ -114,6 +114,26 @@ Register it inside an encapsulated plugin if you only want it to apply to the ro
 
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
+
+### Body size limit
+
+Fastify enforces its `bodyLimit` (1 MiB by default) only in the parsers that read the body for it. So the adapter applies the same limit to the bodies it parses itself: those behind the catch-all parser above, and those of `GET`, `HEAD`, and `TRACE` requests, which Fastify treats as bodyless. It takes the route's `bodyLimit`, which falls back to the server's.
+
+A larger body makes `resolveBody()` reject with a `PayloadTooLargeError` (from `@standard-server/shared`), and Fastify's error handler answers it with its `status`, `413 Payload Too Large`. A larger `content-length` is rejected before anything is read. Otherwise the bytes are counted as they arrive, and once they pass the limit the rest of the request is read and discarded instead of destroyed, so the connection can still carry the `413` response. `octet-stream` and `event-stream` bodies are never limited, since they resolve to streams you consume chunk by chunk.
+
+To accept larger bodies, raise the route's `bodyLimit`, or set the adapter's limit alone with `maxBodySize`:
+
+```ts
+// raises the limit for fastify's own parsers and the adapter alike
+fastify.all('/*', { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
+  // or sets the adapter's limit alone; `Infinity` lifts it
+  const standardRequest = toStandardLazyRequest(req, reply, { maxBodySize: 10 * 1024 * 1024 })
+  // ...
+})
+```
+
+> [!IMPORTANT]
+> Earlier versions read the bodies the adapter parses without any limit. They now get a `413` once larger than `bodyLimit`; pass `maxBodySize: Infinity` to opt out.
 
 ## Fastify behavior to be aware of
 

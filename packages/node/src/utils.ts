@@ -20,11 +20,7 @@ import type { NodeHttpResponse } from './types'
  * Fixed upstream in Node 26.10 (nodejs/node#62773); switch back to
  * `Readable.toWeb` once every supported Node release has the fix.
  *
- * Cancel destroys the source, except server requests, which are read to the
- * end and discarded, the way Node drains a body the handler never reads:
- * destroying an http1 request kills the socket its response shares, and an
- * unread body stalls on backpressure, blocking the next keep-alive request
- * (http1) or the response's `close` (http2).
+ * Cancel stops reading the source with `discardNodeReadable`.
  */
 export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array<ArrayBuffer>> {
   const iterator = stream[Symbol.asyncIterator]()
@@ -47,19 +43,35 @@ export function toWebReadableStream(stream: Readable): ReadableStream<Uint8Array
     },
     cancel(reason) {
       canceled = true
-
-      const isServerRequest =
-        (stream instanceof IncomingMessage && stream.method !== null) ||
-        stream instanceof Http2ServerRequest
-
-      if (isServerRequest) {
-        // Errors mean the request is already torn down (e.g. the client aborted)
-        void _drainIterator(iterator).catch(() => {})
-      } else {
-        stream.destroy(reason instanceof Error ? reason : undefined)
-      }
+      discardNodeReadable(stream, iterator, reason)
     },
   })
+}
+
+/**
+ * Stop reading a stream partway through, given the async iterator it's read with.
+ *
+ * Destroys the stream, except server requests, which are read to the end and
+ * discarded, the way Node drains a body the handler never reads: destroying an
+ * http1 request kills the socket its response shares, and an unread body stalls
+ * on backpressure, blocking the next keep-alive request (http1) or the
+ * response's `close` (http2).
+ */
+export function discardNodeReadable(
+  stream: Readable,
+  iterator: AsyncIterator<unknown>,
+  reason?: unknown,
+): void {
+  const isServerRequest =
+    (stream instanceof IncomingMessage && stream.method !== null) ||
+    stream instanceof Http2ServerRequest
+
+  if (isServerRequest) {
+    // Errors mean the request is already torn down (e.g. the client aborted)
+    void _drainIterator(iterator).catch(() => {})
+  } else {
+    stream.destroy(reason instanceof Error ? reason : undefined)
+  }
 }
 
 export function readableChunkToBytes(

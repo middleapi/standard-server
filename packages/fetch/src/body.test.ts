@@ -1,5 +1,5 @@
 import * as StandardServerModule from '@standard-server/core'
-import { isAsyncIteratorObject } from '@standard-server/shared'
+import { isAsyncIteratorObject, PayloadTooLargeError } from '@standard-server/shared'
 
 import { toFetchBody, toStandardBody } from './body'
 import * as EventStreamModule from './event-stream'
@@ -15,6 +15,61 @@ const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
 beforeEach(() => {
   vi.resetAllMocks()
 })
+
+const MULTIPART_HEAD = '--X\r\nContent-Disposition: form-data; name="a"\r\n\r\n'
+const MULTIPART_TAIL = '\r\n--X--\r\n'
+
+/**
+ * How to build and read back a valid body for each hint `maxBodySize` applies to,
+ * around a payload of `x`s.
+ */
+const LIMITED_BODIES = {
+  'json': {
+    contentType: 'application/json',
+    overhead: 2,
+    create: (payload: string) => JSON.stringify(payload),
+    read: async (body: any): Promise<string> => body,
+  },
+  'url-search-params': {
+    contentType: 'application/x-www-form-urlencoded',
+    overhead: 2,
+    create: (payload: string) => `a=${payload}`,
+    read: async (body: any): Promise<string> => body.get('a'),
+  },
+  'form-data': {
+    contentType: 'multipart/form-data; boundary=X',
+    overhead: MULTIPART_HEAD.length + MULTIPART_TAIL.length,
+    create: (payload: string) => `${MULTIPART_HEAD}${payload}${MULTIPART_TAIL}`,
+    read: async (body: any): Promise<string> => body.get('a'),
+  },
+  'file': {
+    contentType: 'application/pdf',
+    overhead: 0,
+    create: (payload: string) => payload,
+    read: async (body: any): Promise<string> => body.text(),
+  },
+} as const
+
+type LimitedHint = keyof typeof LIMITED_BODIES
+
+const LIMITED_HINTS = Object.keys(LIMITED_BODIES) as LimitedHint[]
+
+function limitedHeaders(hint: LimitedHint): Record<string, string> {
+  return { 'standard-server': hint, 'content-type': LIMITED_BODIES[hint].contentType }
+}
+
+/**
+ * A valid body of exactly `size` bytes for the hint, so only its size decides whether it parses.
+ */
+function createLimitedBody(hint: LimitedHint, size: number): Uint8Array {
+  const fixture = LIMITED_BODIES[hint]
+  return new TextEncoder().encode(fixture.create('x'.repeat(size - fixture.overhead)))
+}
+
+async function expectLimitedBody(hint: LimitedHint, body: unknown, size: number): Promise<void> {
+  const fixture = LIMITED_BODIES[hint]
+  expect(await fixture.read(body)).toBe('x'.repeat(size - fixture.overhead))
+}
 
 describe('toStandardBody', () => {
   it('json but empty body', async () => {
@@ -208,6 +263,155 @@ describe('toStandardBody', () => {
         .pipeThrough(new TextDecoderStream())
         .getReader()
       expect(await reader.read()).toEqual({ done: true, value: undefined })
+    })
+  })
+
+  describe('maxBodySize', () => {
+    const LIMIT = 1024
+    const CHUNK_SIZE = 256
+
+    /**
+     * A request streaming `body` in chunks as they're read, counting the bytes read from it.
+     */
+    function createStreamingRequest(
+      headers: Record<string, string>,
+      body: Uint8Array,
+    ): [request: Request, bytesRead: () => number, cancel: ReturnType<typeof vi.fn>] {
+      let bytesRead = 0
+      const cancel = vi.fn()
+
+      const stream = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            const chunk = body.subarray(bytesRead, bytesRead + CHUNK_SIZE)
+            bytesRead += chunk.length
+
+            if (chunk.length > 0) {
+              controller.enqueue(chunk)
+            } else {
+              controller.close()
+            }
+          },
+          cancel,
+        },
+        { highWaterMark: 0 }, // no read-ahead, so `bytesRead` is what the parser read
+      )
+
+      const request = new Request('https://example.com', {
+        method: 'POST',
+        body: stream,
+        headers,
+        duplex: 'half',
+      })
+
+      return [request, () => bytesRead, cancel]
+    }
+
+    describe.each(LIMITED_HINTS)('%s', (hint) => {
+      it('rejects a larger streamed body, reading at most one chunk past the limit', async () => {
+        const [request, bytesRead, cancel] = createStreamingRequest(
+          limitedHeaders(hint),
+          createLimitedBody(hint, 4096),
+        )
+
+        const result = toStandardBody(request, { maxBodySize: LIMIT })
+
+        await expect(result).rejects.toBeInstanceOf(PayloadTooLargeError)
+        await expect(result).rejects.toThrow('Body exceeds the size limit of 1024 bytes')
+        expect(bytesRead()).toBeLessThanOrEqual(LIMIT + CHUNK_SIZE)
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(cancel).toHaveBeenCalledWith(expect.any(PayloadTooLargeError))
+      })
+
+      it('rejects a larger content-length before reading', async () => {
+        const [request, bytesRead, cancel] = createStreamingRequest(
+          { ...limitedHeaders(hint), 'content-length': '4096' },
+          createLimitedBody(hint, 4096),
+        )
+
+        await expect(toStandardBody(request, { maxBodySize: LIMIT })).rejects.toBeInstanceOf(
+          PayloadTooLargeError,
+        )
+        expect(bytesRead()).toBe(0)
+        expect(cancel).not.toHaveBeenCalled()
+        expect(request.bodyUsed).toBe(false)
+      })
+
+      it('rejects a larger non-stream body', async () => {
+        const request = new Request('https://example.com', {
+          method: 'POST',
+          body: createLimitedBody(hint, 4096),
+          headers: limitedHeaders(hint),
+        })
+
+        await expect(toStandardBody(request, { maxBodySize: LIMIT })).rejects.toBeInstanceOf(
+          PayloadTooLargeError,
+        )
+      })
+
+      it.each([512, LIMIT])('parses a %d-byte body', async (size) => {
+        const body = createLimitedBody(hint, size)
+
+        const [streamed] = createStreamingRequest(limitedHeaders(hint), body)
+        await expectLimitedBody(hint, await toStandardBody(streamed, { maxBodySize: LIMIT }), size)
+
+        const [sized] = createStreamingRequest(
+          { ...limitedHeaders(hint), 'content-length': String(size) },
+          body,
+        )
+        await expectLimitedBody(hint, await toStandardBody(sized, { maxBodySize: LIMIT }), size)
+      })
+    })
+
+    it('keeps the file name and type', async () => {
+      const [request] = createStreamingRequest(
+        {
+          'standard-server': 'file',
+          'content-type': 'application/pdf',
+          'content-disposition': 'attachment; filename="foo.pdf"',
+        },
+        new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+      )
+
+      const file = (await toStandardBody(request, { maxBodySize: LIMIT })) as File
+
+      expect(file).toBeInstanceOf(File)
+      expect(file.name).toBe('foo.pdf')
+      expect(file.type).toBe('application/pdf')
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(
+        new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+      )
+    })
+
+    it('returns undefined for a json response without a body', async () => {
+      const response = new Response(null, {
+        headers: {
+          'content-type': 'application/json',
+        },
+      })
+
+      expect(await toStandardBody(response, { maxBodySize: LIMIT })).toBe(undefined)
+    })
+
+    it('does not limit the streamed hints', async () => {
+      const [octetStream] = createStreamingRequest(
+        { 'standard-server': 'octet-stream', 'content-length': '4096' },
+        new TextEncoder().encode('x'.repeat(4096)),
+      )
+      const stream = await toStandardBody(octetStream, { maxBodySize: LIMIT })
+
+      expect(stream).toBeInstanceOf(ReadableStream)
+      expect(await new Response(stream as ReadableStream).text()).toBe('x'.repeat(4096))
+
+      const event = `data: "${'x'.repeat(4096)}"\n\n`
+      const [eventStream] = createStreamingRequest(
+        { 'standard-server': 'event-stream', 'content-length': String(event.length) },
+        new TextEncoder().encode(event),
+      )
+      const iterator = (await toStandardBody(eventStream, { maxBodySize: LIMIT })) as any
+
+      expect(iterator).toSatisfy(isAsyncIteratorObject)
+      expect(await iterator.next()).toEqual({ done: false, value: 'x'.repeat(4096) })
     })
   })
 

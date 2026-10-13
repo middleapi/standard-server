@@ -1,15 +1,19 @@
 import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createServer } from 'node:http'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import type { StandardBody } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
-import { isAsyncIteratorObject } from '@standard-server/shared'
+import { isAsyncIteratorObject, PayloadTooLargeError } from '@standard-server/shared'
 import request from 'supertest'
 
+import type { ToStandardBodyOptions } from './body'
 import { toNodeHttpBody, toStandardBody } from './body'
 import * as EventStreamModule from './event-stream'
 import type { NodeHttpRequest } from './types'
@@ -26,6 +30,65 @@ const getFilenameFromContentDispositionSpy = vi.spyOn(
 beforeEach(() => {
   vi.clearAllMocks()
 })
+
+const MULTIPART_HEAD = '--X\r\nContent-Disposition: form-data; name="a"\r\n\r\n'
+const MULTIPART_TAIL = '\r\n--X--\r\n'
+
+/**
+ * How to build and read back a valid body for each hint `maxBodySize` applies to,
+ * around a payload of `x`s.
+ */
+const LIMITED_BODIES = {
+  'json': {
+    contentType: 'application/json',
+    overhead: 2,
+    create: (payload: string) => JSON.stringify(payload),
+    read: async (body: any): Promise<string> => body,
+  },
+  'url-search-params': {
+    contentType: 'application/x-www-form-urlencoded',
+    overhead: 2,
+    create: (payload: string) => `a=${payload}`,
+    read: async (body: any): Promise<string> => body.get('a'),
+  },
+  'form-data': {
+    contentType: 'multipart/form-data; boundary=X',
+    overhead: MULTIPART_HEAD.length + MULTIPART_TAIL.length,
+    create: (payload: string) => `${MULTIPART_HEAD}${payload}${MULTIPART_TAIL}`,
+    read: async (body: any): Promise<string> => body.get('a'),
+  },
+  'file': {
+    contentType: 'application/pdf',
+    overhead: 0,
+    create: (payload: string) => payload,
+    read: async (body: any): Promise<string> => body.text(),
+  },
+} as const
+
+type LimitedHint = keyof typeof LIMITED_BODIES
+
+const LIMITED_HINTS = Object.keys(LIMITED_BODIES) as LimitedHint[]
+
+function limitedHeaders(hint: LimitedHint): Record<string, string> {
+  return { 'standard-server': hint, 'content-type': LIMITED_BODIES[hint].contentType }
+}
+
+/**
+ * A valid body of exactly `size` bytes for the hint, so only its size decides whether it parses.
+ */
+function createLimitedBody(hint: LimitedHint, size: number): Buffer {
+  const fixture = LIMITED_BODIES[hint]
+  return Buffer.from(fixture.create('x'.repeat(size - fixture.overhead)))
+}
+
+async function expectLimitedBody(
+  hint: LimitedHint,
+  body: StandardBody,
+  size: number,
+): Promise<void> {
+  const fixture = LIMITED_BODIES[hint]
+  expect(await fixture.read(body)).toBe('x'.repeat(size - fixture.overhead))
+}
 
 describe('toStandardBody', () => {
   it('json but empty body', async () => {
@@ -323,6 +386,160 @@ describe('toStandardBody', () => {
     },
   )
 
+  describe('maxBodySize', () => {
+    const LIMIT = 1024
+    const CHUNK_SIZE = 256
+
+    /**
+     * A request streaming `body` in chunks as they're read, counting the bytes read from it.
+     * Without a content-length header, it's a chunked upload.
+     */
+    function createChunkedRequest(
+      headers: Record<string, string>,
+      body: Buffer,
+    ): [req: IncomingMessage, bytesRead: () => number] {
+      let bytesRead = 0
+
+      const req = new Readable({
+        highWaterMark: 0, // no read-ahead, so `bytesRead` is what the parser read
+        read() {
+          const chunk = body.subarray(bytesRead, bytesRead + CHUNK_SIZE)
+          bytesRead += chunk.length
+          this.push(chunk.length > 0 ? chunk : null)
+        },
+      }) as IncomingMessage
+      req.headers = headers
+
+      return [req, () => bytesRead]
+    }
+
+    describe.each(LIMITED_HINTS)('%s', (hint) => {
+      it('rejects a larger chunked body, reading at most one chunk past the limit', async () => {
+        const [req, bytesRead] = createChunkedRequest(
+          limitedHeaders(hint),
+          createLimitedBody(hint, 4096),
+        )
+
+        const result = toStandardBody(req, { maxBodySize: LIMIT })
+
+        await expect(result).rejects.toBeInstanceOf(PayloadTooLargeError)
+        await expect(result).rejects.toThrow('Body exceeds the size limit of 1024 bytes')
+        expect(bytesRead()).toBeLessThanOrEqual(LIMIT + CHUNK_SIZE)
+        expect(req.destroyed).toBe(true) // not a server request, so it's destroyed, not drained
+      })
+
+      it('rejects a larger content-length before reading', async () => {
+        const [req, bytesRead] = createChunkedRequest(
+          { ...limitedHeaders(hint), 'content-length': '4096' },
+          createLimitedBody(hint, 4096),
+        )
+
+        await expect(toStandardBody(req, { maxBodySize: LIMIT })).rejects.toBeInstanceOf(
+          PayloadTooLargeError,
+        )
+        expect(bytesRead()).toBe(0)
+        expect(req.destroyed).toBe(false)
+      })
+
+      it.each([512, LIMIT])('parses a %d-byte body', async (size) => {
+        const body = createLimitedBody(hint, size)
+
+        const [chunked] = createChunkedRequest(limitedHeaders(hint), body)
+        await expectLimitedBody(hint, await toStandardBody(chunked, { maxBodySize: LIMIT }), size)
+
+        const [sized] = createChunkedRequest(
+          { ...limitedHeaders(hint), 'content-length': String(size) },
+          body,
+        )
+        await expectLimitedBody(hint, await toStandardBody(sized, { maxBodySize: LIMIT }), size)
+      })
+
+      it('lets an http1 response send a 413 and keep the connection alive', async ({
+        onTestFinished,
+      }) => {
+        const server = createServer(async (req, res) => {
+          if (req.method === 'GET') {
+            res.end('ok')
+            return
+          }
+
+          try {
+            await toStandardBody(req, { maxBodySize: LIMIT })
+            res.end('parsed')
+          } catch (error) {
+            res.statusCode = (error as PayloadTooLargeError).status
+            res.end((error as Error).name)
+          }
+        })
+        onTestFinished(
+          () =>
+            new Promise<any>((r) => {
+              server.closeAllConnections()
+              server.close(r)
+            }),
+        )
+
+        await new Promise<void>((r) => server.listen(0, r))
+        const { port } = server.address() as AddressInfo
+
+        const body = createLimitedBody(hint, 4096)
+        const headers = Object.entries(limitedHeaders(hint))
+          .map(([name, value]) => `${name}: ${value}\r\n`)
+          .join('')
+
+        const socket = net.connect(port, '127.0.0.1')
+
+        // chunked, so the limit is hit while reading
+        socket.write(`POST / HTTP/1.1\r\nHost: x\r\n${headers}Transfer-Encoding: chunked\r\n\r\n`)
+        for (let offset = 0; offset < body.length; offset += CHUNK_SIZE) {
+          socket.write(`${CHUNK_SIZE.toString(16)}\r\n`)
+          socket.write(body.subarray(offset, offset + CHUNK_SIZE))
+          socket.write('\r\n')
+        }
+        socket.write('0\r\n\r\n')
+
+        // rejected from its content-length before reading
+        socket.write(
+          `POST / HTTP/1.1\r\nHost: x\r\n${headers}Content-Length: ${body.length}\r\n\r\n`,
+        )
+        socket.write(body)
+
+        // queued behind the rejected bodies, so it's only answered once they're off the wire
+        socket.write('GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n')
+
+        const received = await text(socket)
+
+        expect([...received.matchAll(/HTTP\/1\.1 (\d{3})/g)].map((match) => match[1])).toEqual([
+          '413',
+          '413',
+          '200',
+        ])
+        expect(received).toMatch(/PayloadTooLargeError[\s\S]*PayloadTooLargeError[\s\S]*ok$/)
+      })
+    })
+
+    it('does not limit the streamed hints', async () => {
+      const [octetStream] = createChunkedRequest(
+        { 'standard-server': 'octet-stream', 'content-length': '4096' },
+        Buffer.alloc(4096, 0x78),
+      )
+      const stream = await toStandardBody(octetStream, { maxBodySize: LIMIT })
+
+      expect(stream).toBeInstanceOf(ReadableStream)
+      expect(await new Response(stream as ReadableStream).text()).toBe('x'.repeat(4096))
+
+      const event = `data: "${'x'.repeat(4096)}"\n\n`
+      const [eventStream] = createChunkedRequest(
+        { 'standard-server': 'event-stream', 'content-length': String(event.length) },
+        Buffer.from(event),
+      )
+      const iterator = (await toStandardBody(eventStream, { maxBodySize: LIMIT })) as any
+
+      expect(iterator).toSatisfy(isAsyncIteratorObject)
+      expect(await iterator.next()).toEqual({ done: false, value: 'x'.repeat(4096) })
+    })
+  })
+
   describe('http2', () => {
     /**
      * Runs a request through a real http2 server, so `toStandardBody` receives an
@@ -332,6 +549,7 @@ describe('toStandardBody', () => {
       onTestFinished: (fn: () => Promise<any>) => void,
       headers: Record<string, string>,
       body: Buffer,
+      options?: ToStandardBodyOptions,
     ): Promise<[standardBody: StandardBody, streamedBytes: Uint8Array | undefined]> {
       let standardBody: StandardBody
       let streamedBytes: Uint8Array | undefined
@@ -339,7 +557,7 @@ describe('toStandardBody', () => {
 
       const server = http2.createServer(async (req, res) => {
         try {
-          standardBody = await toStandardBody(req)
+          standardBody = await toStandardBody(req, options)
 
           // a streaming body must be drained while the request is still alive
           if (standardBody instanceof ReadableStream) {
@@ -435,6 +653,39 @@ describe('toStandardBody', () => {
       expect(streamedBytes).toEqual(new Uint8Array(body))
       expect(toWebReadableStreamSpy).toHaveBeenCalledTimes(1)
       expect(result).toBe(toWebReadableStreamSpy.mock.results[0]!.value)
+    })
+
+    describe.each(LIMITED_HINTS)('maxBodySize: %s', (hint) => {
+      it('rejects a larger body, yet the response still closes the stream', async ({
+        onTestFinished,
+      }) => {
+        const body = createLimitedBody(hint, 4096)
+
+        // http2 has no chunked encoding: a body without content-length is counted as it's read
+        await expect(
+          http2Roundtrip(onTestFinished, limitedHeaders(hint), body, { maxBodySize: 1024 }),
+        ).rejects.toBeInstanceOf(PayloadTooLargeError)
+
+        await expect(
+          http2Roundtrip(
+            onTestFinished,
+            { ...limitedHeaders(hint), 'content-length': String(body.length) },
+            body,
+            { maxBodySize: 1024 },
+          ),
+        ).rejects.toBeInstanceOf(PayloadTooLargeError)
+      })
+
+      it('parses a body up to the limit', async ({ onTestFinished }) => {
+        const [result] = await http2Roundtrip(
+          onTestFinished,
+          limitedHeaders(hint),
+          createLimitedBody(hint, 1024),
+          { maxBodySize: 1024 },
+        )
+
+        await expectLimitedBody(hint, result, 1024)
+      })
     })
   })
 

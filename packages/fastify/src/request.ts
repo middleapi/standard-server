@@ -8,9 +8,21 @@ import {
 
 import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 
+export interface ToStandardLazyRequestOptions {
+  /**
+   * The maximum number of bytes read into memory for a body Fastify left unparsed, applied
+   * like the `maxBodySize` option of `toStandardBody` from `@standard-server/node`.
+   * Pass `Infinity` to lift the limit.
+   *
+   * @default the route's `bodyLimit`
+   */
+  maxBodySize?: number | undefined
+}
+
 export function toStandardLazyRequest(
   req: AnyFastifyRequest,
   reply: AnyFastifyReply,
+  options: ToStandardLazyRequestOptions = {},
 ): StandardLazyRequest {
   // DON'T lazy load signal, because we need register event listener as soon as possible
   // to make the signal abort in time
@@ -26,7 +38,12 @@ export function toStandardLazyRequest(
         return req.body
       }
 
-      return toStandardBody(req.raw, { hint })
+      // fastify only enforces `bodyLimit` in the parsers it reads the body with,
+      // which skip this body (a catch-all stream parser, or a bodyless method like GET)
+      return toStandardBody(req.raw, {
+        hint,
+        maxBodySize: options.maxBodySize ?? req.routeOptions.bodyLimit,
+      })
     },
     signal,
   }

@@ -1,9 +1,19 @@
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { text } from 'node:stream/consumers'
+
 import type { StandardLazyRequest } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
 
+import type { ToStandardLazyRequestOptions } from './request'
 import { toStandardLazyRequest } from './request'
+
+/**
+ * Fastify's default `bodyLimit`
+ */
+const DEFAULT_BODY_LIMIT = 1024 * 1024
 
 const toStandardBodySpy = vi.spyOn(StandardServerNode, 'toStandardBody')
 const toStandardMethodSpy = vi.spyOn(StandardServerNode, 'toStandardMethod')
@@ -109,7 +119,10 @@ describe('toStandardLazyRequest', () => {
     expectedBody.append('foo', 'bar')
 
     expect(toStandardBodySpy).toBeCalledTimes(1)
-    expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: undefined })
+    expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, {
+      hint: undefined,
+      maxBodySize: DEFAULT_BODY_LIMIT,
+    })
     expect(standardBody).toEqual(expectedBody)
   })
 
@@ -138,7 +151,171 @@ describe('toStandardLazyRequest', () => {
       .send('{"foo":"bar"}')
 
     expect(toStandardBodySpy).toBeCalledTimes(1)
-    expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, { hint: 'json' })
+    expect(toStandardBodySpy).toBeCalledWith(fastifyReq.raw, {
+      hint: 'json',
+      maxBodySize: DEFAULT_BODY_LIMIT,
+    })
     expect(standardBody).toEqual({ foo: 'bar' })
+  })
+
+  describe('body limit', () => {
+    const JSON_HEADERS = { 'content-type': 'application/json' }
+    const FILE_HEADERS = { 'content-type': 'application/pdf', 'standard-server': 'file' }
+
+    function jsonBody(size: number): Buffer {
+      return Buffer.from(JSON.stringify('x'.repeat(size - 2)))
+    }
+
+    function fileBody(size: number): Buffer {
+      return Buffer.alloc(size, 0x78)
+    }
+
+    /**
+     * Starts a server with `bodyLimit: 1024` whose routes resolve the body through the adapter.
+     */
+    async function listen(
+      onTestFinished: (fn: () => Promise<any>) => void,
+      options: {
+        catchAllParser: boolean
+        routeBodyLimit?: number
+        adapter?: ToStandardLazyRequestOptions
+      },
+    ): Promise<string> {
+      const fastify = Fastify({ bodyLimit: 1024 })
+      onTestFinished(() => fastify.close())
+
+      if (options.catchAllParser) {
+        fastify.removeAllContentTypeParsers()
+        fastify.addContentTypeParser('*', (req, payload, done) => {
+          done(null, undefined)
+        })
+      }
+
+      fastify.all('/*', { bodyLimit: options.routeBodyLimit }, async (req, reply) => {
+        await toStandardLazyRequest(req, reply, options.adapter).resolveBody()
+        return 'parsed'
+      })
+
+      await fastify.listen({ port: 0, host: '127.0.0.1' })
+      const { port } = fastify.server.address() as AddressInfo
+
+      return `http://127.0.0.1:${port}`
+    }
+
+    /**
+     * Sends a body in 256-byte chunks, with a content-length, or chunked encoding if `chunked`.
+     */
+    function send(
+      url: string,
+      method: string,
+      headers: Record<string, string>,
+      body: Buffer,
+      chunked = false,
+    ): Promise<[status: number, body: string]> {
+      return new Promise((resolve, reject) => {
+        const req = http.request(
+          url,
+          {
+            method,
+            headers: chunked
+              ? { ...headers, 'transfer-encoding': 'chunked' }
+              : { ...headers, 'content-length': String(body.length) },
+          },
+          async (res) => resolve([res.statusCode!, await text(res)]),
+        )
+        req.on('error', reject)
+
+        for (let offset = 0; offset < body.length; offset += 256) {
+          req.write(body.subarray(offset, offset + 256))
+        }
+        req.end()
+      })
+    }
+
+    describe.each([false, true])('chunked: %s', (chunked) => {
+      it('rejects a larger body with 413 behind a catch-all parser', async ({ onTestFinished }) => {
+        const url = await listen(onTestFinished, { catchAllParser: true })
+
+        const [fileStatus, fileResponse] = await send(
+          url,
+          'POST',
+          FILE_HEADERS,
+          fileBody(4096),
+          chunked,
+        )
+        expect(fileStatus).toBe(413)
+        expect(fileResponse).toContain('Body exceeds the size limit of 1024 bytes')
+
+        const [jsonStatus, jsonResponse] = await send(
+          url,
+          'POST',
+          JSON_HEADERS,
+          jsonBody(4096),
+          chunked,
+        )
+        expect(jsonStatus).toBe(413)
+        expect(jsonResponse).toContain('Body exceeds the size limit of 1024 bytes')
+
+        expect(toStandardBodySpy).toBeCalledTimes(2)
+        expect(toStandardBodySpy).toHaveBeenNthCalledWith(1, expect.anything(), {
+          hint: undefined,
+          maxBodySize: 1024,
+        })
+
+        expect(await send(url, 'POST', FILE_HEADERS, fileBody(512), chunked)).toEqual([
+          200,
+          'parsed',
+        ])
+        expect(await send(url, 'POST', JSON_HEADERS, jsonBody(512), chunked)).toEqual([
+          200,
+          'parsed',
+        ])
+      })
+
+      it('rejects a larger GET body with 413, which fastify leaves unparsed', async ({
+        onTestFinished,
+      }) => {
+        const url = await listen(onTestFinished, { catchAllParser: false })
+
+        const [status, response] = await send(url, 'GET', JSON_HEADERS, jsonBody(4096), chunked)
+        expect(status).toBe(413)
+        expect(response).toContain('Body exceeds the size limit of 1024 bytes')
+
+        expect(await send(url, 'GET', JSON_HEADERS, jsonBody(512), chunked)).toEqual([
+          200,
+          'parsed',
+        ])
+      })
+
+      it('prefers the route bodyLimit, then an explicit maxBodySize', async ({
+        onTestFinished,
+      }) => {
+        const routeUrl = await listen(onTestFinished, {
+          catchAllParser: true,
+          routeBodyLimit: 8192,
+        })
+        expect(await send(routeUrl, 'POST', FILE_HEADERS, fileBody(4096), chunked)).toEqual([
+          200,
+          'parsed',
+        ])
+
+        const unlimitedUrl = await listen(onTestFinished, {
+          catchAllParser: true,
+          adapter: { maxBodySize: Number.POSITIVE_INFINITY },
+        })
+        expect(await send(unlimitedUrl, 'POST', FILE_HEADERS, fileBody(4096), chunked)).toEqual([
+          200,
+          'parsed',
+        ])
+
+        const explicitUrl = await listen(onTestFinished, {
+          catchAllParser: true,
+          routeBodyLimit: 8192,
+          adapter: { maxBodySize: 256 },
+        })
+        const [status] = await send(explicitUrl, 'POST', FILE_HEADERS, fileBody(512), chunked)
+        expect(status).toBe(413)
+      })
+    })
   })
 })

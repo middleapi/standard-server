@@ -113,4 +113,48 @@ describe('http2', () => {
       expect(signal!.aborted).toBe(true)
     })
   })
+
+  it('answers a body over bodyLimit with 413', async ({ onTestFinished }) => {
+    const fastify = Fastify({ http2: true, bodyLimit: 1024 })
+    onTestFinished(() => fastify.close())
+
+    fastify.removeAllContentTypeParsers()
+    fastify.addContentTypeParser('*', (req, payload, done) => {
+      done(null, undefined)
+    })
+
+    fastify.all('/*', async (req, reply) => {
+      await toStandardLazyRequest(req, reply).resolveBody()
+      return 'parsed'
+    })
+
+    await fastify.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = fastify.server.address() as AddressInfo
+
+    const client = http2.connect(`http://127.0.0.1:${port}`)
+    onTestFinished(() => new Promise<void>((resolve) => client.close(resolve)))
+
+    // without a content-length, so the limit is hit while reading
+    const stream = client.request({
+      ':method': 'POST',
+      ':path': '/',
+      'content-type': 'application/json',
+    })
+
+    stream.end(JSON.stringify('x'.repeat(4096)))
+
+    const headers = await new Promise<http2.IncomingHttpHeaders>((resolve, reject) => {
+      stream.once('response', resolve)
+      stream.once('error', reject)
+    })
+
+    let text = ''
+    stream.setEncoding('utf8')
+    for await (const chunk of stream) {
+      text += chunk
+    }
+
+    expect(headers[':status']).toBe(413)
+    expect(text).toContain('Body exceeds the size limit of 1024 bytes')
+  })
 })

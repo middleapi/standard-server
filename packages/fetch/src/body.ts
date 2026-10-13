@@ -4,7 +4,12 @@ import {
   getFilenameFromContentDisposition,
   resolveStandardBodyHint,
 } from '@standard-server/core'
-import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
+import {
+  isAsyncIteratorObject,
+  parseEmptyableJSON,
+  PayloadTooLargeError,
+  stringifyJSON,
+} from '@standard-server/shared'
 
 import type { ToEventStreamOptions } from './event-stream'
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
@@ -14,6 +19,15 @@ export interface ToStandardBodyOptions {
    * Hints on how the body should be parsed.
    */
   hint?: StandardBodyHint | undefined
+
+  /**
+   * The maximum number of bytes read into memory for the `json`, `url-search-params`,
+   * `form-data` and `file` hints. A larger body rejects with a `PayloadTooLargeError`
+   * (status 413). Streamed hints (`octet-stream`, `event-stream`) are never limited.
+   *
+   * @default Infinity
+   */
+  maxBodySize?: number | undefined
 }
 
 /**
@@ -41,17 +55,19 @@ export async function toStandardBody(
     throw new TypeError('Failed to read body: body stream already read')
   }
 
+  const maxBodySize = options?.maxBodySize ?? Number.POSITIVE_INFINITY
+
   if (hint === 'json') {
-    const text = await re.text()
+    const text = await _limitBody(re, maxBodySize).text()
     return parseEmptyableJSON(text)
   }
 
   if (hint === 'form-data') {
-    return await re.formData()
+    return await _limitBody(re, maxBodySize).formData()
   }
 
   if (hint === 'url-search-params') {
-    const text = await re.text()
+    const text = await _limitBody(re, maxBodySize).text()
     return new URLSearchParams(text)
   }
 
@@ -66,9 +82,10 @@ export async function toStandardBody(
         ? getFilenameFromContentDisposition(contentDisposition)
         : undefined
 
-    const blob = await re.blob()
+    const blob = await _limitBody(re, maxBodySize).blob()
     return new File([blob], fileName ?? 'blob', {
-      type: blob.type,
+      // FIX: Bun leaves the type empty for the blob of a stream body, like the limited one
+      type: blob.type || (re.headers.get('content-type') ?? ''),
     })
   }
 
@@ -168,4 +185,60 @@ export function toFetchBody(
 
   headers['content-type'] = 'application/json'
   return [stringifyJSON(body), headers]
+}
+
+/**
+ * Wraps the body so reading it rejects with a `PayloadTooLargeError` once it exceeds
+ * `maxBodySize`: before any read for a larger `content-length`, otherwise as soon as the
+ * bytes read pass it, cancelling the source.
+ */
+function _limitBody(re: Request | Response, maxBodySize: number): Request | Response {
+  if (maxBodySize === Number.POSITIVE_INFINITY) {
+    return re
+  }
+
+  if (Number(re.headers.get('content-length')) > maxBodySize) {
+    throw _payloadTooLarge(maxBodySize)
+  }
+
+  const reader = re.body?.getReader()
+  let size = 0
+
+  const body =
+    reader &&
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          controller.close()
+          return
+        }
+
+        size += value.byteLength
+
+        if (size > maxBodySize) {
+          const error = _payloadTooLarge(maxBodySize)
+          // Errors mean the source is already torn down
+          void reader.cancel(error).catch(() => {})
+          throw error
+        }
+
+        controller.enqueue(value)
+      },
+      cancel(reason) {
+        return reader.cancel(reason)
+      },
+    })
+
+  // the content-type carries the multipart boundary and the blob type
+  const contentType = re.headers.get('content-type')
+
+  return new Response(body, {
+    headers: contentType === null ? undefined : { 'content-type': contentType },
+  })
+}
+
+function _payloadTooLarge(maxBodySize: number): PayloadTooLargeError {
+  return new PayloadTooLargeError(`Body exceeds the size limit of ${maxBodySize} bytes`)
 }

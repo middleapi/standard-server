@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import type { StandardLazyRequest } from '@standard-server/core'
+import { PayloadTooLargeError } from '@standard-server/shared'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -29,7 +30,7 @@ describe('toStandardLazyRequest', () => {
         expect(standardRequest.headers).toBe(req.headers)
 
         expect(toStandardBodySpy).toBeCalledTimes(1)
-        expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'json' })
+        expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'json', maxBodySize: undefined })
         expect(toAbortSignalSpy).toBeCalledTimes(1)
         expect(toAbortSignalSpy).toBeCalledWith(res)
         res.end()
@@ -44,5 +45,24 @@ describe('toStandardLazyRequest', () => {
     expect(standardRequest.url).toEqual('/hello?foo=bar')
     expect(standardRequest.method).toBe('POST')
     expect(standardRequest.signal?.aborted).toBe(false)
+  })
+
+  it('forwards maxBodySize to the body parser', async () => {
+    let req!: IncomingMessage
+    let error: unknown
+
+    await request(async (_req: IncomingMessage, res: ServerResponse) => {
+      req = _req
+      error = await toStandardLazyRequest(req, res, { maxBodySize: 4 })
+        .resolveBody('json')
+        .catch((e) => e)
+      res.end()
+    })
+      .post('/')
+      .send({ foo: 'bar' })
+
+    expect(toStandardBodySpy).toBeCalledTimes(1)
+    expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'json', maxBodySize: 4 })
+    expect(error).toBeInstanceOf(PayloadTooLargeError)
   })
 })
