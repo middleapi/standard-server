@@ -304,18 +304,20 @@ const filename = getFilenameFromContentDisposition(disposition)
 import { flattenStandardHeader, mergeStandardHeaders } from '@standard-server/core'
 
 const headers = mergeStandardHeaders(
-  { 'accept': 'application/json', 'set-cookie': ['a=1'] },
-  { 'set-cookie': 'b=2', 'vary': 'accept', 'warning': undefined },
+  { 'accept': 'application/json', 'set-cookie': ['a=1'], 'vary': 'accept' },
+  { 'set-cookie': 'b=2', 'vary': 'accept-encoding', 'warning': undefined },
 )
 // {
 //   accept: 'application/json',
 //   'set-cookie': ['a=1', 'b=2'],
-//   vary: 'accept',
+//   vary: ['accept', 'accept-encoding'],
 // }
 
-const cookieHeader = flattenStandardHeader(headers['set-cookie'])
-// 'a=1, b=2'
+const varyHeader = flattenStandardHeader(headers['vary'])
+// 'accept, accept-encoding'
 ```
+
+`flattenStandardHeader()` joins values with `, ` like `Headers.get()`, so never use it for `set-cookie`: each `Set-Cookie` value must be sent as its own header line, the way `toLambdaHeaders()` in `@standard-server/aws-lambda` keeps them in a separate `cookies` list.
 
 ### URL parsing
 
