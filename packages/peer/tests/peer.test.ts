@@ -13,27 +13,41 @@ import {
 } from '../src'
 import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 
+type Transfer = <T extends ClientPeerSendMessage | ServerPeerSendMessage>(
+  message: T,
+) => T | Promise<T>
+
 /**
- * Wires a ClientPeer and a ServerPeer together through the real codec,
- * simulating a full-duplex connection (e.g. a WebSocket) where every
- * message crosses the wire encoded.
+ * Sends a message across the wire through the real codec.
+ */
+const codecRoundTrip: Transfer = async (message) => {
+  const prefix = 'peer:'
+  const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
+  if (!decoded.matched) {
+    throw new Error('Failed to decode message on the wire')
+  }
+  return decoded.message as typeof message
+}
+
+/**
+ * Wires a ClientPeer and a ServerPeer together, simulating a full-duplex connection
+ * (e.g. a WebSocket) where every message crosses the wire through `transfer`:
+ * the real codec by default, or `structuredClone` for e.g. a MessagePort or Electron IPC.
  *
  * With `waitForRemote`, each send resolves only after the remote side handled the message,
  * so the remote's replies arrive while the send is still in flight.
  */
 function connect(
   handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
-  { waitForRemote = false } = {},
+  {
+    waitForRemote = false,
+    transfer = codecRoundTrip,
+  }: { waitForRemote?: boolean; transfer?: Transfer } = {},
 ): { client: ClientPeer; server: ServerPeer } {
-  const prefix = 'peer:'
   const wire = {} as { client: ClientPeer; server: ServerPeer }
 
   wire.client = new ClientPeerClass(async (message) => {
-    const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
-    if (!decoded.matched) {
-      throw new Error('Failed to decode message on the wire')
-    }
-    const handled = wire.server.message(decoded.message as ClientPeerSendMessage, handler)
+    const handled = wire.server.message(await transfer(message), handler)
     if (waitForRemote) {
       await handled
     } else {
@@ -42,11 +56,7 @@ function connect(
   })
 
   wire.server = new ServerPeerClass(async (message) => {
-    const decoded = decodePeerMessage(await encodePeerMessage(message, { prefix }), { prefix })
-    if (!decoded.matched) {
-      throw new Error('Failed to decode message on the wire')
-    }
-    const handled = wire.client.message(decoded.message as ServerPeerSendMessage)
+    const handled = wire.client.message(await transfer(message))
     if (waitForRemote) {
       await handled
     }
@@ -539,26 +549,6 @@ describe('peer integration (client <-> server over encoded wire)', () => {
   })
 })
 
-/**
- * Wires a ClientPeer and a ServerPeer together without the codec, posting each message through
- * the structured clone algorithm (e.g. a MessagePort or Electron IPC).
- */
-function connectByStructuredClone(
-  handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
-): { client: ClientPeer; server: ServerPeer } {
-  const wire = {} as { client: ClientPeer; server: ServerPeer }
-
-  wire.client = new ClientPeerClass(async (message) => {
-    void wire.server.message(structuredClone(message), handler).catch(() => {})
-  })
-
-  wire.server = new ServerPeerClass(async (message) => {
-    void wire.client.message(structuredClone(message))
-  })
-
-  return wire
-}
-
 describe('peer integration (client <-> server over structured clone)', () => {
   function expectStandalone(value: unknown, text: string): void {
     expect(value).toBeInstanceOf(Uint8Array)
@@ -572,21 +562,24 @@ describe('peer integration (client <-> server over structured clone)', () => {
     expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
 
     let requestBody: any
-    const { client } = connectByStructuredClone(async (request) => {
-      if (request.url === '/events') {
-        return {
-          status: 200,
-          headers: {},
-          body: (async function* () {
-            yield { chunk: Buffer.from('x') }
-            return [Buffer.from('done')]
-          })(),
+    const { client } = connect(
+      async (request) => {
+        if (request.url === '/events') {
+          return {
+            status: 200,
+            headers: {},
+            body: (async function* () {
+              yield { chunk: Buffer.from('x') }
+              return [Buffer.from('done')]
+            })(),
+          }
         }
-      }
 
-      requestBody = await request.resolveBody()
-      return { status: 200, headers: {}, body: { avatar: Buffer.from('hi') } }
-    })
+        requestBody = await request.resolveBody()
+        return { status: 200, headers: {}, body: { avatar: Buffer.from('hi') } }
+      },
+      { transfer: structuredClone },
+    )
 
     const response = await client.request({
       url: '/upload',

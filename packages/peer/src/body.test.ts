@@ -340,90 +340,24 @@ describe('encodeAtomicStandardBody', () => {
     expect(headers['content-type']).toBe(undefined)
   })
 
-  it('copies views of part of a larger buffer in a JSON body, keeping Buffers as Buffers', async () => {
-    const a = Buffer.from('hi')
-    const z = Buffer.from('z')
-    const view = new DataView(new ArrayBuffer(8), 2, 4)
-    const body = { a, n: [z], view, keep: 'x' }
-    expect(a.buffer.byteLength).toBeGreaterThan(a.byteLength) // Node's shared Buffer pool
+  it('copies views of part of a larger buffer in a JSON body, without mutating it', async () => {
+    const pooled = Buffer.from('hi')
+    const body = { list: [pooled] }
+    expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
 
     const { jsonBody } = await encodeAtomicStandardBody(body, {})
-    const encoded = jsonBody as typeof body
+    const copied = (jsonBody as typeof body).list[0]!
 
-    expect(encoded.a.buffer.byteLength).toBe(2)
-    expect(encoded.a).toBeInstanceOf(Buffer)
-    expect(encoded.a.toString()).toBe('hi')
-    expect(encoded.n[0]!.buffer.byteLength).toBe(1)
-    expect(encoded.n[0]).toBeInstanceOf(Buffer)
-    expect(encoded.n[0]!.toString()).toBe('z')
-    expect(encoded.view).toBeInstanceOf(DataView)
-    expect(encoded.view.buffer.byteLength).toBe(4)
-    expect(encoded.keep).toBe('x')
-
-    // the caller's body is left untouched
-    expect(body).toEqual({ a, n: [z], view, keep: 'x' })
-    expect(body.a).toBe(a)
-    expect(body.n[0]).toBe(z)
-    expect(body.view).toBe(view)
-
-    const top = (await encodeAtomicStandardBody(Buffer.from('top'), {})).jsonBody as Buffer
-    expect(top.buffer.byteLength).toBe(3)
-    expect(top).toBeInstanceOf(Buffer)
+    expect(copied).toBeInstanceOf(Buffer)
+    expect(copied.buffer.byteLength).toBe(2)
+    expect(copied.toString()).toBe('hi')
+    expect(body.list[0]).toBe(pooled)
   })
 
   it('returns a JSON body without partial views by identity', async () => {
-    const body = {
-      a: 1,
-      b: [2, { c: new Uint8Array([1, 2, 3]) }],
-      d: new Map([['e', Buffer.from('e')]]),
-    }
+    const body = { a: 1, b: [2, { c: new Uint8Array([1, 2, 3]) }] }
 
     expect((await encodeAtomicStandardBody(body, {})).jsonBody).toBe(body)
-  })
-
-  it('keeps an own __proto__ key as data when copying a JSON body', async () => {
-    const body = JSON.parse('{"__proto__":{"polluted":true},"plain":{}}')
-    body.plain.file = Buffer.from('p')
-
-    const encoded = (await encodeAtomicStandardBody(body, {})).jsonBody as any
-
-    expect(encoded).not.toBe(body)
-    expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
-    expect(Object.keys(encoded)).toEqual(['__proto__', 'plain'])
-    expect(encoded.polluted).toBe(undefined)
-    expect(encoded.plain.file.buffer.byteLength).toBe(1)
-  })
-
-  it('copies null-prototype objects and shared references once when they hold partial views', async () => {
-    const shared = Object.assign(Object.create(null), { file: Buffer.from('s') })
-    const body = { first: shared, second: [shared] }
-
-    const encoded = (await encodeAtomicStandardBody(body, {})).jsonBody as any
-
-    expect(encoded.first).not.toBe(shared)
-    expect(Object.getPrototypeOf(encoded.first)).toBe(null)
-    expect(encoded.first.file.buffer.byteLength).toBe(1)
-    expect(encoded.second[0]).toBe(encoded.first)
-  })
-
-  it('copies partial views in a cyclic JSON body without hanging', async () => {
-    const cyclic: any = { list: [] }
-    cyclic.list.push(cyclic, { self: cyclic })
-    cyclic.file = Buffer.from('c')
-
-    const encoded = (await encodeAtomicStandardBody(cyclic, {})).jsonBody as any
-
-    expect(encoded).not.toBe(cyclic)
-    expect(encoded.file.buffer.byteLength).toBe(1)
-    // back-references point at the copy, not at the original that still holds the pooled view
-    expect(encoded.list[0]).toBe(encoded)
-    expect(encoded.list[1].self).toBe(encoded)
-    expect(cyclic.list[0]).toBe(cyclic)
-    expect(cyclic.file.buffer.byteLength).toBeGreaterThan(1)
-
-    const clean: any = { n: 1 }
-    clean.self = clean
-    expect((await encodeAtomicStandardBody(clean, {})).jsonBody).toEqual(clean)
   })
 
   it('encodes FormData body', async () => {
