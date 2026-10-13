@@ -6,6 +6,7 @@ import http2 from 'node:http2'
 import type { AddressInfo } from 'node:net'
 import net from 'node:net'
 import Stream, { Readable } from 'node:stream'
+import { text } from 'node:stream/consumers'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import type { StandardResponse } from '@standard-server/core'
@@ -614,19 +615,16 @@ describe('sendStandardResponse', () => {
 
   describe('body stream fails mid-response', () => {
     it.each([
-      ['an event stream throws', () => createFailingEventStream(new Error('db down'))],
-      [
-        'a stream errors with an AbortError',
-        async () => createFailingStream(await createNodeAbortError()),
-      ],
-      ['a stream errors without a reason', () => createFailingStream(undefined)],
-      ['a stream errors with an Error', () => createFailingStream(new Error('db down'))],
-    ])('resets an http2 stream with INTERNAL_ERROR when %s', async (_, createBody) => {
-      const { body, error } = await createBody()
+      ['an event stream throws', () => new Error('db down'), createFailingEventStream],
+      ['a stream errors with an AbortError', createNodeAbortError, createFailingStream],
+      ['a stream errors without a reason', () => undefined, createFailingStream],
+      ['a stream errors with an Error', () => new Error('db down'), createFailingStream],
+    ])('resets an http2 stream with INTERNAL_ERROR when %s', async (_, createError, createBody) => {
+      const error = await createError()
       let sending: Promise<void> | undefined
 
       const server = http2.createServer((req, res) => {
-        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
+        sending = sendStandardResponse(res, { status: 200, headers: {}, body: createBody(error) })
         sending.catch(() => {})
       })
       await new Promise<void>((r) => server.listen(0, r))
@@ -658,10 +656,12 @@ describe('sendStandardResponse', () => {
 
         expect(reqStream.rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
 
-        // `Readable.fromWeb` turns a stream errored without a reason into an AbortError
-        await expect(sending).rejects.toSatisfy(
-          (reason) => reason === error || (error === undefined && isNodeAbortError(reason)),
-        )
+        if (error === undefined) {
+          // `Readable.fromWeb` turns a stream errored without a reason into an AbortError
+          await expect(sending).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' })
+        } else {
+          await expect(sending).rejects.toBe(error)
+        }
       } finally {
         client.close()
         await new Promise((r) => server.close(r))
@@ -671,20 +671,24 @@ describe('sendStandardResponse', () => {
     it('resets an http/1.0 connection, whose close-delimited body would otherwise read as complete', async ({
       onTestFinished,
     }) => {
-      const { body, error } = createFailingEventStream(new Error('db down'))
+      const error = new Error('db down')
       let sending: Promise<void> | undefined
 
       const server = http.createServer((req, res) => {
-        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
+        sending = sendStandardResponse(res, {
+          status: 200,
+          headers: {},
+          body: createFailingEventStream(error),
+        })
         sending.catch(() => {})
       })
       onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
       await new Promise<void>((r) => server.listen(0, r))
 
-      const response = await requestHttp10((server.address() as AddressInfo).port)
-
-      expect(response.error).toMatchObject({ code: 'ECONNRESET' })
+      await expect(requestHttp10((server.address() as AddressInfo).port)).rejects.toMatchObject({
+        code: 'ECONNRESET',
+      })
       await expect(sending).rejects.toBe(error)
     })
 
@@ -706,12 +710,11 @@ describe('sendStandardResponse', () => {
 
       await new Promise<void>((r) => server.listen(0, r))
 
-      const response = await requestHttp10((server.address() as AddressInfo).port)
+      const data = await requestHttp10((server.address() as AddressInfo).port)
 
-      expect(response.error).toBe(undefined)
-      expect(response.data).toMatch(/^HTTP\/1\.1 200 OK\r\n/)
-      expect(response.data).toContain('\r\nConnection: close\r\n')
-      expect(response.data).toMatch(/data: \{"row":1\}\n\nevent: close\n\n$/)
+      expect(data).toMatch(/^HTTP\/1\.1 200 OK\r\n/)
+      expect(data).toContain('\r\nConnection: close\r\n')
+      expect(data).toMatch(/data: \{"row":1\}\n\nevent: close\n\n$/)
       await expect(sending).resolves.toBeUndefined()
     })
   })
@@ -801,38 +804,25 @@ async function requestHttp2Head(
 /**
  * An event stream that sends a chunk, then throws.
  */
-function createFailingEventStream(error: Error): { body: AsyncIterator<unknown>; error: Error } {
-  return {
-    body: (async function* () {
-      yield { row: 1 }
-      await sleep(30)
-      throw error
-    })(),
-    error,
-  }
+function createFailingEventStream(error: unknown): AsyncIterator<unknown> {
+  return (async function* () {
+    yield { row: 1 }
+    await sleep(30)
+    throw error
+  })()
 }
 
 /**
  * A stream that sends a chunk, then errors with the given reason.
  */
-function createFailingStream(reason: unknown): { body: ReadableStream; error: unknown } {
-  let pulled = false
-
-  return {
-    body: new ReadableStream({
-      async pull(controller) {
-        if (!pulled) {
-          pulled = true
-          controller.enqueue(new TextEncoder().encode('chunk1;'))
-          return
-        }
-
-        await sleep(30)
-        controller.error(reason)
-      },
-    }),
-    error: reason,
-  }
+function createFailingStream(reason: unknown): ReadableStream {
+  return new ReadableStream({
+    async pull(controller) {
+      controller.enqueue(new TextEncoder().encode('chunk1;'))
+      await sleep(30)
+      controller.error(reason)
+    },
+  })
 }
 
 /**
@@ -848,31 +838,13 @@ async function createNodeAbortError(): Promise<Error> {
   )
 }
 
-function isNodeAbortError(error: unknown): boolean {
-  return (
-    error instanceof Error && error.name === 'AbortError' && (error as any).code === 'ABORT_ERR'
-  )
-}
-
 /**
  * Sends an HTTP/1.0 request, whose response is close-delimited: without a
  * content-length, its end is only marked by the server closing the connection.
  */
-async function requestHttp10(port: number): Promise<{ data: string; error?: Error }> {
+function requestHttp10(port: number): Promise<string> {
   const socket = net.connect(port, '127.0.0.1')
-
-  let data = ''
-  socket.setEncoding('utf8')
-  socket.on('data', (chunk: string) => {
-    data += chunk
-  })
-
   socket.write('GET / HTTP/1.0\r\nHost: localhost\r\n\r\n')
 
-  const error = await new Promise<Error | undefined>((resolve) => {
-    socket.once('error', resolve)
-    socket.once('close', () => resolve(undefined))
-  })
-
-  return { data, error }
+  return text(socket)
 }

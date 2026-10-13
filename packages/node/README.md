@@ -81,11 +81,12 @@ createServer(async (req, res) => {
   const standardRequest = toStandardLazyRequest(req, res)
   const standardResponse = await handle(standardRequest)
 
-  await sendStandardResponse(res, standardResponse, {/** options */})
+  // an unhandled rejection would crash the process
+  await sendStandardResponse(res, standardResponse, {/** options */}).catch(console.error)
 }).listen(3000)
 ```
 
-`sendStandardResponse()` resolves once the response is closed, and rejects if the underlying connection errors or the body stream fails mid-response. A failed body aborts the connection (an HTTP/2 `INTERNAL_ERROR` reset, a TCP reset on unencrypted HTTP/1), so clients cannot mistake the truncated body for a complete one. An `async` request listener that lets it reject causes an unhandled rejection, so catch it, for example to log it.
+`sendStandardResponse()` resolves once the response is closed, and rejects if the underlying connection errors or the body stream fails mid-response. A failed body aborts the connection (an HTTP/2 `INTERNAL_ERROR` reset, a TCP reset on unencrypted HTTP/1), so clients cannot mistake the truncated body for a complete one.
 
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.

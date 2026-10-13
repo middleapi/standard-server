@@ -119,8 +119,8 @@ export function destroyNodeHttpBody(
  * http2 resets the stream with `INTERNAL_ERROR`: the error is wrapped, because Node
  * resets with `CANCEL` for an `AbortError`, which Node's http2 client reads as a
  * normal end. http1 resets the socket, because closing it with a FIN is how a
- * close-delimited (HTTP/1.0) response ends successfully. TLS sockets can't be reset,
- * so they are only destroyed.
+ * close-delimited (HTTP/1.0) response ends successfully. Sockets that can't be reset
+ * (TLS, Unix socket) are only destroyed.
  */
 export function abortNodeHttpResponse(res: NodeHttpResponse, error: unknown): void {
   if (('stream' in res ? res.stream : res).destroyed) {
@@ -131,7 +131,7 @@ export function abortNodeHttpResponse(res: NodeHttpResponse, error: unknown): vo
     try {
       res.socket?.resetAndDestroy()
     } catch {
-      // ERR_INVALID_HANDLE_TYPE: not a TCP socket (e.g. TLS), destroyed below instead
+      // ERR_INVALID_HANDLE_TYPE: not a TCP socket (e.g. TLS, Unix socket)
     }
   }
 

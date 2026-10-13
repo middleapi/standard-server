@@ -62,18 +62,17 @@ export async function sendStandardResponse(
 
       if (typeof resBody === 'object') {
         // Runs before fastify's own handler, which ends a response whose headers are sent
-        // in a way clients can read as complete (http2, close-delimited http1). Before
-        // that, fastify still turns the failure into an error response.
+        // in a way clients can read as complete (http2, close-delimited http1).
         resBody.once('error', (error) => {
-          if (reply.raw.headersSent) {
-            // Otherwise fastify answers a route handler rejecting with this error by
-            // sending an error response, which throws an uncaught ERR_HTTP_HEADERS_SENT
-            // on http1.
-            reply.hijack()
-            // reject first: on http2 the abort's wrapping error also reaches `reject`
-            reject(error)
-            abortNodeHttpResponse(reply.raw, error)
+          if (!reply.raw.headersSent) {
+            return // fastify still turns the failure into an error response
           }
+
+          // Without it, a route handler rejecting with this error makes fastify send an
+          // error response, which throws an uncaught ERR_HTTP_HEADERS_SENT on http1.
+          reply.hijack()
+          reject(error)
+          abortNodeHttpResponse(reply.raw, error)
         })
       }
 

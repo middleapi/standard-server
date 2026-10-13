@@ -429,24 +429,28 @@ describe('destroyNodeHttpBody', () => {
 })
 
 describe('abortNodeHttpResponse', () => {
-  it.each([
-    ['an AbortError', () => createNodeAbortError()],
+  it.for<[string, () => unknown]>([
+    ['an AbortError', createNodeAbortError],
     ['no error', () => undefined],
     ['an Error', () => new Error('test')],
-  ])('resets an http2 stream with INTERNAL_ERROR on %s', async (_, createError) => {
-    const error = await createError()
-    let res: Http2ServerResponse | undefined
+  ])(
+    'resets an http2 stream with INTERNAL_ERROR on %s',
+    async ([, createError], { onTestFinished }) => {
+      const error = await createError()
+      let res: Http2ServerResponse | undefined
 
-    const server = http2.createServer((req, _res) => {
-      res = _res
-      res.write('chunk')
-      abortNodeHttpResponse(res, error)
-    })
-    await new Promise<void>((r) => server.listen(0, r))
+      const server = http2.createServer((req, _res) => {
+        res = _res
+        res.write('chunk')
+        abortNodeHttpResponse(res, error)
+      })
+      onTestFinished(() => new Promise<any>((r) => server.close(r)))
 
-    const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+      await new Promise<void>((r) => server.listen(0, r))
 
-    try {
+      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+      onTestFinished(() => client.close())
+
       const reqStream = client.request({ ':path': '/' })
       reqStream.once('error', () => {})
       reqStream.resume()
@@ -459,11 +463,8 @@ describe('abortNodeHttpResponse', () => {
       expect(getNodeResponseError(res!)).toEqual(
         new Error('Response body stream failed', { cause: error }),
       )
-    } finally {
-      client.close()
-      await new Promise((r) => server.close(r))
-    }
-  })
+    },
+  )
 
   it('resets an http1 socket, which a close-delimited response would read as complete', async ({
     onTestFinished,
@@ -480,11 +481,9 @@ describe('abortNodeHttpResponse', () => {
 
     await new Promise<void>((r) => server.listen(0, r))
 
-    const { error: clientError } = await requestHttp10(
-      connect((server.address() as AddressInfo).port, '127.0.0.1'),
-    )
-
-    expect(clientError).toMatchObject({ code: 'ECONNRESET' })
+    await expect(
+      requestHttp10(connect((server.address() as AddressInfo).port, '127.0.0.1')),
+    ).rejects.toMatchObject({ code: 'ECONNRESET' })
 
     expect(res!.destroyed).toBe(true)
     expect(getNodeResponseError(res!)).toEqual(
@@ -519,7 +518,7 @@ describe('abortNodeHttpResponse', () => {
         host: '127.0.0.1',
         rejectUnauthorized: false,
       }),
-    )
+    ).catch(() => {})
 
     expect(resetAndDestroy!.mock.results).toEqual([
       { type: 'throw', value: expect.objectContaining({ code: 'ERR_INVALID_HANDLE_TYPE' }) },
@@ -997,19 +996,8 @@ async function createNodeAbortError(): Promise<Error> {
  * Sends an HTTP/1.0 request, whose response is close-delimited: without a
  * content-length, its end is only marked by the server closing the connection.
  */
-async function requestHttp10(socket: Socket): Promise<{ data: string; error?: Error }> {
-  let data = ''
-  socket.setEncoding('utf8')
-  socket.on('data', (chunk: string) => {
-    data += chunk
-  })
-
+function requestHttp10(socket: Socket): Promise<string> {
   socket.write('GET / HTTP/1.0\r\nHost: localhost\r\n\r\n')
 
-  const error = await new Promise<Error | undefined>((resolve) => {
-    socket.once('error', resolve)
-    socket.once('close', () => resolve(undefined))
-  })
-
-  return { data, error }
+  return text(socket)
 }

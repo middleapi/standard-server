@@ -114,7 +114,7 @@ describe('http2', () => {
     })
   })
 
-  it.each([
+  it.for([
     [
       'an event stream',
       (error: Error) =>
@@ -126,30 +126,23 @@ describe('http2', () => {
     ],
     [
       'a stream',
-      (error: Error) => {
-        let pulled = false
-
-        return new ReadableStream({
+      (error: Error) =>
+        new ReadableStream({
           async pull(controller) {
-            if (!pulled) {
-              pulled = true
-              controller.enqueue(new TextEncoder().encode('chunk1;'))
-              return
-            }
-
+            controller.enqueue(new TextEncoder().encode('chunk1;'))
             await new Promise((r) => setTimeout(r, 30))
             controller.error(error)
           },
-        })
-      },
+        }),
     ],
-  ])(
+  ] as const)(
     'resets the stream with INTERNAL_ERROR when %s body fails mid-response',
-    async (_, createBody) => {
+    async ([, createBody], { onTestFinished }) => {
       const error = new Error('db down')
       let sending: Promise<void> | undefined
 
       const fastify = Fastify({ http2: true })
+      onTestFinished(() => fastify.close())
 
       fastify.get('/', async (req, reply) => {
         sending = sendStandardResponse(reply, { status: 200, headers: {}, body: createBody(error) })
@@ -158,29 +151,25 @@ describe('http2', () => {
       })
 
       const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+      onTestFinished(() => new Promise<void>((resolve) => client.close(resolve)))
 
-      try {
-        const stream = client.request({ ':path': '/' })
-        stream.once('error', () => {})
+      const stream = client.request({ ':path': '/' })
+      stream.once('error', () => {})
 
-        let text = ''
-        stream.setEncoding('utf8')
-        stream.on('data', (chunk: string) => {
-          text += chunk
-        })
+      let text = ''
+      stream.setEncoding('utf8')
+      stream.on('data', (chunk: string) => {
+        text += chunk
+      })
 
-        await new Promise((r) => stream.once('close', r))
+      await new Promise((r) => stream.once('close', r))
 
-        expect(text).not.toBe('')
+      expect(text).not.toBe('')
 
-        // fastify alone ends it with NO_ERROR, which http2 clients read as a complete body
-        expect(stream.rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
+      // fastify alone ends it with NO_ERROR, which http2 clients read as a complete body
+      expect(stream.rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
 
-        await expect(sending).rejects.toBe(error)
-      } finally {
-        client.close()
-        await fastify.close()
-      }
+      await expect(sending).rejects.toBe(error)
     },
   )
 })

@@ -90,7 +90,7 @@ fastify.all('/*', async (req, reply) => {
 await fastify.listen({ port: 3000 })
 ```
 
-`sendStandardResponse()` resolves once the response is closed, and rejects if the underlying connection errors or the body stream fails after the headers are sent. A failed body aborts the connection (an HTTP/2 `INTERNAL_ERROR` reset, a TCP reset on unencrypted HTTP/1), so clients cannot mistake the truncated body for a complete one, and hijacks the reply, so Fastify only logs the rejection instead of sending an error response. A hijacked reply no longer aborts Fastify's own `request.signal`; the `signal` from `toStandardLazyRequest()` still aborts. Do not return a value from the route handler afterwards — Fastify would try to send a second response.
+`sendStandardResponse()` resolves once the response is closed, and rejects if the underlying connection errors or the body stream fails after the headers are sent. A failed body aborts the connection (an HTTP/2 `INTERNAL_ERROR` reset, a TCP reset on unencrypted HTTP/1), so clients cannot mistake the truncated body for a complete one. Do not return a value from the route handler afterwards — Fastify would try to send a second response.
 
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.
@@ -131,7 +131,7 @@ Fastify owns the reply lifecycle, so a few of its rules apply to the response th
 
 - **JSON responses gain a charset.** Fastify rewrites any `content-type` whose media type contains `json` to include `; charset=utf-8`. The payload itself is never serialized twice, because the adapter always hands Fastify an already-encoded string or stream.
 - **`set-cookie` is merged, not replaced.** Cookies set by plugins such as `@fastify/cookie` are kept, and the ones on your `StandardResponse` are appended to them. Every other header is overwritten.
-- **Streams are managed by Fastify.** Streaming bodies are piped and destroyed by Fastify itself, including when the client aborts mid-response. A body that fails before the headers are sent still becomes Fastify's error response.
+- **Streams are managed by Fastify.** Streaming bodies are piped and destroyed by Fastify itself, including when the client aborts mid-response. A body that fails before the headers are sent still becomes Fastify's error response. Once they are sent, the adapter hijacks the reply instead, so Fastify logs the failure rather than sending a second response. A hijacked reply no longer aborts Fastify's own `request.signal`; the `signal` from `toStandardLazyRequest()` still aborts.
 
 ## Learn more
 

@@ -67,7 +67,6 @@ export async function sendStandardResponse(
         })
 
         resBody.once('error', (error) => {
-          // reject first: on http2 the abort's wrapping error also reaches `reject`
           reject(error)
           abortNodeHttpResponse(res, error)
         })

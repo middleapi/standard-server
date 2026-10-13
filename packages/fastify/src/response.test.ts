@@ -340,27 +340,24 @@ describe('sendStandardResponse', () => {
         {},
       ])
 
-      let thrownError: any
+      let sending: Promise<void> | undefined
       fastify.get('/', async (req, reply) => {
-        try {
-          await sendStandardResponse(reply, {
-            status: 207,
-            headers: {
-              'x-custom-header': 'custom-value',
-            },
-            async *body() {},
-          })
-        } catch (err) {
-          thrownError = err
-          // fastify must not try to send an error response once the headers are sent
-          throw err
-        }
+        sending = sendStandardResponse(reply, {
+          status: 207,
+          headers: {
+            'x-custom-header': 'custom-value',
+          },
+          async *body() {},
+        })
+
+        // the handler rejects, but fastify must not send an error response on the sent headers
+        await sending
       })
 
       await fastify.ready()
       await expect(request(fastify.server).get('/')).rejects.toMatchObject({ code: 'ECONNRESET' })
 
-      expect(thrownError).toBe(error)
+      await expect(sending).rejects.toBe(error)
     })
 
     it('error before the headers are sent', async ({ onTestFinished }) => {
