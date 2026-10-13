@@ -17,7 +17,7 @@ export function isStandardUrl(maybe: unknown): maybe is StandardUrl {
 }
 
 export function isStandardHeaders(maybe: unknown): maybe is StandardHeaders {
-  if (!isTypescriptObject(maybe)) {
+  if (!isTypescriptObject(maybe) || Array.isArray(maybe)) {
     return false
   }
 

@@ -76,6 +76,12 @@ describe('isPeerRequestMessage', () => {
       ),
     ).toBe(false)
   })
+
+  it('rejects array headers', () => {
+    expect(
+      isPeerRequestMessage(base({ kind: 'request', json: { url: '/path', headers: ['a', 'b'] } })),
+    ).toBe(false)
+  })
 })
 
 describe('isPeerResponseMessage', () => {
@@ -108,6 +114,12 @@ describe('isPeerResponseMessage', () => {
   it('rejects invalid headers', () => {
     expect(
       isPeerResponseMessage(base({ kind: 'response', json: { status: 200, headers: 'invalid' } })),
+    ).toBe(false)
+  })
+
+  it('rejects array headers', () => {
+    expect(
+      isPeerResponseMessage(base({ kind: 'response', json: { status: 200, headers: ['a', 'b'] } })),
     ).toBe(false)
   })
 })

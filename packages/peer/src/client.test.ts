@@ -253,6 +253,44 @@ describe('clientPeer', () => {
     })
   })
 
+  describe('headers', () => {
+    it('lowercases and merges headers received from the server', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      await peer.message(
+        makeResponseMessage(id, undefined, {
+          'Set-Cookie': 'a=1',
+          'set-cookie': 'b=2',
+          'X-Server': 'true',
+        }),
+      )
+
+      const response = await promise
+      expect(Object.getPrototypeOf(response.headers)).toBe(null)
+      expect(Object.entries(response.headers)).toEqual([
+        ['set-cookie', ['a=1', 'b=2']],
+        ['x-server', 'true'],
+      ])
+    })
+
+    it('parses the body with the normalized headers', async () => {
+      const { id, promise } = await requestAndGetId()
+
+      await peer.message({
+        id,
+        kind: 'response',
+        json: { headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'inline' } },
+        binary: new Uint8Array([104, 105]),
+      })
+
+      const response = await promise
+      const file = (await response.resolveBody()) as File
+      expect(file).toBeInstanceOf(File)
+      expect(file.type).toBe('text/plain')
+      expect(await file.text()).toBe('hi')
+    })
+  })
+
   describe('signal / abort', () => {
     async function abortWhileSendingRequest() {
       const requestSending = promiseWithResolvers<PeerRequestMessage>()

@@ -83,6 +83,11 @@ describe('isStandardHeaders', () => {
     expect(isStandardHeaders('string')).toBe(false)
     expect(isStandardHeaders(1)).toBe(false)
   })
+
+  it('rejects arrays', () => {
+    expect(isStandardHeaders([])).toBe(false)
+    expect(isStandardHeaders(['a', 'b'])).toBe(false)
+  })
 })
 
 describe('isStandardStatus', () => {

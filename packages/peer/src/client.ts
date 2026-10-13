@@ -11,6 +11,7 @@ import {
 
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
+import { toStandardHeaders } from './headers'
 import { OctetStreamTransmitter } from './octet-stream'
 import type {
   ClientPeerSendMessage,
@@ -210,7 +211,10 @@ export class ClientPeer {
     state.resolve = undefined
 
     try {
-      const decoded = toStandardBody(message, async (cleanupState) => {
+      // the body parser must see the same normalized headers as the consumer
+      const headers = toStandardHeaders(message.json.headers)
+      const normalizedMessage = { ...message, json: { ...message.json, headers } }
+      const decoded = toStandardBody(normalizedMessage, async (cleanupState) => {
         if (cleanupState.kind === 'cancelled') {
           await this.abortById(id, cleanupState.error)
         } else if (state.eventStreamMessageQueue || state.octetStreamMessageQueue) {
@@ -221,7 +225,7 @@ export class ClientPeer {
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
       resolve({
-        headers: message.json.headers ?? {},
+        headers,
         status: message.json.status ?? 200,
         resolveBody: decoded.resolveBody,
       })

@@ -1,4 +1,5 @@
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
+import { toFetchHeaders } from '@standard-server/fetch'
 import type { Queue } from '@standard-server/shared'
 import {
   AbortError,
@@ -7,6 +8,7 @@ import {
   sleep,
 } from '@standard-server/shared'
 
+import { decodePeerMessage } from './codec'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { ServerPeer } from './server'
 import type {
@@ -18,6 +20,7 @@ import type {
   PeerStreamCancelMessage,
   ServerPeerSendMessage,
 } from './types'
+import { isClientPeerSendMessage } from './validators'
 
 function makeRequestMessage(
   overrides: Partial<PeerRequestMessage['json']> = {},
@@ -201,6 +204,97 @@ describe('serverPeer', () => {
 
       expect(send).toHaveBeenCalledTimes(2)
       expect(send).toHaveBeenNthCalledWith(2, expect.objectContaining({ kind: 'cancel' }))
+    })
+  })
+
+  describe('headers', () => {
+    it('lowercases and merges headers received from the client', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      // decode from the wire, where JSON.parse keeps __proto__ as an own key
+      const { message } = decodePeerMessage(
+        '{"id":"1","kind":"request","json":{"url":"/x","headers":{"X-User-Id":"admin","x-user-id":"bob","Content-Type":"text/plain","__proto__":"proto"}}}',
+      )
+      expect(message && isClientPeerSendMessage(message)).toBe(true)
+      await peer.message(message as PeerRequestMessage, handler)
+
+      const req = handler.mock.calls[0]![0]
+      expect(Object.getPrototypeOf(req.headers)).toBe(null)
+      expect(Object.keys(req.headers)).toEqual(['x-user-id', 'content-type', '__proto__'])
+      expect(req.headers['x-user-id']).toEqual(['admin', 'bob'])
+      expect(req.headers['content-type']).toBe('text/plain')
+      expect(Object.getOwnPropertyDescriptor(req.headers, '__proto__')).toEqual({
+        value: 'proto',
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      })
+
+      // stripping a header by its lowercase name removes every copy of it
+      const h = { ...req.headers }
+      delete h['x-user-id']
+      expect(toFetchHeaders(h).get('x-user-id')).toBe(null)
+    })
+
+    it('keeps values unchanged when keys do not collide', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.message(
+        makeRequestMessage({
+          headers: { 'X-Single': 'a', 'x-one': ['b'], 'X-Empty': [], 'x-undefined': undefined },
+        }),
+        handler,
+      )
+
+      const req = handler.mock.calls[0]![0]
+      expect(Object.entries(req.headers)).toEqual([
+        ['x-single', 'a'],
+        ['x-one', ['b']],
+        ['x-empty', []],
+      ])
+    })
+
+    it('parses the body with the normalized headers', async () => {
+      const handler = vi.fn<HandlerFn>().mockResolvedValue(jsonResponse())
+
+      await peer.message(
+        makeRequestMessage(
+          {
+            headers: {
+              'Content-Type': 'image/png',
+              'Content-Disposition': 'attachment; filename="avatar.png"',
+            },
+          },
+          new Uint8Array([1, 2, 3]),
+        ),
+        handler,
+      )
+
+      const req = handler.mock.calls[0]![0]
+      const file = (await req.resolveBody()) as File
+      expect(file).toBeInstanceOf(File)
+      expect(file.type).toBe('image/png')
+      expect(file.name).toBe('avatar.png')
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    })
+
+    it('still treats an empty content-type as a streamed body', async () => {
+      const { handler, box } = deferredHandler()
+      const promise = peer.message(makeRequestMessage({ headers: { 'content-type': [] } }), handler)
+
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+      const request = handler.mock.calls[0]![0]
+      expect(request.headers).toEqual({ 'content-type': [] })
+      const body = (await request.resolveBody()) as ReadableStream<Uint8Array>
+      expect(body).toBeInstanceOf(ReadableStream)
+
+      await peer.message(makeOctetStreamMessage('1', true, new Uint8Array([1])), vi.fn())
+      const reader = body.getReader()
+      expect(await reader.read()).toEqual({ value: new Uint8Array([1]), done: false })
+      expect(await reader.read()).toEqual({ value: undefined, done: true })
+
+      box.resolve(jsonResponse())
+      await promise
     })
   })
 
