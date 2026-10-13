@@ -38,6 +38,63 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
 
+  describe('exposes the standard-server headers to cross-origin clients', () => {
+    it('file body', () => {
+      const response = toFetchResponse({
+        status: 200,
+        headers: {},
+        body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+      })
+
+      expect(response.headers.get('access-control-expose-headers')).toEqual(
+        'standard-server, content-disposition',
+      )
+    })
+
+    it('stream body', () => {
+      const response = toFetchResponse({ status: 200, headers: {}, body: new ReadableStream() })
+
+      expect(response.headers.get('access-control-expose-headers')).toEqual('standard-server')
+
+      const withFilename = toFetchResponse({
+        status: 200,
+        headers: { 'content-disposition': 'attachment; filename="foo.txt"' },
+        body: new ReadableStream(),
+      })
+
+      expect(withFilename.headers.get('access-control-expose-headers')).toEqual(
+        'standard-server, content-disposition',
+      )
+    })
+
+    it('merges into a value the handler set', () => {
+      const response = toFetchResponse({
+        status: 200,
+        headers: { 'access-control-expose-headers': 'x-custom-header' },
+        body: new Blob(['foo']),
+      })
+
+      expect(response.headers.get('access-control-expose-headers')).toEqual(
+        'x-custom-header, standard-server, content-disposition',
+      )
+    })
+
+    it('json body adds nothing', () => {
+      const response = toFetchResponse({ status: 200, headers: {}, body: { value: 123 } })
+
+      expect(response.headers.has('standard-server')).toBe(false)
+      expect(response.headers.has('access-control-expose-headers')).toBe(false)
+
+      const withExposed = toFetchResponse({
+        status: 200,
+        headers: { 'access-control-expose-headers': 'x-custom-header' },
+        body: { value: 123 },
+      })
+
+      expect(withExposed.headers.get('access-control-expose-headers')).toEqual('x-custom-header')
+    })
+  })
+
   describe('releases the body when the response cannot be built', () => {
     it('event-stream body when the status cannot have a body', async () => {
       const next = vi.fn(() => new Promise<never>(() => {}))
@@ -144,5 +201,82 @@ describe('toStandardLazyResponse', () => {
       await toStandardBodySpy.mock.results[0]!.value,
     )
     expect(toStandardBodySpy).toBeCalledTimes(1)
+  })
+})
+
+describe('cross-origin round trip', () => {
+  // the browser's CORS response filter: only safelisted and exposed headers stay readable
+  const SAFELISTED_HEADERS = [
+    'cache-control',
+    'content-language',
+    'content-length',
+    'content-type',
+    'expires',
+    'last-modified',
+    'pragma',
+  ]
+
+  function corsFilter(response: Response): Response {
+    const exposed = (response.headers.get('access-control-expose-headers') ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+
+    return new Response(response.body, {
+      status: response.status,
+      headers: [...response.headers].filter(
+        ([key]) => SAFELISTED_HEADERS.includes(key) || exposed.includes(key),
+      ),
+    })
+  }
+
+  it.each([
+    ['application/json', '{"isAdmin":true}'],
+    ['text/event-stream', 'data: {"injected":1}\n\nevent: error\ndata: {"code":"X"}\n\n'],
+    ['multipart/form-data;boundary=x', '--x--\r\n'],
+    ['application/x-www-form-urlencoded', 'a=1'],
+    ['image/png', 'png'],
+  ])('keeps a file typed %s a file', async (type, content) => {
+    const response = toFetchResponse({
+      status: 200,
+      headers: {},
+      body: new File([content], 'report.bin', { type }),
+    })
+
+    const body = await toStandardLazyResponse(corsFilter(response)).resolveBody()
+
+    expect(body).toBeInstanceOf(File)
+    expect((body as File).name).toEqual('report.bin')
+    expect((body as File).type).toEqual(type)
+    expect(await (body as File).text()).toEqual(content)
+  })
+
+  it('keeps a stream labelled application/json a stream', async () => {
+    const response = toFetchResponse({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"value":123}'))
+          controller.close()
+        },
+      }),
+    })
+
+    const body = await toStandardLazyResponse(corsFilter(response)).resolveBody()
+
+    expect(body).toBeInstanceOf(ReadableStream)
+    expect(await new Response(body as ReadableStream).text()).toEqual('{"value":123}')
+  })
+
+  it('falls back to content-header inference when the handler opts out', async () => {
+    const response = toFetchResponse({
+      status: 200,
+      headers: { 'access-control-expose-headers': [] },
+      body: new File(['{"isAdmin":true}'], 'report.bin', { type: 'application/json' }),
+    })
+
+    expect(await toStandardLazyResponse(corsFilter(response)).resolveBody()).toEqual({
+      isAdmin: true,
+    })
   })
 })

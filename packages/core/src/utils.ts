@@ -87,6 +87,49 @@ export function flattenStandardHeader(
   return header.join(', ')
 }
 
+/**
+ * The response headers that carry the body type and filename beyond what `content-type` can describe.
+ * Browsers hide them from cross-origin clients unless they are listed in `access-control-expose-headers`.
+ */
+export const STANDARD_SERVER_EXPOSED_HEADERS = ['standard-server', 'content-disposition'] as const
+
+/**
+ * Lists the {@link STANDARD_SERVER_EXPOSED_HEADERS} a response carries in `access-control-expose-headers`,
+ * so cross-origin browser clients can read them. A value already set is appended to, names it already
+ * lists are skipped, and an empty array opts out.
+ *
+ * Use it on responses only: the header means nothing on a request, and since it is not a CORS-safelisted
+ * request header, sending it fails the browser's preflight unless the server allows it.
+ */
+export function exposeStandardServerHeaders(headers: StandardHeaders): StandardHeaders {
+  const current = headers['access-control-expose-headers']
+
+  if (Array.isArray(current) && current.length === 0) {
+    return headers
+  }
+
+  const currentValue = flattenStandardHeader(current)
+  const exposed = new Set(currentValue?.split(',').map((name) => name.trim().toLowerCase()))
+  const missing = STANDARD_SERVER_EXPOSED_HEADERS.filter(
+    (name) => !exposed.has(name) && flattenStandardHeader(headers[name]) !== undefined,
+  )
+
+  if (missing.length === 0) {
+    return headers
+  }
+
+  const value = missing.join(', ')
+
+  return {
+    ...headers,
+    'access-control-expose-headers': Array.isArray(current)
+      ? [...current, value]
+      : currentValue?.trim()
+        ? `${currentValue}, ${value}`
+        : value,
+  }
+}
+
 const STANDARD_BODY_HINT_SET: ReadonlySet<string> = new Set<StandardBodyHint>([
   'json',
   'form-data',

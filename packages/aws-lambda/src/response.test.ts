@@ -168,11 +168,40 @@ describe('sendStandardResponse', () => {
     expect(metadataOf(responseStream)).toMatchObject({
       statusCode: 200,
       headers: {
+        'access-control-expose-headers': 'standard-server',
         'content-type': 'application/octet-stream',
+        'standard-server': 'octet-stream',
       },
     })
 
     expect(bodyOf(responseStream)).toBe('chunk1chunk2')
+    expect(responseStream.writableEnded).toBe(true)
+  })
+
+  it('chunked (file)', async () => {
+    const responseStream = createResponseStream()
+
+    await sendStandardResponse(responseStream, {
+      status: 200,
+      headers: {
+        'access-control-expose-headers': ['x-custom-header'],
+      },
+      body: new File(['foo'], 'foo.txt', { type: 'text/plain' }),
+    })
+
+    expect(metadataOf(responseStream)).toEqual({
+      statusCode: 200,
+      headers: {
+        'access-control-expose-headers': 'x-custom-header, standard-server, content-disposition',
+        'content-disposition': 'inline; filename="foo.txt"; filename*=utf-8\'\'foo.txt',
+        'content-length': '3',
+        'content-type': 'text/plain',
+        'standard-server': 'file',
+      },
+      cookies: [],
+    })
+
+    expect(bodyOf(responseStream)).toBe('foo')
     expect(responseStream.writableEnded).toBe(true)
   })
 

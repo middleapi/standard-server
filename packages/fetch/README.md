@@ -118,6 +118,9 @@ const payload = await standardResponse.resolveBody()
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
 
+> [!IMPORTANT]
+> In a browser, a response from another origin only shows the `standard-server` and `content-disposition` headers if the server lists them in `Access-Control-Expose-Headers`. Otherwise `resolveBody()` falls back to content-type inference: a `File` typed `application/json` resolves to the parsed JSON, and every `File` loses its name. `toFetchResponse()` and the other adapters' response senders list them for you, but a CORS middleware that sets its own list can replace that value. See [Cross-origin (CORS)](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#cross-origin-cors) in the core README.
+
 ## Learn more
 
 For the project overview and the shared contract this adapter implements, see the [core documentation](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md).

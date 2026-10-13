@@ -2,12 +2,14 @@ import { AsyncIteratorClass } from '@standard-server/shared'
 
 import {
   cancelStandardBody,
+  exposeStandardServerHeaders,
   flattenStandardHeader,
   generateContentDisposition,
   getFilenameFromContentDisposition,
   mergeStandardHeaders,
   parseStandardUrl,
   resolveStandardBodyHint,
+  STANDARD_SERVER_EXPOSED_HEADERS,
 } from './utils'
 
 beforeEach(() => {
@@ -526,6 +528,115 @@ describe('mergeStandardHeaders', () => {
 
     expect(Object.getPrototypeOf(merged)).toEqual(Object.prototype)
     expect(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value).toEqual(['1', '2'])
+  })
+})
+
+describe('exposeStandardServerHeaders', () => {
+  const FILE_HEADERS = {
+    'content-type': 'application/json',
+    'standard-server': 'file',
+    'content-disposition': 'inline; filename="report.bin"',
+  }
+
+  it('lists the standard-server and content-disposition headers', () => {
+    expect(STANDARD_SERVER_EXPOSED_HEADERS).toEqual(['standard-server', 'content-disposition'])
+  })
+
+  it('expose the headers the response carries', () => {
+    expect(exposeStandardServerHeaders(FILE_HEADERS)).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'standard-server, content-disposition',
+    })
+
+    expect(exposeStandardServerHeaders({ 'standard-server': 'octet-stream' })).toEqual({
+      'standard-server': 'octet-stream',
+      'access-control-expose-headers': 'standard-server',
+    })
+
+    expect(exposeStandardServerHeaders({ 'content-disposition': ['attachment'] })).toEqual({
+      'content-disposition': ['attachment'],
+      'access-control-expose-headers': 'content-disposition',
+    })
+  })
+
+  it('return the headers as is when neither header is present', () => {
+    const headers = {
+      'content-type': 'application/json',
+      'standard-server': undefined,
+      // an empty array removes the header, so there is nothing to expose
+      'content-disposition': [],
+      'access-control-expose-headers': 'x-custom',
+    }
+
+    expect(exposeStandardServerHeaders(headers)).toBe(headers)
+    expect(exposeStandardServerHeaders({})).toEqual({})
+  })
+
+  it('append to a value already set', () => {
+    expect(
+      exposeStandardServerHeaders({ ...FILE_HEADERS, 'access-control-expose-headers': 'x-a' }),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'x-a, standard-server, content-disposition',
+    })
+
+    expect(
+      exposeStandardServerHeaders({
+        ...FILE_HEADERS,
+        'access-control-expose-headers': ['x-a', 'x-b'],
+      }),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': ['x-a', 'x-b', 'standard-server, content-disposition'],
+    })
+
+    // `*` only covers requests without credentials, so the names are still listed
+    expect(
+      exposeStandardServerHeaders({ ...FILE_HEADERS, 'access-control-expose-headers': '*' }),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': '*, standard-server, content-disposition',
+    })
+
+    expect(
+      exposeStandardServerHeaders({ ...FILE_HEADERS, 'access-control-expose-headers': ' ' }),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'standard-server, content-disposition',
+    })
+  })
+
+  it('skip names already listed, case-insensitively', () => {
+    expect(
+      exposeStandardServerHeaders({
+        ...FILE_HEADERS,
+        'access-control-expose-headers': 'x-a, Standard-Server',
+      }),
+    ).toEqual({
+      ...FILE_HEADERS,
+      'access-control-expose-headers': 'x-a, Standard-Server, content-disposition',
+    })
+
+    const headers = {
+      ...FILE_HEADERS,
+      'access-control-expose-headers': ['CONTENT-DISPOSITION', ' standard-server '],
+    }
+
+    expect(exposeStandardServerHeaders(headers)).toBe(headers)
+  })
+
+  it('opt out with an empty array', () => {
+    const headers = { ...FILE_HEADERS, 'access-control-expose-headers': [] }
+
+    expect(exposeStandardServerHeaders(headers)).toBe(headers)
+  })
+
+  it('not mutate the given headers', () => {
+    const headers = { ...FILE_HEADERS, 'access-control-expose-headers': ['x-a'] }
+
+    exposeStandardServerHeaders(headers)
+
+    expect(headers).toEqual({ ...FILE_HEADERS, 'access-control-expose-headers': ['x-a'] })
   })
 })
 

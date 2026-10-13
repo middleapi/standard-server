@@ -174,6 +174,7 @@ describe('sendStandardResponse', () => {
 
     expect(res.status).toBe(207)
     expect(res.headers).toMatchObject({
+      'access-control-expose-headers': 'standard-server, content-disposition',
       'content-disposition': 'inline; filename="blob"; filename*=utf-8\'\'blob',
       'content-length': '3',
       'content-type': 'text/plain',
@@ -267,6 +268,7 @@ describe('sendStandardResponse', () => {
 
     expect(res.status).toBe(207)
     expect(res.headers).toMatchObject({
+      'access-control-expose-headers': 'standard-server',
       'content-type': 'application/octet-stream',
       'standard-server': 'octet-stream',
       'x-custom-header': 'custom-value',
@@ -296,6 +298,31 @@ describe('sendStandardResponse', () => {
     expect(res.headers).toHaveProperty('x-defined', 'value')
     // fastify turns `undefined` header values into empty strings
     expect(res.headers).not.toHaveProperty('x-undefined')
+  })
+
+  it('extends what a CORS plugin already exposed', async ({ onTestFinished }) => {
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    // what a CORS plugin like `@fastify/cors` with `exposedHeaders` does before the handler runs
+    fastify.addHook('onRequest', async (req, reply) => {
+      reply.header('access-control-expose-headers', 'x-total-count')
+    })
+
+    fastify.get('/', async (req, reply) => {
+      await sendStandardResponse(reply, {
+        status: 200,
+        headers: {},
+        body: new Blob(['foo']),
+      })
+    })
+
+    await fastify.ready()
+    const res = await request(fastify.server).get('/')
+
+    expect(res.headers['access-control-expose-headers']).toEqual(
+      'x-total-count, standard-server, content-disposition',
+    )
   })
 
   it('sends multi-value headers', async ({ onTestFinished }) => {

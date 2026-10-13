@@ -1,4 +1,5 @@
 import type { StandardResponse } from '@standard-server/core'
+import { exposeStandardServerHeaders } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
   canWriteToNodeResponse,
@@ -28,11 +29,12 @@ export async function sendStandardResponse(
   standardResponse: StandardResponse,
   options: SendStandardResponseOptions = {},
 ): Promise<void> {
-  const [resBody, resHeaders] = toNodeHttpBody(
+  const [resBody, bodyHeaders] = toNodeHttpBody(
     standardResponse.body,
     standardResponse.headers,
     options,
   )
+  const resHeaders = exposeStandardServerHeaders(bodyHeaders)
 
   return new Promise((resolve, reject) => {
     if (!canWriteToNodeResponse(responseStream)) {

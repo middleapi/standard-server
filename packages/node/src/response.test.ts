@@ -94,6 +94,7 @@ describe('sendStandardResponse', () => {
       'content-type': 'application/json',
       'x-custom-header': 'custom-value',
     })
+    expect(res.headers).not.toHaveProperty('access-control-expose-headers')
 
     expect(res.body).toEqual({ foo: 'bar' })
   })
@@ -133,9 +134,11 @@ describe('sendStandardResponse', () => {
 
     expect(res.status).toBe(207)
     expect(res.headers).toMatchObject({
+      'access-control-expose-headers': 'standard-server, content-disposition',
       'content-disposition': 'inline; filename="blob"; filename*=utf-8\'\'blob',
       'content-length': '3',
       'content-type': 'text/plain',
+      'standard-server': 'file',
       'x-custom-header': 'custom-value',
     })
 
@@ -236,11 +239,55 @@ describe('sendStandardResponse', () => {
 
     expect(res.status).toBe(207)
     expect(res.headers).toMatchObject({
+      'access-control-expose-headers': 'standard-server',
       'content-type': 'application/octet-stream',
+      'standard-server': 'octet-stream',
       'x-custom-header': 'custom-value',
     })
 
     expect(Buffer.from(res.body).toString()).toEqual('chunk1chunk2chunk3')
+  })
+
+  describe('access-control-expose-headers', () => {
+    async function send(standardResponse: StandardResponse, preset?: string) {
+      return request(async (req: IncomingMessage, res: ServerResponse) => {
+        if (preset !== undefined) {
+          // what a CORS middleware like `cors({ exposedHeaders })` does before the handler runs
+          res.setHeader('access-control-expose-headers', preset)
+        }
+
+        await sendStandardResponse(res, standardResponse)
+      }).get('/')
+    }
+
+    it('extends what a CORS middleware already exposed', async () => {
+      const res = await send({ status: 200, headers: {}, body: new Blob(['foo']) }, 'x-total-count')
+
+      expect(res.headers['access-control-expose-headers']).toEqual(
+        'x-total-count, standard-server, content-disposition',
+      )
+    })
+
+    it('extends the value the handler set instead of the middleware one', async () => {
+      const res = await send(
+        {
+          status: 200,
+          headers: { 'access-control-expose-headers': ['x-a'] },
+          body: new Blob(['foo']),
+        },
+        'x-total-count',
+      )
+
+      expect(res.headers['access-control-expose-headers']).toEqual(
+        'x-a, standard-server, content-disposition',
+      )
+    })
+
+    it('keeps the middleware value for a json body', async () => {
+      const res = await send({ status: 200, headers: {}, body: { foo: 'bar' } }, 'x-total-count')
+
+      expect(res.headers['access-control-expose-headers']).toEqual('x-total-count')
+    })
   })
 
   it('should destroy response when stream encounters an error during streaming', async () => {
@@ -392,6 +439,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).getHeader = vi.fn()
 
       const sendPromise = expect(sendStandardResponse(responseStream as any, res)).rejects.toThrow(
         'test',
@@ -450,6 +498,7 @@ describe('sendStandardResponse', () => {
       })
 
       ;(responseStream as any).setHeader = vi.fn()
+      ;(responseStream as any).getHeader = vi.fn()
 
       const sendPromise = sendStandardResponse(responseStream as any, res)
 
