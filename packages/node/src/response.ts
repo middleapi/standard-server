@@ -3,7 +3,12 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
 import type { NodeHttpResponse } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
+import {
+  abortNodeHttpResponse,
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+} from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
@@ -61,8 +66,11 @@ export async function sendStandardResponse(
           }
         })
 
-        // WARNING: errors that occur here are silently ignored and not reported to the Promise
-        resBody.once('error', (error) => res.destroy(error))
+        resBody.once('error', (error) => {
+          // reject first: on http2 the abort's wrapping error also reaches `reject`
+          reject(error)
+          abortNodeHttpResponse(res, error)
+        })
 
         resBody.pipe(res)
       }

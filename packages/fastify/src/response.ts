@@ -1,6 +1,7 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
+  abortNodeHttpResponse,
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
@@ -57,6 +58,23 @@ export async function sendStandardResponse(
         if (value !== undefined) {
           reply.header(key, value)
         }
+      }
+
+      if (typeof resBody === 'object') {
+        // Runs before fastify's own handler, which ends a response whose headers are sent
+        // in a way clients can read as complete (http2, close-delimited http1). Before
+        // that, fastify still turns the failure into an error response.
+        resBody.once('error', (error) => {
+          if (reply.raw.headersSent) {
+            // Otherwise fastify answers a route handler rejecting with this error by
+            // sending an error response, which throws an uncaught ERR_HTTP_HEADERS_SENT
+            // on http1.
+            reply.hijack()
+            // reject first: on http2 the abort's wrapping error also reaches `reject`
+            reject(error)
+            abortNodeHttpResponse(reply.raw, error)
+          }
+        })
       }
 
       // fastify pipes the stream body itself, no manual piping needed

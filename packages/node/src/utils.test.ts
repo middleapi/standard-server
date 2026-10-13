@@ -1,15 +1,24 @@
 import { Buffer } from 'node:buffer'
 import { appendFile, mkdtemp, rm } from 'node:fs/promises'
+import type { ServerResponse } from 'node:http'
 import http, { createServer } from 'node:http'
+import type { Http2ServerResponse } from 'node:http2'
 import http2, { createServer as createHttp2Server, connect as http2Connect } from 'node:http2'
-import type { AddressInfo } from 'node:net'
+import https from 'node:https'
+import type { AddressInfo, Socket } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
+import { setTimeout as sleep } from 'node:timers/promises'
+import tls from 'node:tls'
+
+import { generate } from 'selfsigned'
+import type { MockInstance } from 'vitest'
 
 import {
+  abortNodeHttpResponse,
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
@@ -419,6 +428,182 @@ describe('destroyNodeHttpBody', () => {
   })
 })
 
+describe('abortNodeHttpResponse', () => {
+  it.each([
+    ['an AbortError', () => createNodeAbortError()],
+    ['no error', () => undefined],
+    ['an Error', () => new Error('test')],
+  ])('resets an http2 stream with INTERNAL_ERROR on %s', async (_, createError) => {
+    const error = await createError()
+    let res: Http2ServerResponse | undefined
+
+    const server = http2.createServer((req, _res) => {
+      res = _res
+      res.write('chunk')
+      abortNodeHttpResponse(res, error)
+    })
+    await new Promise<void>((r) => server.listen(0, r))
+
+    const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
+
+    try {
+      const reqStream = client.request({ ':path': '/' })
+      reqStream.once('error', () => {})
+      reqStream.resume()
+
+      await new Promise((r) => reqStream.once('close', r))
+
+      // Node resets with CANCEL for an AbortError, which its clients read as a normal end
+      expect(reqStream.rstCode).toBe(http2.constants.NGHTTP2_INTERNAL_ERROR)
+
+      expect(getNodeResponseError(res!)).toEqual(
+        new Error('Response body stream failed', { cause: error }),
+      )
+    } finally {
+      client.close()
+      await new Promise((r) => server.close(r))
+    }
+  })
+
+  it('resets an http1 socket, which a close-delimited response would read as complete', async ({
+    onTestFinished,
+  }) => {
+    const error = new Error('test')
+    let res: ServerResponse | undefined
+
+    const server = http.createServer((req, _res) => {
+      res = _res
+      res.write('chunk')
+      abortNodeHttpResponse(res, error)
+    })
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    await new Promise<void>((r) => server.listen(0, r))
+
+    const { error: clientError } = await requestHttp10(
+      connect((server.address() as AddressInfo).port, '127.0.0.1'),
+    )
+
+    expect(clientError).toMatchObject({ code: 'ECONNRESET' })
+
+    expect(res!.destroyed).toBe(true)
+    expect(getNodeResponseError(res!)).toEqual(
+      new Error('Response body stream failed', { cause: error }),
+    )
+  })
+
+  it('destroys a TLS socket, which cannot be reset', async ({ onTestFinished }) => {
+    const { cert, private: key } = await generate([{ name: 'commonName', value: 'localhost' }], {
+      keyType: 'ec',
+    })
+
+    const error = new Error('test')
+    let res: ServerResponse | undefined
+    let socket: Socket | undefined
+    let resetAndDestroy: MockInstance | undefined
+
+    const server = https.createServer({ cert, key }, (req, _res) => {
+      res = _res
+      socket = res.socket!
+      res.write('chunk')
+      resetAndDestroy = vi.spyOn(socket, 'resetAndDestroy')
+      abortNodeHttpResponse(res, error)
+    })
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    await new Promise<void>((r) => server.listen(0, r))
+
+    await requestHttp10(
+      tls.connect({
+        port: (server.address() as AddressInfo).port,
+        host: '127.0.0.1',
+        rejectUnauthorized: false,
+      }),
+    )
+
+    expect(resetAndDestroy!.mock.results).toEqual([
+      { type: 'throw', value: expect.objectContaining({ code: 'ERR_INVALID_HANDLE_TYPE' }) },
+    ])
+
+    expect(res!.destroyed).toBe(true)
+    expect(socket!.destroyed).toBe(true)
+    expect(getNodeResponseError(res!)).toEqual(
+      new Error('Response body stream failed', { cause: error }),
+    )
+  })
+
+  it('does nothing when the http1 response is already destroyed', async ({ onTestFinished }) => {
+    const server = http.createServer()
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    const handled = new Promise<void>((resolve, reject) => {
+      server.on('request', (req, res) => {
+        try {
+          const socket = res.socket!
+
+          res.destroy()
+
+          const destroy = vi.spyOn(res, 'destroy')
+          const resetAndDestroy = vi.spyOn(socket, 'resetAndDestroy')
+
+          abortNodeHttpResponse(res, new Error('test'))
+
+          expect(destroy).not.toHaveBeenCalled()
+          expect(resetAndDestroy).not.toHaveBeenCalled()
+          expect(getNodeResponseError(res)).toBe(undefined)
+
+          resolve()
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const port = (server.address() as AddressInfo).port
+
+    http.get(`http://localhost:${port}`, (res) => res.resume()).once('error', () => {})
+
+    await handled
+  })
+
+  it('does nothing when the http2 stream is already destroyed', async ({ onTestFinished }) => {
+    const server = http2.createServer()
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    const handled = new Promise<void>((resolve, reject) => {
+      server.on('request', (req, res) => {
+        try {
+          res.stream.destroy()
+
+          const destroy = vi.spyOn(res, 'destroy')
+
+          abortNodeHttpResponse(res, new Error('test'))
+
+          expect(destroy).not.toHaveBeenCalled()
+          expect(getNodeResponseError(res)).toBe(null)
+
+          resolve()
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const port = (server.address() as AddressInfo).port
+
+    const client = http2.connect(`http://localhost:${port}`)
+    onTestFinished(() => client.close())
+
+    const reqStream = client.request({ ':path': '/' })
+    reqStream.once('error', () => {})
+    reqStream.resume()
+
+    await handled
+  })
+})
+
 describe('toWebReadableStream', () => {
   /**
    * Below the 256 KiB flood chunk, so the consumer cancels on its first read
@@ -794,3 +979,37 @@ describe('toWebReadableStream', () => {
     expect(crashes).toEqual([])
   })
 })
+
+/**
+ * Node resets an http2 stream with CANCEL for its own `AbortError` class only,
+ * e.g. one thrown by `timers/promises`, `events.on` or `Readable.fromWeb`.
+ */
+async function createNodeAbortError(): Promise<Error> {
+  return sleep(0, undefined, { signal: AbortSignal.abort() }).then(
+    () => {
+      throw new Error('Expected an AbortError')
+    },
+    (error: Error) => error,
+  )
+}
+
+/**
+ * Sends an HTTP/1.0 request, whose response is close-delimited: without a
+ * content-length, its end is only marked by the server closing the connection.
+ */
+async function requestHttp10(socket: Socket): Promise<{ data: string; error?: Error }> {
+  let data = ''
+  socket.setEncoding('utf8')
+  socket.on('data', (chunk: string) => {
+    data += chunk
+  })
+
+  socket.write('GET / HTTP/1.0\r\nHost: localhost\r\n\r\n')
+
+  const error = await new Promise<Error | undefined>((resolve) => {
+    socket.once('error', resolve)
+    socket.once('close', () => resolve(undefined))
+  })
+
+  return { data, error }
+}

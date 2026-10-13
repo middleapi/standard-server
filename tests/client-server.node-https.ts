@@ -22,7 +22,8 @@ export function createNodeHttpsClientServerTest(): ClientServerTest {
       const standardRequest = toStandardLazyRequest(req, res)
       const standardResponse = await handler(standardRequest)
 
-      await sendStandardResponse(res, standardResponse)
+      // rejects when the body stream fails mid-response
+      await sendStandardResponse(res, standardResponse).catch(() => {})
     })
 
     await new Promise<void>((resolve) => server.listen(0, resolve))

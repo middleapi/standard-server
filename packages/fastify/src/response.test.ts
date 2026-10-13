@@ -1,5 +1,7 @@
 import { Buffer } from 'node:buffer'
 import http2 from 'node:http2'
+import type { AddressInfo } from 'node:net'
+import net from 'node:net'
 import { Readable, Writable } from 'node:stream'
 
 import FastifyCookie from '@fastify/cookie'
@@ -323,31 +325,114 @@ describe('sendStandardResponse', () => {
       const fastify = Fastify()
       onTestFinished(() => fastify.close())
 
+      const error = new Error('foo')
+
       toNodeHttpBodySpy.mockReturnValueOnce([
         Readable.fromWeb(
           new ReadableStream({
             async pull(controller) {
               controller.enqueue(new TextEncoder().encode('foo'))
               await new Promise((r) => setTimeout(r, 100))
-              controller.error(new Error('foo'))
+              controller.error(error)
             },
           }),
         ),
         {},
       ])
 
+      let thrownError: any
       fastify.get('/', async (req, reply) => {
-        await sendStandardResponse(reply, {
+        try {
+          await sendStandardResponse(reply, {
+            status: 207,
+            headers: {
+              'x-custom-header': 'custom-value',
+            },
+            async *body() {},
+          })
+        } catch (err) {
+          thrownError = err
+          // fastify must not try to send an error response once the headers are sent
+          throw err
+        }
+      })
+
+      await fastify.ready()
+      await expect(request(fastify.server).get('/')).rejects.toMatchObject({ code: 'ECONNRESET' })
+
+      expect(thrownError).toBe(error)
+    })
+
+    it('error before the headers are sent', async ({ onTestFinished }) => {
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      toNodeHttpBodySpy.mockReturnValueOnce([
+        Readable.fromWeb(
+          new ReadableStream(
+            {
+              pull(controller) {
+                controller.error(new Error('foo'))
+              },
+            },
+            // only pull once fastify reads the body, not while the stream is created
+            { highWaterMark: 0 },
+          ),
+        ),
+        {},
+      ])
+
+      let sending: Promise<void> | undefined
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
           status: 207,
           headers: {
             'x-custom-header': 'custom-value',
           },
           async *body() {},
         })
+
+        await sending
       })
 
       await fastify.ready()
-      await expect(request(fastify.server).get('/')).rejects.toThrow()
+      const res = await request(fastify.server).get('/')
+
+      // fastify still turns the failure into an error response
+      expect(res.status).toBe(500)
+      expect(res.body).toMatchObject({ message: 'foo' })
+      await expect(sending).resolves.toBeUndefined()
+    })
+
+    it('error while pulling stream over http/1.0', async ({ onTestFinished }) => {
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      const error = new Error('db down')
+
+      let sending: Promise<void> | undefined
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body: (async function* () {
+            yield { row: 1 }
+            await new Promise((r) => setTimeout(r, 30))
+            throw error
+          })(),
+        })
+
+        await sending
+      })
+
+      await fastify.listen({ port: 0, host: '127.0.0.1' })
+
+      // the close-delimited body would read as complete if the connection were closed with a FIN
+      const response = await requestHttp10((fastify.server.address() as AddressInfo).port)
+
+      expect(response.data).toMatch(/^HTTP\/1\.1 200 OK\r\n/)
+      expect(response.error).toMatchObject({ code: 'ECONNRESET' })
+      await expect(sending).rejects.toBe(error)
     })
 
     it('request aborted while pulling stream', async ({ onTestFinished }) => {
@@ -803,4 +888,27 @@ async function requestHttp2Head(
   } finally {
     client.close()
   }
+}
+
+/**
+ * Sends an HTTP/1.0 request, whose response is close-delimited: without a
+ * content-length, its end is only marked by the server closing the connection.
+ */
+async function requestHttp10(port: number): Promise<{ data: string; error?: Error }> {
+  const socket = net.connect(port, '127.0.0.1')
+
+  let data = ''
+  socket.setEncoding('utf8')
+  socket.on('data', (chunk: string) => {
+    data += chunk
+  })
+
+  socket.write('GET / HTTP/1.0\r\nHost: localhost\r\n\r\n')
+
+  const error = await new Promise<Error | undefined>((resolve) => {
+    socket.once('error', resolve)
+    socket.once('close', () => resolve(undefined))
+  })
+
+  return { data, error }
 }

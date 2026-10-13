@@ -47,7 +47,8 @@ export function createExpressjsClientServerTest(
     const standardRequest = toStandardLazyRequest(req, res)
     const standardResponse = await handler(standardRequest)
 
-    await sendStandardResponse(res, standardResponse)
+    // rejects when the body stream fails mid-response
+    await sendStandardResponse(res, standardResponse).catch(() => {})
   })
 
   const server = app.listen(0)

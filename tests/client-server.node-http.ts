@@ -15,7 +15,8 @@ export function createNodeHttpClientServerTest(): ClientServerTest {
     const standardRequest = toStandardLazyRequest(req, res)
     const standardResponse = await handler(standardRequest)
 
-    await sendStandardResponse(res, standardResponse)
+    // rejects when the body stream fails mid-response
+    await sendStandardResponse(res, standardResponse).catch(() => {})
   })
 
   server.listen(0)

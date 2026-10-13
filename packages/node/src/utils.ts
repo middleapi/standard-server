@@ -111,3 +111,29 @@ export function destroyNodeHttpBody(
     body.destroy((error ?? undefined) as Error | undefined)
   }
 }
+
+/**
+ * Abort a response whose body failed mid-stream, in a way no client reads as a
+ * complete response.
+ *
+ * http2 resets the stream with `INTERNAL_ERROR`: the error is wrapped, because Node
+ * resets with `CANCEL` for an `AbortError`, which Node's http2 client reads as a
+ * normal end. http1 resets the socket, because closing it with a FIN is how a
+ * close-delimited (HTTP/1.0) response ends successfully. TLS sockets can't be reset,
+ * so they are only destroyed.
+ */
+export function abortNodeHttpResponse(res: NodeHttpResponse, error: unknown): void {
+  if (('stream' in res ? res.stream : res).destroyed) {
+    return
+  }
+
+  if (!('stream' in res)) {
+    try {
+      res.socket?.resetAndDestroy()
+    } catch {
+      // ERR_INVALID_HANDLE_TYPE: not a TCP socket (e.g. TLS), destroyed below instead
+    }
+  }
+
+  res.destroy(new Error('Response body stream failed', { cause: error }))
+}
