@@ -2,6 +2,7 @@ import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 import { AsyncIteratorClass, isTypescriptObject } from '@standard-server/shared'
 
+import { toStandaloneValue } from './standalone'
 import type { PeerEventStreamMessage } from './types'
 
 export function toAsyncIteratorObject(
@@ -77,7 +78,11 @@ export class EventStreamTransmitter {
           await this.send({
             kind: 'event-stream',
             id: this.messageId,
-            json: { ...meta, event: item.done ? 'close' : undefined, data },
+            json: {
+              ...meta,
+              event: item.done ? 'close' : undefined,
+              data: toStandaloneValue(data),
+            },
           })
         } catch (error) {
           await this.cancel()
@@ -97,7 +102,7 @@ export class EventStreamTransmitter {
             await this.send({
               kind: 'event-stream',
               id: this.messageId,
-              json: { ...meta, event: 'error', data: resolvedError.data },
+              json: { ...meta, event: 'error', data: toStandaloneValue(resolvedError.data) },
             })
           }
 

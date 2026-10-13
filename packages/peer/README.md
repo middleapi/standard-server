@@ -124,6 +124,9 @@ const payload = await response.resolveBody()
 > [!TIP]
 > When encoding or decoding peer messages, you can pass additional options, such as `prefix`, to prevent collisions when the same peer is used for multiple purposes.
 
+> [!NOTE]
+> Peer messages are structured-clone compatible, so they can also be posted without `encodePeerMessage()`. Structured clone sends a typed array together with its whole `ArrayBuffer`, so the peers copy any view that covers only part of its buffer (such as Node's pooled `Buffer`) before sending it, whether it is an octet-stream chunk or sits in a JSON body or event data, directly or inside arrays and plain objects. Views inside other containers (`Map`, `Set`, class instances) are sent as-is; use `encodePeerMessage()` if your payloads can contain them.
+
 ## Body resolution
 
 Unlike the HTTP adapters, `resolveBody(hint?)` ignores the `hint` argument in this adapter. HTTP adapters receive the body as a raw byte stream and must decide how to parse it, so a hint can steer that decision. The peer protocol instead encodes the body in structured form at send time: JSON values travel as JSON, binary payloads travel as binary, event and octet streams flow as dedicated stream messages, and markers in the message distinguish the ambiguous cases such as `form-data` vs. `file`. By the time a message arrives, there are no raw bytes left to reinterpret — the body always resolves to exactly the representation the sender had, so a hint has nothing to override.

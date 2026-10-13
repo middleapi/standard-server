@@ -538,3 +538,76 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(Object.getPrototypeOf(serverBody)).toBe(Object.prototype)
   })
 })
+
+/**
+ * Wires a ClientPeer and a ServerPeer together without the codec, posting each message through
+ * the structured clone algorithm (e.g. a MessagePort or Electron IPC).
+ */
+function connectByStructuredClone(
+  handler: (request: StandardLazyRequest) => Promise<StandardResponse>,
+): { client: ClientPeer; server: ServerPeer } {
+  const wire = {} as { client: ClientPeer; server: ServerPeer }
+
+  wire.client = new ClientPeerClass(async (message) => {
+    void wire.server.message(structuredClone(message), handler).catch(() => {})
+  })
+
+  wire.server = new ServerPeerClass(async (message) => {
+    void wire.client.message(structuredClone(message))
+  })
+
+  return wire
+}
+
+describe('peer integration (client <-> server over structured clone)', () => {
+  function expectStandalone(value: unknown, text: string): void {
+    expect(value).toBeInstanceOf(Uint8Array)
+    const bytes = value as Uint8Array
+    expect(bytes.buffer.byteLength).toBe(bytes.byteLength)
+    expect(new TextDecoder().decode(bytes)).toBe(text)
+  }
+
+  it('does not send the backing buffer of pooled Buffers in bodies or event data', async () => {
+    const pooled = Buffer.from('SECRET-neighbour-allocation')
+    expect(pooled.buffer.byteLength).toBeGreaterThan(pooled.byteLength) // Node's shared Buffer pool
+
+    let requestBody: any
+    const { client } = connectByStructuredClone(async (request) => {
+      if (request.url === '/events') {
+        return {
+          status: 200,
+          headers: {},
+          body: (async function* () {
+            yield { chunk: Buffer.from('x') }
+            return [Buffer.from('done')]
+          })(),
+        }
+      }
+
+      requestBody = await request.resolveBody()
+      return { status: 200, headers: {}, body: { avatar: Buffer.from('hi') } }
+    })
+
+    const response = await client.request({
+      url: '/upload',
+      method: 'POST',
+      headers: {},
+      body: { file: Buffer.from('z') },
+    })
+    const responseBody = (await response.resolveBody()) as any
+
+    expectStandalone(requestBody.file, 'z')
+    expectStandalone(responseBody.avatar, 'hi')
+
+    const events = await client.request({ url: '/events', method: 'GET', headers: {} })
+    const iterator = (await events.resolveBody()) as AsyncIterator<any>
+
+    const message = await iterator.next()
+    expect(message.done).toBe(false)
+    expectStandalone(message.value.chunk, 'x')
+
+    const close = await iterator.next()
+    expect(close.done).toBe(true)
+    expectStandalone(close.value[0], 'done')
+  })
+})

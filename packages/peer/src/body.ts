@@ -9,6 +9,7 @@ import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 
 import { toAsyncIteratorObject } from './event-stream'
 import { toOctetStream } from './octet-stream'
+import { toStandaloneValue } from './standalone'
 import type {
   PeerEventStreamMessage,
   PeerOctetStreamMessage,
@@ -195,5 +196,5 @@ export async function encodeAtomicStandardBody(
     return { jsonBody: body.toString(), headers, binary: undefined }
   }
 
-  return { jsonBody: body, headers, binary: undefined }
+  return { jsonBody: toStandaloneValue(body), headers, binary: undefined }
 }

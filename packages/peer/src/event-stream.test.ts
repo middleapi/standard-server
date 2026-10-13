@@ -191,6 +191,45 @@ describe('eventStreamTransmitter', () => {
     })
   })
 
+  it('copies views of part of a larger buffer in message, close and error data', async () => {
+    const x = Buffer.from('x')
+    const closed = Buffer.from('closed')
+    const y = Buffer.from('y')
+    expect(x.buffer.byteLength).toBeGreaterThan(x.byteLength) // Node's shared Buffer pool
+
+    const send = vi.fn(async (_message: PeerEventStreamMessage) => {})
+
+    async function* gen() {
+      yield withEventMeta({ a: x }, { id: 'event-1' })
+      return [closed]
+    }
+    await new EventStreamTransmitter(gen(), 'msg-1', send).transmit()
+
+    const fail = new AsyncIteratorClass(
+      async () => {
+        throw withEventMeta(new ErrorEvent({ b: y }), { retry: 1000 })
+      },
+      async () => {},
+    )
+    await new EventStreamTransmitter(fail, 'msg-2', send).transmit()
+
+    const [message, close, error] = send.mock.calls.map(([sent]) => sent.json)
+
+    expect(message!.id).toBe('event-1')
+    expect((message!.data as any).a).toBeInstanceOf(Buffer)
+    expect((message!.data as any).a.buffer.byteLength).toBe(1)
+    expect((message!.data as any).a.toString()).toBe('x')
+
+    expect(close!.event).toBe('close')
+    expect((close!.data as any)[0].buffer.byteLength).toBe(6)
+    expect((close!.data as any)[0].toString()).toBe('closed')
+
+    expect(error!.event).toBe('error')
+    expect(error!.retry).toBe(1000)
+    expect((error!.data as any).b.buffer.byteLength).toBe(1)
+    expect((error!.data as any).b.toString()).toBe('y')
+  })
+
   it('sends error event for ErrorEvent', async () => {
     const send = vi.fn(async () => {})
     const iter = new AsyncIteratorClass(

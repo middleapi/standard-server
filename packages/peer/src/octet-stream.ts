@@ -1,5 +1,6 @@
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 
+import { toStandaloneView } from './standalone'
 import type { PeerOctetStreamMessage } from './types'
 
 export function toOctetStream(
@@ -30,19 +31,6 @@ export function toOctetStream(
       await cleanup({ kind: 'cancelled', error })
     },
   })
-}
-
-/**
- * Copy a chunk that views only part of its `ArrayBuffer` (e.g. Node's pooled `Buffer`),
- * so structured-clone transports don't send the whole backing buffer to the remote peer.
- */
-function toStandaloneBytes(bytes: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
-  if (bytes.byteLength === bytes.buffer.byteLength) {
-    return bytes
-  }
-
-  // Not `bytes.slice()`: `Buffer#slice` returns a view, not a copy
-  return new Uint8Array(bytes)
 }
 
 export class OctetStreamTransmitter {
@@ -80,7 +68,7 @@ export class OctetStreamTransmitter {
         try {
           await this.send({
             json: { close: item.done ? true : undefined },
-            binary: item.value && toStandaloneBytes(item.value),
+            binary: item.value && toStandaloneView(item.value),
             kind: 'octet-stream',
             id: this.messageId,
           })

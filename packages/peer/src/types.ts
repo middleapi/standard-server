@@ -10,6 +10,13 @@ import type {
  * Base interface for all peer messages.
  *
  * All payloads should be compatible with the structured clone algorithm.
+ *
+ * Structured clone sends a typed array or `DataView` together with its whole `ArrayBuffer`,
+ * so before sending, a view that covers only part of its buffer (e.g. Node's pooled `Buffer`)
+ * is replaced by a standalone copy. This covers octet-stream chunks and views in JSON bodies and
+ * event data, at the top level or nested in arrays and plain objects; views inside other containers
+ * (`Map`, `Set`, class instances, ...) are sent as-is. `encodePeerMessage` serializes views
+ * by their own bytes, so messages encoded with it are not affected.
  */
 export interface PeerMessage {
   /**
