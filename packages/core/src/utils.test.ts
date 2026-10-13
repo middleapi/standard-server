@@ -14,6 +14,10 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('generateContentDisposition', () => {
   it('handle normal filename', () => {
     expect(generateContentDisposition('test.txt')).toEqual(
@@ -197,11 +201,13 @@ it('getFilenameFromContentDisposition', () => {
   )
   expect(getFilenameFromContentDisposition('inline; filename="a\\"')).toEqual(undefined)
 
-  // malformed escapes in filename* are kept as-is, the valid ones are still decoded
+  // a filename* that fails to decode is kept as-is
   expect(
     getFilenameFromContentDisposition("attachment; filename*=utf-8''%E4%B8%AD%ZZ.txt"),
-  ).toEqual('中%ZZ.txt')
-  expect(getFilenameFromContentDisposition('inline; filename*=%E2%82%AC%.txt')).toEqual('€%.txt')
+  ).toEqual('%E4%B8%AD%ZZ.txt')
+  expect(getFilenameFromContentDisposition('inline; filename*=%E2%82%AC%.txt')).toEqual(
+    '%E2%82%AC%.txt',
+  )
 
   // quoted filename* is tolerated
   expect(
@@ -403,6 +409,35 @@ describe('resolveStandardBodyHint', () => {
         'content-disposition': 'inline; filename="a.pdf"',
       }),
     ).toBe('none')
+  })
+
+  it('decodes the filename only when no other header decides the hint', () => {
+    const decodeSpy = vi.spyOn(globalThis, 'decodeURIComponent')
+    // just under the 16 KiB header limit of Node's HTTP server
+    const contentDisposition = `attachment; filename*=utf-8''${'%FFa'.repeat(3900)}`
+
+    for (const [headers, hint] of [
+      [{ 'content-type': 'application/json' }, 'json'],
+      [{ 'content-type': 'multipart/form-data; boundary=x' }, 'form-data'],
+      [{ 'content-type': 'application/x-www-form-urlencoded' }, 'url-search-params'],
+      [{ 'content-type': 'text/event-stream' }, 'event-stream'],
+      [{ 'standard-server': 'json' }, 'json'],
+      [{}, 'none'],
+      [{ 'content-length': '3' }, 'file'],
+    ] as const) {
+      expect(
+        resolveStandardBodyHint({ ...headers, 'content-disposition': contentDisposition }),
+      ).toBe(hint)
+    }
+    expect(decodeSpy).not.toHaveBeenCalled()
+
+    expect(
+      resolveStandardBodyHint({
+        'content-type': 'application/pdf',
+        'content-disposition': contentDisposition,
+      }),
+    ).toBe('file')
+    expect(decodeSpy).toHaveBeenCalled()
   })
 
   it('octet-stream when content-length is absent', () => {

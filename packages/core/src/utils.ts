@@ -119,11 +119,6 @@ export function resolveStandardBodyHint(headers: {
     ?.trim()
     .toLowerCase()
   const contentLength = flattenStandardHeader(headers['content-length'])
-  const contentDisposition = flattenStandardHeader(headers['content-disposition'])
-  const fileName =
-    contentDisposition !== undefined
-      ? getFilenameFromContentDisposition(contentDisposition)
-      : undefined
 
   if (mimeType === undefined && (contentLength === undefined || contentLength === '0')) {
     return 'none'
@@ -145,7 +140,16 @@ export function resolveStandardBodyHint(headers: {
     return 'event-stream'
   }
 
-  if (fileName !== undefined || contentLength !== undefined) {
+  if (contentLength !== undefined) {
+    return 'file'
+  }
+
+  const contentDisposition = flattenStandardHeader(headers['content-disposition'])
+
+  if (
+    contentDisposition !== undefined &&
+    getFilenameFromContentDisposition(contentDisposition) !== undefined
+  ) {
     return 'file'
   }
 

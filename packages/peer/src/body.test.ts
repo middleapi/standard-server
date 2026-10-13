@@ -6,6 +6,10 @@ import { encodeAtomicStandardBody, toStandardBody } from './body'
 import type { PeerRequestMessage } from './types'
 
 describe('toStandardBody', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   function makeMessage(options: {
     bodyHint?: StandardBodyHint
     contentType?: string
@@ -153,6 +157,30 @@ describe('toStandardBody', () => {
     expect((body as File).name).toBe('test.txt')
     expect((body as File).type).toBe('text/plain')
     expect(await (body as File).text()).toBe('file content')
+
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
+  it('keeps a malformed filename as-is without retrying it once per escape', async () => {
+    const decodeSpy = vi.spyOn(globalThis, 'decodeURIComponent')
+    const filename = '%FFa'.repeat(262_144) // 1 MiB, peer messages have no header size limit
+    const cleanup = vi.fn()
+    const { resolveBody } = toStandardBody(
+      makeMessage({
+        contentType: 'text/plain',
+        contentDisposition: `attachment; filename*=utf-8''${filename}`,
+        binary: new TextEncoder().encode('file content'),
+      }),
+      cleanup,
+    )
+
+    const body = (await resolveBody()) as File
+
+    expect(body).toBeInstanceOf(File)
+    expect(body.name).toBe(filename)
+    expect(await body.text()).toBe('file content')
+    expect(decodeSpy).toHaveBeenCalledTimes(1)
 
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
