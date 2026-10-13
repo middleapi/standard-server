@@ -73,10 +73,6 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
   return getContentDispositionParam(contentDisposition, 'filename')
 }
 
-/**
- * Join a header's values with `, `, like `Headers.get()`.
- * Not safe for `set-cookie`: each cookie must stay its own header line.
- */
 export function flattenStandardHeader(
   header: string | readonly string[] | undefined,
 ): string | undefined {

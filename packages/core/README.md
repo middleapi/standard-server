@@ -317,9 +317,6 @@ const varyHeader = flattenStandardHeader(headers['vary'])
 // 'accept, accept-encoding'
 ```
 
-> [!WARNING]
-> `flattenStandardHeader()` joins values with `, ` like `Headers.get()`, so never use it for `set-cookie`: each cookie must be sent as its own header line, as the [AWS Lambda adapter](https://github.com/middleapi/standard-server/blob/main/packages/aws-lambda/README.md#lambda-behavior-to-be-aware-of) does.
-
 ### URL parsing
 
 `parseStandardUrl()` splits a `StandardUrl` into `[pathname, search, hash]` without requiring a full origin.
