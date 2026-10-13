@@ -457,6 +457,100 @@ describe('toStandardBody', () => {
       expect(await toStandardBody(req!, { hint: 'none' })).toBe(undefined)
     })
 
+    it.each([
+      ['json', '{"amount":100}', { amount: 100 }],
+      ['file', '{"amount":100}', '{"amount":100}'],
+      ['url-search-params', 'amount=100', new URLSearchParams('amount=100')],
+    ] as const)('throw on overlapping body reads (hint=%s)', async (hint, body, expected) => {
+      let results: PromiseSettledResult<StandardBody>[] = []
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        results = await Promise.allSettled([
+          toStandardBody(req, { hint }),
+          toStandardBody(req, { hint }),
+        ])
+        res.end()
+      })
+        .post('/')
+        .send(body)
+
+      const [first, second] = results as [PromiseFulfilledResult<any>, PromiseRejectedResult]
+      expect(first.status).toBe('fulfilled')
+      expect(first.value instanceof File ? await first.value.text() : first.value).toEqual(expected)
+      expect(second.status).toBe('rejected')
+      expect(second.reason).toBeInstanceOf(TypeError)
+      expect(second.reason.message).toContain('Failed to read body: body stream already read')
+    })
+
+    it('throw on read body again before the octet-stream is drained', async () => {
+      let first: unknown
+      let secondError: unknown
+      let streamed: string | undefined
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        first = await toStandardBody(req, { hint: 'octet-stream' })
+        secondError = await toStandardBody(req, { hint: 'octet-stream' }).catch((e) => e)
+        streamed = await new Response(first as ReadableStream).text()
+        res.end()
+      })
+        .post('/')
+        .send('hello')
+
+      expect(first).toBeInstanceOf(ReadableStream)
+      expect(streamed).toBe('hello')
+      expect(secondError).toBeInstanceOf(TypeError)
+      expect(secondError).toHaveProperty(
+        'message',
+        expect.stringContaining('Failed to read body: body stream already read'),
+      )
+    })
+
+    it('throw on read body again before the event-stream is drained', async () => {
+      let events: IteratorResult<unknown>[] = []
+      let secondError: unknown
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        const iterator = (await toStandardBody(req)) as AsyncIterator<unknown>
+        secondError = await toStandardBody(req).catch((e) => e)
+        events = [await iterator.next(), await iterator.next(), await iterator.next()]
+        res.end()
+      })
+        .post('/')
+        .type('text/event-stream')
+        .send('event: message\ndata: 1\n\nevent: message\ndata: 2\n\nevent: close\ndata: 3\n\n')
+
+      expect(events).toEqual([
+        { done: false, value: 1 },
+        { done: false, value: 2 },
+        { done: true, value: 3 },
+      ])
+      expect(secondError).toBeInstanceOf(TypeError)
+      expect(secondError).toHaveProperty(
+        'message',
+        expect.stringContaining('Failed to read body: body stream already read'),
+      )
+    })
+
+    it('hint=none neither reads nor marks the body', async () => {
+      let before: StandardBody = {} as any
+      let standardBody: StandardBody
+      let during: StandardBody = {} as any
+
+      await request(async (req: IncomingMessage, res: ServerResponse) => {
+        before = await toStandardBody(req, { hint: 'none' })
+        const reading = toStandardBody(req)
+        during = await toStandardBody(req, { hint: 'none' })
+        standardBody = await reading
+        res.end()
+      })
+        .post('/')
+        .send({ foo: 'bar' })
+
+      expect(before).toBe(undefined)
+      expect(during).toBe(undefined)
+      expect(standardBody).toEqual({ foo: 'bar' })
+    })
+
     it('prefers user defined body hint over standard-server header', async () => {
       let standardBody: any
 
