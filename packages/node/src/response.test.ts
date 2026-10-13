@@ -142,6 +142,45 @@ describe('sendStandardResponse', () => {
     expect(res.text).toEqual('foo')
   })
 
+  it('file with capitalized header overrides', async () => {
+    const file = new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' })
+
+    const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+      await sendStandardResponse(res, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': 'attachment',
+        },
+        body: file,
+      })
+    })
+      .get('/')
+      .buffer(true)
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('application/octet-stream')
+    expect(res.headers['content-disposition']).toBe('attachment')
+    expect(res.headers['content-length']).toBe('25')
+    expect(Buffer.from(res.body).toString()).toBe('<script>alert(1)</script>')
+  })
+
+  it('json with capitalized content-length', async () => {
+    const res = await request(async (req: IncomingMessage, res: ServerResponse) => {
+      await sendStandardResponse(res, {
+        status: 200,
+        headers: { 'Content-Length': '2', 'Standard-Server': 'file' },
+        body: { hello: 'world' },
+      })
+    }).get('/')
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('application/json')
+    expect(res.headers['content-length']).toBe('17')
+    expect(res.headers).not.toHaveProperty('standard-server')
+    expect(res.body).toEqual({ hello: 'world' })
+  })
+
   it('chunked (async generator)', async () => {
     async function* gen() {
       yield 'foo'

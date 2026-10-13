@@ -517,4 +517,63 @@ describe('encodeAtomicStandardBody', () => {
     expect(received.type).toBe('application/pdf')
     expect(await received.text()).toBe('file content')
   })
+
+  describe('match header names case-insensitively', () => {
+    const valuesOf = (headers: StandardHeaders, name: string) =>
+      Object.keys(headers)
+        .filter((key) => key.toLowerCase() === name)
+        .map((key) => headers[key])
+
+    it('file: capitalized content-type and content-disposition override the auto-set ones', async () => {
+      const file = new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' })
+
+      const { jsonBody, headers, binary } = await encodeAtomicStandardBody(file, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment',
+      })
+
+      expect(binary).toBe(file)
+      expect(valuesOf(headers, 'content-type')).toEqual(['application/octet-stream'])
+      expect(valuesOf(headers, 'content-disposition')).toEqual(['attachment'])
+      expect(headers).toEqual({
+        'content-type': 'application/octet-stream',
+        'content-disposition': 'attachment',
+        'content-length': '25',
+      })
+
+      const { resolveBody } = toStandardBody(
+        { id: '1', kind: 'request', json: { url: '/upload', headers, body: jsonBody }, binary },
+        vi.fn(),
+      )
+
+      const received = (await resolveBody()) as File
+      expect(received).toBeInstanceOf(File)
+      expect(received.type).toBe('application/octet-stream')
+    })
+
+    it('json: clear content-type and standard-server under any casing', async () => {
+      const { jsonBody, headers, binary } = await encodeAtomicStandardBody(
+        { hello: 'world' },
+        { 'x-custom': 'value', 'Content-Type': 'text/html', 'Standard-Server': 'file' },
+      )
+
+      expect(jsonBody).toEqual({ hello: 'world' })
+      expect(binary).toBe(undefined)
+      expect(valuesOf(headers, 'content-type').filter((v) => v !== undefined)).toEqual([])
+      expect(valuesOf(headers, 'standard-server').filter((v) => v !== undefined)).toEqual([])
+      expect(headers).toEqual({ 'x-custom': 'value' })
+    })
+
+    it('file: capitalized empty array still removes the header', async () => {
+      const file = new File(['foo'], 'foo.html', { type: 'text/html' })
+
+      const { headers } = await encodeAtomicStandardBody(file, {
+        'Content-Type': [],
+        'Content-Disposition': [],
+      })
+
+      expect(valuesOf(headers, 'content-type')).toEqual([[]])
+      expect(valuesOf(headers, 'content-disposition')).toEqual([[]])
+    })
+  })
 })

@@ -184,6 +184,32 @@ export function mergeStandardHeaders(a: StandardHeaders, b: StandardHeaders): St
   return merged
 }
 
+/**
+ * Lowercase every header name, so a header set under several casings ends up under one key.
+ * Their values are merged like `mergeStandardHeaders` does, and `undefined` values are dropped.
+ */
+export function normalizeStandardHeaders(headers: StandardHeaders): StandardHeaders {
+  // Null prototype so header names like __proto__ become plain own
+  // properties instead of touching the object's prototype.
+  const normalized: StandardHeaders = Object.create(null)
+
+  for (const key of Object.keys(headers)) {
+    const value = headers[key]
+
+    if (value === undefined) {
+      continue
+    }
+
+    const lowerKey = key.toLowerCase()
+    const existing = normalized[lowerKey]
+
+    normalized[lowerKey] =
+      existing === undefined ? value : [...toArray(existing), ...toArray(value)]
+  }
+
+  return normalized
+}
+
 export function parseStandardUrl(
   url: StandardUrl,
 ): [pathname: `/${string}`, search: `?${string}` | undefined, hash: `#${string}` | undefined] {

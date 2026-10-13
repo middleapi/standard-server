@@ -58,7 +58,7 @@ Supporting primitives:
 | `StandardBodyHint` | Parsing hint for lazy body resolution                         |
 | `StandardBody`     | Shared body union used by requests and responses              |
 
-By convention, adapters normalize headers to lowercase keys. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
+By convention, adapters normalize headers to lowercase keys. Header names you send are matched case-insensitively: adapters lowercase them before sending, merging the values of names that differ only in case. `signal` is part of `StandardRequest` only and is used to propagate request cancellation.
 
 ```ts
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
@@ -156,7 +156,7 @@ const response: StandardResponse = {
 }
 ```
 
-When sending a file or blob body, adapters automatically set the `content-length`, `content-type`, `content-disposition`, and `standard-server` headers based on the provided body. You can override any of them by explicitly providing a header value, or remove one entirely by assigning an empty array.
+When sending a file or blob body, adapters automatically set the `content-length`, `content-type`, `content-disposition`, and `standard-server` headers based on the provided body. You can override any of them by explicitly providing a header value under any casing (`Content-Type` works like `content-type`), or remove one entirely by assigning an empty array.
 
 ### Event-stream body
 
@@ -298,10 +298,14 @@ const filename = getFilenameFromContentDisposition(disposition)
 
 ### Header helpers
 
-`mergeStandardHeaders()` combines two `StandardHeaders` objects while preserving duplicate values, and `flattenStandardHeader()` turns a single header value into a plain string when needed.
+`mergeStandardHeaders()` combines two `StandardHeaders` objects while preserving duplicate values, `normalizeStandardHeaders()` lowercases every header name and merges the values of names that differ only in case, and `flattenStandardHeader()` turns a single header value into a plain string when needed.
 
 ```ts
-import { flattenStandardHeader, mergeStandardHeaders } from '@standard-server/core'
+import {
+  flattenStandardHeader,
+  mergeStandardHeaders,
+  normalizeStandardHeaders,
+} from '@standard-server/core'
 
 const headers = mergeStandardHeaders(
   { 'accept': 'application/json', 'set-cookie': ['a=1'] },
@@ -315,6 +319,16 @@ const headers = mergeStandardHeaders(
 
 const cookieHeader = flattenStandardHeader(headers['set-cookie'])
 // 'a=1, b=2'
+
+const normalized = normalizeStandardHeaders({
+  'Set-Cookie': 'a=1',
+  'set-cookie': 'b=2',
+  'Vary': 'accept',
+})
+// {
+//   'set-cookie': ['a=1', 'b=2'],
+//   vary: 'accept',
+// }
 ```
 
 ### URL parsing

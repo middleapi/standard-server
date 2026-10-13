@@ -120,6 +120,52 @@ describe('sendStandardResponse', () => {
     expect(responseStream.writableEnded).toBe(true)
   })
 
+  it('file with capitalized header overrides', async () => {
+    const responseStream = createResponseStream()
+
+    await sendStandardResponse(responseStream, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment',
+      },
+      body: new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' }),
+    })
+
+    expect(metadataOf(responseStream)).toEqual({
+      statusCode: 200,
+      headers: {
+        'content-type': 'application/octet-stream',
+        'content-disposition': 'attachment',
+        'content-length': '25',
+        'standard-server': 'file',
+      },
+      cookies: [],
+    })
+
+    expect(bodyOf(responseStream)).toBe('<script>alert(1)</script>')
+  })
+
+  it('json with capitalized content-length', async () => {
+    const responseStream = createResponseStream()
+
+    await sendStandardResponse(responseStream, {
+      status: 200,
+      headers: { 'Content-Length': '2', 'Standard-Server': 'file' },
+      body: { hello: 'world' },
+    })
+
+    expect(metadataOf(responseStream)).toEqual({
+      statusCode: 200,
+      headers: {
+        'content-type': 'application/json',
+      },
+      cookies: [],
+    })
+
+    expect(bodyOf(responseStream)).toBe('{"hello":"world"}')
+  })
+
   it('chunked (async generator)', async () => {
     const responseStream = createResponseStream()
 

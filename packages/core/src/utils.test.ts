@@ -6,6 +6,7 @@ import {
   generateContentDisposition,
   getFilenameFromContentDisposition,
   mergeStandardHeaders,
+  normalizeStandardHeaders,
   parseStandardUrl,
   resolveStandardBodyHint,
 } from './utils'
@@ -526,6 +527,91 @@ describe('mergeStandardHeaders', () => {
 
     expect(Object.getPrototypeOf(merged)).toEqual(Object.prototype)
     expect(Object.getOwnPropertyDescriptor(merged, '__proto__')?.value).toEqual(['1', '2'])
+  })
+})
+
+describe('normalizeStandardHeaders', () => {
+  afterEach(() => {
+    expect(({} as any).polluted).toEqual(undefined)
+  })
+
+  it('lowercase header names', () => {
+    expect(
+      normalizeStandardHeaders({
+        'Content-Type': 'text/plain',
+        'X-CUSTOM': ['a', 'b'],
+        'accept': 'application/json',
+      }),
+    ).toEqual({
+      'content-type': 'text/plain',
+      'x-custom': ['a', 'b'],
+      'accept': 'application/json',
+    })
+  })
+
+  it('merge values of names differing only in case', () => {
+    expect(normalizeStandardHeaders({ 'Set-Cookie': 'a=1', 'set-cookie': 'b=2' })).toEqual({
+      'set-cookie': ['a=1', 'b=2'],
+    })
+    expect(
+      normalizeStandardHeaders({ 'X-A': ['1', '2'], 'x-a': '3', 'X-a': ['4'], 'x-A': [] }),
+    ).toEqual({ 'x-a': ['1', '2', '3', '4'] })
+  })
+
+  it('keep the position of the first casing of a name', () => {
+    expect(Object.keys(normalizeStandardHeaders({ B: '1', A: '2', b: '3' }))).toEqual(['b', 'a'])
+  })
+
+  it('preserve empty arrays', () => {
+    expect(normalizeStandardHeaders({ 'Content-Type': [] })).toEqual({ 'content-type': [] })
+    expect(normalizeStandardHeaders({ 'Content-Type': [], 'content-type': [] })).toEqual({
+      'content-type': [],
+    })
+    expect(normalizeStandardHeaders({ 'Content-Type': [] })['content-type']).toEqual([])
+  })
+
+  it('drop undefined values', () => {
+    const normalized = normalizeStandardHeaders({
+      'X-A': undefined,
+      'x-b': undefined,
+      'X-C': undefined,
+      'x-c': '1',
+      'x-d': '2',
+      'X-D': undefined,
+    })
+
+    expect(Object.keys(normalized)).toEqual(['x-c', 'x-d'])
+    expect(normalized).toEqual({ 'x-c': '1', 'x-d': '2' })
+  })
+
+  it('return a null-prototype object', () => {
+    const normalized = normalizeStandardHeaders(
+      JSON.parse('{ "__proto__": { "polluted": "yes" } }'),
+    )
+
+    expect(Object.getPrototypeOf(normalized)).toBe(null)
+    expect(Object.getOwnPropertyDescriptor(normalized, '__proto__')?.value).toEqual({
+      polluted: 'yes',
+    })
+    expect(Object.getPrototypeOf(normalizeStandardHeaders({}))).toBe(null)
+  })
+
+  it('not mutate the input', () => {
+    const values = ['1']
+    const headers = { 'X-A': values, 'x-a': '2', 'Content-Type': 'text/plain', 'x-b': undefined }
+
+    const normalized = normalizeStandardHeaders(headers)
+
+    expect(normalized).toEqual({ 'x-a': ['1', '2'], 'content-type': 'text/plain' })
+    expect(normalized).not.toBe(headers)
+    expect(headers).toEqual({
+      'X-A': ['1'],
+      'x-a': '2',
+      'Content-Type': 'text/plain',
+      'x-b': undefined,
+    })
+    expect(Object.keys(headers)).toEqual(['X-A', 'x-a', 'Content-Type', 'x-b'])
+    expect(values).toEqual(['1'])
   })
 })
 

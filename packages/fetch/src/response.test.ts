@@ -38,6 +38,37 @@ describe('toFetchResponse', () => {
     expect(toFetchHeadersSpy).toBeCalledWith(toFetchBodySpy.mock.results[0]!.value[1])
   })
 
+  it('file with capitalized header overrides', async () => {
+    const file = new File(['<script>alert(1)</script>'], 'evil.html', { type: 'text/html' })
+
+    const fetchResponse = toFetchResponse({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment',
+      },
+      body: file,
+    })
+
+    expect(fetchResponse.headers.get('content-type')).toBe('application/octet-stream')
+    expect(fetchResponse.headers.get('content-disposition')).toBe('attachment')
+    expect(fetchResponse.headers.get('content-length')).toBe('25')
+    expect(await fetchResponse.text()).toBe('<script>alert(1)</script>')
+  })
+
+  it('json with capitalized content-length', async () => {
+    const fetchResponse = toFetchResponse({
+      status: 200,
+      headers: { 'Content-Length': '2', 'Standard-Server': 'file' },
+      body: { hello: 'world' },
+    })
+
+    expect(fetchResponse.headers.get('content-type')).toBe('application/json')
+    expect(fetchResponse.headers.has('content-length')).toBe(false)
+    expect(fetchResponse.headers.has('standard-server')).toBe(false)
+    expect(await fetchResponse.json()).toEqual({ hello: 'world' })
+  })
+
   describe('releases the body when the response cannot be built', () => {
     it('event-stream body when the status cannot have a body', async () => {
       const next = vi.fn(() => new Promise<never>(() => {}))

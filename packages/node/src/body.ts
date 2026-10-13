@@ -4,6 +4,7 @@ import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-
 import {
   generateContentDisposition,
   getFilenameFromContentDisposition,
+  normalizeStandardHeaders,
   resolveStandardBodyHint,
 } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
@@ -101,7 +102,9 @@ export function toNodeHttpBody(
   headers: StandardHeaders,
   options: ToNodeHttpBodyOptions = {},
 ): [body: Readable | undefined | string, headers: StandardHeaders] {
-  headers = { ...headers }
+  // One lowercase key per header, so the defaults and clears below
+  // also see the values set under any other casing
+  headers = normalizeStandardHeaders(headers)
 
   if (body instanceof ReadableStream) {
     // Always set the body hint: the length of a stream is unknown here, but the transport
