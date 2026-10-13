@@ -338,81 +338,42 @@ describe('relaying decoded events', () => {
   async function transmit(iterator: AsyncIterator<unknown>) {
     const send = vi.fn(async (_message: PeerEventStreamMessage) => {})
     await new EventStreamTransmitter(iterator, 'msg-1', send).transmit()
-    return send.mock.calls.map(([message]) => message.json)
+    return send.mock.calls[0]![0].json
   }
 
-  function decode(event: PeerEventStreamMessage['json']['event']) {
+  it.each([
+    [
+      undefined,
+      (value: any) =>
+        (async function* () {
+          yield value
+        })(),
+    ],
+    ['close' as const, (value: any) => ({ next: async () => ({ done: true, value }) })],
+    [
+      'error' as const,
+      (value: any) => ({
+        next: async () => {
+          throw value
+        },
+      }),
+    ],
+  ])('event=%s', async (event, deliver) => {
     const queue = new Queue<PeerEventStreamMessage>()
     queue.push({ id: '1', kind: 'event-stream', json: { ...inboundMeta, event, data: { a: 1 } } })
-    return toAsyncIteratorObject(queue, vi.fn())
-  }
-
-  it('message', async () => {
-    const { value } = await decode(undefined).next()
-    expect(getEventMeta(value)).toEqual(inboundMeta)
-
-    const [relayed] = await transmit(
-      (async function* () {
-        yield value
-      })(),
-    )
-    expect(relayed).toEqual({ event: undefined, data: { a: 1 } })
-    expect(relayed).not.toHaveProperty('id')
-    expect(relayed).not.toHaveProperty('retry')
-    expect(relayed).not.toHaveProperty('comments')
-
-    const [forwarded] = await transmit(
-      (async function* () {
-        yield withEventMeta(value as object, getEventMeta(value)!)
-      })(),
-    )
-    expect(forwarded).toEqual({ ...inboundMeta, event: undefined, data: { a: 1 } })
-  })
-
-  it('close', async () => {
-    const { done, value } = await decode('close').next()
-    expect(done).toBe(true)
-    expect(getEventMeta(value)).toEqual(inboundMeta)
-
-    const [relayed] = await transmit({
-      next: async () => ({ done: true, value }),
-    })
-    expect(relayed).toEqual({ event: 'close', data: { a: 1 } })
-    expect(relayed).not.toHaveProperty('id')
-    expect(relayed).not.toHaveProperty('retry')
-    expect(relayed).not.toHaveProperty('comments')
-
-    const [forwarded] = await transmit({
-      next: async () => ({
-        done: true,
-        value: withEventMeta(value as object, getEventMeta(value)!),
-      }),
-    })
-    expect(forwarded).toEqual({ ...inboundMeta, event: 'close', data: { a: 1 } })
-  })
-
-  it('error', async () => {
-    const error = await decode('error')
+    const decoded = await toAsyncIteratorObject(queue, vi.fn())
       .next()
-      .catch((err) => err)
-    expect(error).toBeInstanceOf(ErrorEvent)
-    expect(getEventMeta(error)).toEqual(inboundMeta)
+      .then(
+        (result) => result.value,
+        (error) => error,
+      )
+    expect(getEventMeta(decoded)).toEqual(inboundMeta)
 
-    const [relayed] = await transmit({
-      next: async () => {
-        throw error
-      },
+    expect(await transmit(deliver(decoded))).toStrictEqual({ event, data: { a: 1 } })
+    expect(await transmit(deliver(withEventMeta(decoded, inboundMeta)))).toStrictEqual({
+      ...inboundMeta,
+      event,
+      data: { a: 1 },
     })
-    expect(relayed).toEqual({ event: 'error', data: { a: 1 } })
-    expect(relayed).not.toHaveProperty('id')
-    expect(relayed).not.toHaveProperty('retry')
-    expect(relayed).not.toHaveProperty('comments')
-
-    const [forwarded] = await transmit({
-      next: async () => {
-        throw withEventMeta(error, getEventMeta(error)!)
-      },
-    })
-    expect(forwarded).toEqual({ ...inboundMeta, event: 'error', data: { a: 1 } })
   })
 })

@@ -458,6 +458,8 @@ function forwardEventMeta<T>(value: T): T {
 
 Attaching new metadata, as in `withEventMeta(value, { id: '2' })`, also replaces the received metadata. `withEventMeta(value, {})` returns the value unchanged, so it stays received and its metadata is still dropped.
 
+If you write your own decoder or encoder, attach decoded metadata with `withReceivedEventMeta()` and read outbound metadata with `unwrapEventForEmit()`, which returns `undefined` metadata for received values.
+
 ### Errors and low-level assertions
 
 The package also exports:

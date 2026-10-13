@@ -661,69 +661,30 @@ describe('relaying decoded events', () => {
     return value
   }
 
-  it('message', async () => {
-    const { value } = await decode('').next()
-    expect(getEventMeta(value)).toEqual(inboundMeta)
-
-    expect(
-      await readFirst(
-        (async function* () {
-          yield value
-        })(),
-      ),
-    ).toBe('data: {"a":1}\n\n')
-
-    expect(
-      await readFirst(
-        (async function* () {
-          yield withEventMeta(value as object, getEventMeta(value)!)
-        })(),
-      ),
-    ).toBe(': c\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
-  })
-
-  it('close', async () => {
-    const { done, value } = await decode('event: close\n').next()
-    expect(done).toBe(true)
-    expect(getEventMeta(value)).toEqual(inboundMeta)
-
-    expect(
-      await readFirst({
-        next: async () => ({ done: true, value }),
+  it.each([
+    ['message', '', (value: any) => ({ next: async () => ({ done: false, value }) })],
+    ['close', 'event: close\n', (value: any) => ({ next: async () => ({ done: true, value }) })],
+    [
+      'error',
+      'event: error\n',
+      (value: any) => ({
+        next: async () => {
+          throw value
+        },
       }),
-    ).toBe('event: close\ndata: {"a":1}\n\n')
-
-    expect(
-      await readFirst({
-        next: async () => ({
-          done: true,
-          value: withEventMeta(value as object, getEventMeta(value)!),
-        }),
-      }),
-    ).toBe(': c\nevent: close\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
-  })
-
-  it('error', async () => {
-    const error = await decode('event: error\n')
+    ],
+  ])('%s', async (_, line, deliver) => {
+    const decoded = await decode(line)
       .next()
-      .catch((err) => err)
-    expect(error).toBeInstanceOf(ErrorEvent)
-    expect(getEventMeta(error)).toEqual(inboundMeta)
+      .then(
+        (result) => result.value,
+        (error) => error,
+      )
+    expect(getEventMeta(decoded)).toEqual(inboundMeta)
 
-    expect(
-      await readFirst({
-        next: async () => {
-          throw error
-        },
-      }),
-    ).toBe('event: error\ndata: {"a":1}\n\n')
-
-    expect(
-      await readFirst({
-        next: async () => {
-          throw withEventMeta(error, getEventMeta(error)!)
-        },
-      }),
-    ).toBe(': c\nevent: error\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
+    expect(await readFirst(deliver(decoded))).toBe(`${line}data: {"a":1}\n\n`)
+    expect(await readFirst(deliver(withEventMeta(decoded, inboundMeta)))).toBe(
+      `: c\n${line}retry: 99999\nid: x\ndata: {"a":1}\n\n`,
+    )
   })
 })

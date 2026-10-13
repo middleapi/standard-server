@@ -54,7 +54,11 @@ function attachEventMeta<T extends object>(container: T, meta: EventMeta, receiv
     return container
   }
 
-  return new Proxy(container, {
+  // wrap the original value, not an existing event proxy, so re-wrapping never nests proxies
+  const source =
+    ((container as Record<symbol, unknown>)[EVENT_SOURCE_SYMBOL] as T | undefined) ?? container
+
+  return new Proxy(source, {
     get(target, prop, _receiver) {
       if (prop === EVENT_SOURCE_SYMBOL) {
         return target
@@ -64,7 +68,6 @@ function attachEventMeta<T extends object>(container: T, meta: EventMeta, receiv
         return assertedMeta
       }
 
-      // answer explicitly, otherwise re-wrapping a received value would inherit the flag from its target
       if (prop === EVENT_META_RECEIVED_SYMBOL) {
         return received
       }

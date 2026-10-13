@@ -48,7 +48,7 @@ async function* forwardEventStream(
       yield forward(result.value)
     }
   } catch (error) {
-    throw error instanceof ErrorEvent ? forward(error) : error
+    throw forward(error)
   }
 }
 

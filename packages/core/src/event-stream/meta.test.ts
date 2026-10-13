@@ -6,8 +6,6 @@ import {
   withReceivedEventMeta,
 } from './meta'
 
-const EVENT_META_RECEIVED_SYMBOL = Symbol.for('STANDARD_SERVER_EVENT_META_RECEIVED')
-
 it('get/withEventMeta', () => {
   const data = { value: 123, meta: undefined }
   const applied = withEventMeta(data, { id: '123', retry: 10000, comments: ['hello', 'world'] })
@@ -120,16 +118,17 @@ describe('unwrapEvent', () => {
 describe('received event meta', () => {
   const meta = { id: 'x', retry: 99999, comments: ['c'] }
 
-  it('withReceivedEventMeta marks the value received and keeps meta readable', () => {
+  it('withReceivedEventMeta keeps meta readable', () => {
     const data = { value: 123 }
     const received = withReceivedEventMeta(data, meta)
 
     expect(received).toEqual(data)
     expect(received).not.toBe(data)
-    expect((received as any)[EVENT_META_RECEIVED_SYMBOL]).toBe(true)
     expect(getEventMeta(received)).toEqual(meta)
-    expect(unwrapEvent(received)).toEqual([data, meta])
-    expect(unwrapEvent(received)[0]).toBe(data)
+
+    const [resolvedData, resolvedMeta] = unwrapEvent(received)
+    expect(resolvedData).toBe(data)
+    expect(resolvedMeta).toEqual(meta)
   })
 
   it('withReceivedEventMeta validates and only proxies when make sense', () => {
@@ -143,16 +142,9 @@ describe('received event meta', () => {
     )
   })
 
-  it('withEventMeta does not mark the value received', () => {
-    const applied = withEventMeta({ value: 123 }, meta)
-    expect((applied as any)[EVENT_META_RECEIVED_SYMBOL]).toBe(false)
-  })
-
   it('unwrapEventForEmit drops received meta', () => {
     const data = { value: 123 }
-    const [resolvedData, resolvedMeta] = unwrapEventForEmit(withReceivedEventMeta(data, meta))
-    expect(resolvedData).toBe(data)
-    expect(resolvedMeta).toBe(undefined)
+    expect(unwrapEventForEmit(withReceivedEventMeta(data, meta))).toEqual([data, undefined])
 
     const error = withReceivedEventMeta(new Error('boom'), meta)
     expect(unwrapEventForEmit(error)[1]).toBe(undefined)
@@ -167,16 +159,18 @@ describe('received event meta', () => {
     expect(unwrapEventForEmit(null)).toEqual([null, undefined])
   })
 
-  it('re-wrapping with withEventMeta clears the received marker', () => {
-    const received = withReceivedEventMeta({ value: 123 }, meta)
+  it('re-wrapping with withEventMeta forwards or replaces received meta', () => {
+    const data = { value: 123 }
+    const received = withReceivedEventMeta(data, meta)
 
     const forwarded = withEventMeta(received, getEventMeta(received)!)
-    expect((forwarded as any)[EVENT_META_RECEIVED_SYMBOL]).toBe(false)
-    expect(getEventMeta(forwarded)).toEqual(meta)
-    expect(unwrapEventForEmit(forwarded)[1]).toEqual(meta)
+    expect(unwrapEventForEmit(forwarded)).toEqual([data, meta])
+    // wraps the original value instead of nesting proxies
+    expect(unwrapEvent(forwarded)[0]).toBe(data)
 
     const replaced = withEventMeta(received, { id: 'server' })
     expect(unwrapEventForEmit(replaced)[1]).toEqual({ id: 'server' })
+    expect(unwrapEvent(replaced)[0]).toBe(data)
   })
 
   it('withEventMeta with empty meta keeps the value received', () => {
