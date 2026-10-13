@@ -921,4 +921,166 @@ describe('serverPeer', () => {
       await readPromise
     })
   })
+
+  describe('maxBufferedStreamMessages', () => {
+    beforeEach(() => {
+      peer = new ServerPeer(send, { maxBufferedStreamMessages: 2 })
+    })
+
+    it('buffers stream messages without limit by default', async () => {
+      peer = new ServerPeer(send)
+      const { handler, box } = deferredHandler()
+      const msg = makeRequestMessage({ headers: { 'content-type': 'application/octet-stream' } })
+      const promise = peer.message(msg, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      for (let i = 0; i < 100; i++) {
+        await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([i])), vi.fn())
+      }
+
+      expect((peer as any).requests.get('1').octetStreamMessageQueue.size).toBe(100)
+      expect(send).not.toHaveBeenCalled()
+
+      box.resolve(jsonResponse())
+      await promise
+    })
+
+    it('cancels an unread octet-stream request body that buffers too many messages', async () => {
+      const { handler, box, signals } = deferredHandler()
+      const msg = makeRequestMessage({ headers: { 'content-type': 'application/octet-stream' } })
+      const promise = peer.message(msg, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([1])), vi.fn())
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([2])), vi.fn())
+      const queue: Queue<unknown> = (peer as any).requests.get('1').octetStreamMessageQueue
+      expect(queue.size).toBe(2)
+      expect(send).not.toHaveBeenCalled()
+
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([3])), vi.fn())
+      expect(send.mock.calls.map(([m]) => m)).toEqual([{ id: '1', kind: 'stream/cancel' }])
+      expect((peer as any).requests.get('1').octetStreamMessageQueue).toBeUndefined()
+      expect(queue.size).toBe(0)
+
+      // later messages are ignored
+      await peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([4])), vi.fn())
+      await peer.message(makeOctetStreamMessage('1', true), vi.fn())
+      expect(send).toHaveBeenCalledTimes(1)
+
+      const request = handler.mock.calls[0]![0]
+      const body = (await request.resolveBody()) as ReadableStream<Uint8Array>
+      await expect(body.getReader().read()).rejects.toThrow('maxBufferedStreamMessages')
+
+      // the request itself keeps running
+      expect(signals[0]!.aborted).toBe(false)
+      box.resolve(jsonResponse())
+      await promise
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['stream/cancel', 'response'])
+    })
+
+    it('cancels an unread event-stream request body that buffers too many messages', async () => {
+      const { handler, box, signals } = deferredHandler()
+      const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
+      const promise = peer.message(msg, handler)
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled())
+
+      await peer.message(makeEventStreamMessage('1', 1), vi.fn())
+      await peer.message(makeEventStreamMessage('1', 2), vi.fn())
+      const queue: Queue<unknown> = (peer as any).requests.get('1').eventStreamMessageQueue
+      expect(queue.size).toBe(2)
+      expect(send).not.toHaveBeenCalled()
+
+      await peer.message(makeEventStreamMessage('1', 3), vi.fn())
+      expect(send.mock.calls.map(([m]) => m)).toEqual([{ id: '1', kind: 'stream/cancel' }])
+      expect((peer as any).requests.get('1').eventStreamMessageQueue).toBeUndefined()
+      expect(queue.size).toBe(0)
+
+      // later messages are ignored
+      await peer.message(makeEventStreamMessage('1', 4), vi.fn())
+      await peer.message(makeEventStreamMessage('1', 5, 'close'), vi.fn())
+      expect(send).toHaveBeenCalledTimes(1)
+
+      const request = handler.mock.calls[0]![0]
+      const iter = (await request.resolveBody()) as AsyncIterator<unknown>
+      await expect(iter.next()).rejects.toThrow('maxBufferedStreamMessages')
+
+      // the request itself keeps running
+      expect(signals[0]!.aborted).toBe(false)
+      box.resolve(jsonResponse())
+      await promise
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['stream/cancel', 'response'])
+    })
+
+    it('does not trip while the handler reads the octet-stream request body', async () => {
+      const handler = vi.fn<HandlerFn>().mockImplementation(async (req) => {
+        const reader = ((await req.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+        const received: number[] = []
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            return jsonResponse(received)
+          }
+          received.push(...value)
+        }
+      })
+
+      const msg = makeRequestMessage({ headers: { 'content-type': 'application/octet-stream' } })
+      const promise = peer.message(msg, handler)
+
+      // messages arrive in bursts as large as the cap, and the handler reads between bursts
+      for (let i = 0; i < 20; i += 2) {
+        await sleep(0)
+        await Promise.all([
+          peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([i])), vi.fn()),
+          peer.message(makeOctetStreamMessage('1', undefined, new Uint8Array([i + 1])), vi.fn()),
+        ])
+      }
+      await peer.message(makeOctetStreamMessage('1', true), vi.fn())
+      await promise
+
+      expect(send.mock.calls.map(([m]) => m)).toEqual([
+        expect.objectContaining({
+          kind: 'response',
+          json: expect.objectContaining({ body: Array.from({ length: 20 }, (_, i) => i) }),
+        }),
+      ])
+    })
+
+    it('does not trip while the handler reads the event-stream request body', async () => {
+      const handler = vi.fn<HandlerFn>().mockImplementation(async (req) => {
+        const iter = (await req.resolveBody()) as AsyncIterator<unknown>
+        const received: unknown[] = []
+
+        while (true) {
+          const { done, value } = await iter.next()
+          if (done) {
+            return jsonResponse(received)
+          }
+          received.push(value)
+        }
+      })
+
+      const msg = makeRequestMessage({ headers: { 'standard-server': 'event-stream' } })
+      const promise = peer.message(msg, handler)
+
+      // messages arrive in bursts as large as the cap, and the handler reads between bursts
+      for (let i = 0; i < 20; i += 2) {
+        await sleep(0)
+        await Promise.all([
+          peer.message(makeEventStreamMessage('1', i), vi.fn()),
+          peer.message(makeEventStreamMessage('1', i + 1), vi.fn()),
+        ])
+      }
+      await peer.message(makeEventStreamMessage('1', undefined, 'close'), vi.fn())
+      await promise
+
+      expect(send.mock.calls.map(([m]) => m)).toEqual([
+        expect.objectContaining({
+          kind: 'response',
+          json: expect.objectContaining({ body: Array.from({ length: 20 }, (_, i) => i) }),
+        }),
+      ])
+    })
+  })
 })

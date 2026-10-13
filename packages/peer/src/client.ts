@@ -35,11 +35,37 @@ interface ClientPeerRequestStateInternal {
   streamCancelled?: boolean | undefined
 }
 
+export interface ClientPeerOptions {
+  /**
+   * Maximum number of stream messages (`event-stream`/`octet-stream`) buffered per response body
+   * that has not been read yet. Above it the peer drops the buffer, makes reads of that body
+   * reject, and cancels the request.
+   *
+   * Set it when the server is untrusted: a response body that is read slowly, or never,
+   * otherwise keeps every message the server sends in memory until the request ends.
+   *
+   * @default Infinity
+   */
+  maxBufferedStreamMessages?: number
+}
+
 export class ClientPeer {
   private readonly idGenerator = new SequentialIdGenerator()
   private readonly requests = new Map<string, ClientPeerRequestStateInternal>()
+  private readonly maxBufferedStreamMessages: number
 
-  constructor(private readonly send: (message: ClientPeerSendMessage) => Promise<void>) {}
+  /**
+   * @param send Sends a message to the server peer. Streamed request bodies send their next
+   * message only after the returned promise settles, so it is the only backpressure signal:
+   * resolve it once the transport has accepted or flushed the data (e.g. the `ws` send callback),
+   * not as soon as the data is queued.
+   */
+  constructor(
+    private readonly send: (message: ClientPeerSendMessage) => Promise<void>,
+    options: ClientPeerOptions = {},
+  ) {
+    this.maxBufferedStreamMessages = options.maxBufferedStreamMessages ?? Number.POSITIVE_INFINITY
+  }
 
   /**
    * Send a request to the server peer
@@ -181,6 +207,12 @@ export class ClientPeer {
     // by the last stream message the server has already released the request, so release it too
     if (message.kind === 'event-stream') {
       const queue = state.eventStreamMessageQueue
+
+      if (queue && queue.size >= this.maxBufferedStreamMessages) {
+        await this.abortById(id, this.bufferOverflowError())
+        return
+      }
+
       queue?.push(message)
 
       if (queue && (message.json.event === 'close' || message.json.event === 'error')) {
@@ -192,6 +224,12 @@ export class ClientPeer {
 
     if (message.kind === 'octet-stream') {
       const queue = state.octetStreamMessageQueue
+
+      if (queue && queue.size >= this.maxBufferedStreamMessages) {
+        await this.abortById(id, this.bufferOverflowError())
+        return
+      }
+
       queue?.push(message)
 
       if (queue && message.json.close) {
@@ -234,6 +272,12 @@ export class ClientPeer {
     } catch (reason) {
       await this.closeById(id, reason)
     }
+  }
+
+  private bufferOverflowError(): Error {
+    return new Error(
+      `Response body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
+    )
   }
 
   async close(reason?: unknown): Promise<void> {

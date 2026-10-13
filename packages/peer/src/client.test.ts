@@ -1428,4 +1428,147 @@ describe('clientPeer', () => {
       expect(send).toHaveBeenCalledTimes(4) // no more messages
     })
   })
+
+  describe('maxBufferedStreamMessages', () => {
+    beforeEach(() => {
+      peer = new ClientPeer(send, { maxBufferedStreamMessages: 2 })
+    })
+
+    it('buffers stream messages without limit by default', async () => {
+      peer = new ClientPeer(send)
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const response = await promise
+
+      for (let i = 0; i < 100; i++) {
+        await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([i])))
+      }
+      await peer.message(makeOctetStreamMessage(id, true))
+
+      const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+      for (let i = 0; i < 100; i++) {
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([i]) })
+      }
+      expect(await reader.read()).toEqual({ done: true, value: undefined })
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
+
+    it('cancels the request once an unread octet-stream response body buffers too many messages', async () => {
+      const controller = new AbortController()
+      const removeSpy = vi.spyOn(controller.signal, 'removeEventListener')
+
+      const { id, promise } = await requestAndGetId(makeRequest({ signal: controller.signal }))
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const response = await promise
+
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([1])))
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([2])))
+      expect(getPeerSize(peer)).toBe(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+      await peer.message(makeOctetStreamMessage(id, false, new Uint8Array([3])))
+      expect(send.mock.calls.map(([m]) => m)).toEqual([
+        expect.objectContaining({ kind: 'request' }),
+        { id, kind: 'cancel' },
+      ])
+      expect(getPeerSize(peer)).toBe(0)
+      expect(removeSpy).toHaveBeenCalledOnce()
+
+      // later messages are ignored
+      await peer.message(makeOctetStreamMessage(id, true, new Uint8Array([4])))
+
+      const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+      await expect(reader.read()).rejects.toThrow('maxBufferedStreamMessages')
+      expect(send).toHaveBeenCalledTimes(2)
+    })
+
+    it('cancels the request once an unread event-stream response body buffers too many messages', async () => {
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      const response = await promise
+
+      await peer.message(makeEventStreamMessage(id, 1))
+      await peer.message(makeEventStreamMessage(id, 2))
+      expect(getPeerSize(peer)).toBe(1)
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+
+      await peer.message(makeEventStreamMessage(id, 3))
+      expect(send.mock.calls.map(([m]) => m)).toEqual([
+        expect.objectContaining({ kind: 'request' }),
+        { id, kind: 'cancel' },
+      ])
+      expect(getPeerSize(peer)).toBe(0)
+
+      // later messages are ignored
+      await peer.message(makeEventStreamMessage(id, 4, 'close'))
+
+      const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+      await expect(iter.next()).rejects.toThrow('maxBufferedStreamMessages')
+      expect(send).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not trip while the octet-stream response body is read', async () => {
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'octet-stream'))
+      const response = await promise
+
+      const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+      const received: number[] = []
+      const reading = (async () => {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            return
+          }
+          received.push(...value)
+        }
+      })()
+
+      // messages arrive in bursts as large as the cap, and the body is read between bursts
+      for (let i = 0; i < 20; i += 2) {
+        await sleep(0)
+        await Promise.all([
+          peer.message(makeOctetStreamMessage(id, false, new Uint8Array([i]))),
+          peer.message(makeOctetStreamMessage(id, false, new Uint8Array([i + 1]))),
+        ])
+      }
+      await peer.message(makeOctetStreamMessage(id, true))
+      await reading
+
+      expect(received).toEqual(Array.from({ length: 20 }, (_, i) => i))
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
+
+    it('does not trip while the event-stream response body is read', async () => {
+      const { id, promise } = await requestAndGetId()
+      await peer.message(makeStreamingResponse(id, 'event-stream'))
+      const response = await promise
+
+      const iter = (await response.resolveBody()) as AsyncIterator<unknown>
+      const received: unknown[] = []
+      const reading = (async () => {
+        while (true) {
+          const { done, value } = await iter.next()
+          if (done) {
+            return
+          }
+          received.push(value)
+        }
+      })()
+
+      // messages arrive in bursts as large as the cap, and the body is read between bursts
+      for (let i = 0; i < 20; i += 2) {
+        await sleep(0)
+        await Promise.all([
+          peer.message(makeEventStreamMessage(id, i)),
+          peer.message(makeEventStreamMessage(id, i + 1)),
+        ])
+      }
+      await peer.message(makeEventStreamMessage(id, undefined, 'close'))
+      await reading
+
+      expect(received).toEqual(Array.from({ length: 20 }, (_, i) => i))
+      expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request'])
+    })
+  })
 })

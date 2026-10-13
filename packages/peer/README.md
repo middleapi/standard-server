@@ -45,7 +45,7 @@ The package exposes four groups of helpers:
 
 | Group                | Exports                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Purpose                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Peer runtime         | `ClientPeer`, `ServerPeer`                                                                                                                                                                                                                                                                                                                                                                                                                                             | Send Standard Server requests and responses over a peer transport |
+| Peer runtime         | `ClientPeer`, `ServerPeer`, `ClientPeerOptions`, `ServerPeerOptions`                                                                                                                                                                                                                                                                                                                                                                                                   | Send Standard Server requests and responses over a peer transport |
 | Message codec        | `encodePeerMessage()`, `decodePeerMessage()`                                                                                                                                                                                                                                                                                                                                                                                                                           | Encode peer messages as strings or bytes for transport            |
 | Stream utilities     | `toAsyncIteratorObject()`, `EventStreamTransmitter`, `HibernationAsyncIteratorClass`                                                                                                                                                                                                                                                                                                                                                                                   | Bridge peer messages with Standard Server event-stream semantics  |
 | Types and validators | `PeerMessage`, `PeerRequestMessage`, `PeerResponseMessage`, `PeerCancelMessage`, `PeerEventStreamMessage`, `PeerOctetStreamMessage`, `PeerStreamCancelMessage`, `ClientPeerSendMessage`, `ServerPeerSendMessage`, `isPeerMessage()`, `isPeerRequestMessage()`, `isPeerResponseMessage()`, `isPeerCancelMessage()`, `isPeerEventStreamMessage()`, `isPeerOctetStreamMessage()`, `isPeerStreamCancelMessage()`, `isClientPeerSendMessage()`, `isServerPeerSendMessage()` | Describe and validate the peer protocol payloads                  |
@@ -156,6 +156,66 @@ Encoding rules:
 1. Messages without binary payloads are encoded as strings.
 2. Messages with binary payloads are encoded as `Uint8Array` values containing JSON, a delimiter byte, and the raw binary bytes.
 3. The optional `prefix` lets you share the same transport between multiple protocols without collisions.
+
+## Flow control
+
+### Outgoing streams
+
+`ServerPeer` and `ClientPeer` send a streamed body (a `ReadableStream` or an async iterator) one message at a time, and read the next chunk only after the promise returned by your `send` function settles. That promise is the only backpressure signal. Resolve it once the transport has accepted or flushed the data, not as soon as the data is queued. Otherwise a remote that stops reading lets the whole body pile up in the transport's write buffer.
+
+With [`ws`](https://github.com/websockets/ws) on Node.js, wait for the send callback:
+
+```ts
+import { encodePeerMessage, ServerPeer } from '@standard-server/peer'
+
+const serverPeer = new ServerPeer(async (message) => {
+  const data = await encodePeerMessage(message)
+
+  await new Promise<void>((resolve, reject) => {
+    ws.send(data, (error) => (error ? reject(error) : resolve()))
+  })
+})
+```
+
+The standard `WebSocket` in browsers, Deno and Bun has no send callback. Wait until `bufferedAmount` drops below a threshold instead:
+
+```ts
+import { ClientPeer, encodePeerMessage } from '@standard-server/peer'
+
+const HIGH_WATER_MARK = 1024 * 1024 // 1 MiB
+
+const clientPeer = new ClientPeer(async (message) => {
+  websocket.send(await encodePeerMessage(message))
+
+  while (websocket.bufferedAmount > HIGH_WATER_MARK) {
+    if (websocket.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket is closed')
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+})
+```
+
+Bun's server-side `ServerWebSocket` signals backpressure differently: `send()` returns `-1` when it had to queue the message, and the `drain` handler runs once the socket can take more.
+
+`MessagePort` has no drain signal, so `send` cannot apply backpressure there. That is usually fine, because a `MessagePort` normally connects trusted peers in the same application, such as workers, iframes or Electron processes.
+
+### Incoming streams
+
+The sender decides whether a body is streamed. Stream messages are buffered per request until the handler (or, on the client, the code reading the response) reads them. This buffer is unbounded by default, so a body that is read slowly, or never, keeps everything the remote sends in memory until the request ends or the peer is closed. When the remote is untrusted, cap the buffer:
+
+```ts
+const serverPeer = new ServerPeer(send, { maxBufferedStreamMessages: 1000 })
+const clientPeer = new ClientPeer(send, { maxBufferedStreamMessages: 1000 })
+```
+
+When a body has more unread stream messages than the cap:
+
+- `ServerPeer` drops the buffered messages, makes reads of that request body reject, and sends `stream/cancel` so the client stops sending it. The request itself keeps running, so the handler can still respond.
+- `ClientPeer` drops the buffered messages, makes reads of that response body reject, and cancels the request.
+
+The cap counts messages, not bytes. Each message carries one chunk or event, so memory per request is bounded by the cap times the largest message your transport accepts (`maxPayload` in `ws`, 100 MiB by default). Leave headroom for bursts: `ws` can deliver many messages in the same tick, before the reader gets a chance to run.
 
 ## Learn more
 

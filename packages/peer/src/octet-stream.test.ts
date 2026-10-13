@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { Queue } from '@standard-server/shared'
+import { promiseWithResolvers, Queue, sleep } from '@standard-server/shared'
 
 import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
 import type { PeerOctetStreamMessage } from './types'
@@ -238,6 +238,49 @@ describe('octetStreamTransmitter', () => {
     await expect(transmitter.transmit()).rejects.toThrow('send failed')
 
     expect(cancel).toHaveBeenCalledTimes(0)
+  })
+
+  it('reads the next chunk only after send settles', async () => {
+    let pulls = 0
+    const stream = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array([pulls++]))
+      },
+    })
+
+    const sends: ReturnType<typeof promiseWithResolvers<void>>[] = []
+    const send = vi.fn<(message: PeerOctetStreamMessage) => Promise<void>>(() => {
+      const deferred = promiseWithResolvers<void>()
+      sends.push(deferred)
+      return deferred.promise
+    })
+
+    const transmitter = new OctetStreamTransmitter(stream, 'msg-1', send)
+    const transmitPromise = transmitter.transmit()
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    await sleep(10)
+    // the read chunk plus the one the stream pulls ahead to fill its buffer
+    expect(pulls).toBeLessThanOrEqual(2)
+    expect(send).toHaveBeenCalledTimes(1)
+
+    for (let i = 1; i <= 5; i++) {
+      const pullsBefore = pulls
+      sends[i - 1]!.resolve()
+
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(i + 1))
+      await sleep(10)
+      expect(send).toHaveBeenCalledTimes(i + 1)
+      expect(pulls).toBe(pullsBefore + 1)
+    }
+
+    expect(send.mock.calls.map(([message]) => message.binary)).toEqual(
+      [0, 1, 2, 3, 4, 5].map((i) => new Uint8Array([i])),
+    )
+
+    await transmitter.cancel()
+    sends.at(-1)!.resolve()
+    await transmitPromise
   })
 
   it('cancel is idempotent', async () => {

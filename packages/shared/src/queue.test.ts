@@ -100,6 +100,63 @@ describe('queue', () => {
     await expect(queue.pull()).rejects.toThrow('Queue was aborted.')
   })
 
+  it('size counts buffered items that have not been pulled', async () => {
+    const queue = new Queue<string>()
+    expect(queue.size).toBe(0)
+
+    queue.push('a')
+    queue.push('b')
+    expect(queue.size).toBe(2)
+
+    await queue.pull()
+    expect(queue.size).toBe(1)
+
+    // close keeps buffered items
+    queue.close()
+    expect(queue.size).toBe(1)
+
+    await queue.pull()
+    expect(queue.size).toBe(0)
+    await expect(queue.pull()).rejects.toThrow(AbortError)
+    expect(queue.size).toBe(0)
+  })
+
+  it('size ignores items handed to pending pulls', async () => {
+    const queue = new Queue<string>()
+
+    const p = queue.pull()
+    queue.push('a')
+    expect(queue.size).toBe(0)
+    await expect(p).resolves.toBe('a')
+
+    queue.push('b')
+    expect(queue.size).toBe(1)
+  })
+
+  it('size stays correct across internal compaction', async () => {
+    const queue = new Queue<number>()
+
+    for (let i = 0; i < 2048; i++) {
+      queue.push(i)
+    }
+
+    for (let i = 0; i < 1500; i++) {
+      await queue.pull()
+    }
+
+    expect(queue.size).toBe(548)
+  })
+
+  it('size drops to zero on abort', () => {
+    const queue = new Queue<string>()
+
+    queue.push('a')
+    queue.push('b')
+    queue.abort()
+
+    expect(queue.size).toBe(0)
+  })
+
   it('concurrent pull/push/close', async () => {
     const queue = new Queue<string>()
 

@@ -13,6 +13,13 @@ export class Queue<T> {
   private closed: undefined | { reason: unknown }
 
   /**
+   * Number of buffered items that have not been pulled yet.
+   */
+  get size(): number {
+    return this.items.length - this.head
+  }
+
+  /**
    * Pushes an item into the queue.
    * @throws when the queue is closed or aborted
    */

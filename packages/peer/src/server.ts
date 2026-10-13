@@ -23,10 +23,37 @@ interface ServerPeerRequestStateInternal {
   octetStreamTransmitter?: OctetStreamTransmitter | undefined
 }
 
+export interface ServerPeerOptions {
+  /**
+   * Maximum number of stream messages (`event-stream`/`octet-stream`) buffered per request body
+   * that the handler has not read yet. Above it the peer drops the buffer, makes reads of that
+   * body reject, and sends `stream/cancel` so the client stops sending it. The request itself
+   * keeps running.
+   *
+   * Set it when the client is untrusted: a handler that reads its body slowly, or never,
+   * otherwise keeps every message the client sends in memory until the request ends.
+   *
+   * @default Infinity
+   */
+  maxBufferedStreamMessages?: number
+}
+
 export class ServerPeer {
   private readonly requests = new Map<string, ServerPeerRequestStateInternal>()
+  private readonly maxBufferedStreamMessages: number
 
-  constructor(private readonly send: (message: ServerPeerSendMessage) => Promise<void>) {}
+  /**
+   * @param send Sends a message to the client peer. Streamed response bodies send their next
+   * message only after the returned promise settles, so it is the only backpressure signal:
+   * resolve it once the transport has accepted or flushed the data (e.g. the `ws` send callback),
+   * not as soon as the data is queued.
+   */
+  constructor(
+    private readonly send: (message: ServerPeerSendMessage) => Promise<void>,
+    options: ServerPeerOptions = {},
+  ) {
+    this.maxBufferedStreamMessages = options.maxBufferedStreamMessages ?? Number.POSITIVE_INFINITY
+  }
 
   /**
    * Handle a message from client
@@ -43,12 +70,14 @@ export class ServerPeer {
     }
 
     if (message.kind === 'event-stream') {
-      this.requests.get(id)?.eventStreamMessageQueue?.push(message)
+      const state = this.requests.get(id)
+      await this.pushStreamMessage(id, state, state?.eventStreamMessageQueue, message)
       return
     }
 
     if (message.kind === 'octet-stream') {
-      this.requests.get(id)?.octetStreamMessageQueue?.push(message)
+      const state = this.requests.get(id)
+      await this.pushStreamMessage(id, state, state?.octetStreamMessageQueue, message)
       return
     }
 
@@ -174,6 +203,36 @@ export class ServerPeer {
         await cancelStandardBody(untransmittedBody, signal.reason)
       }
     }
+  }
+
+  private async pushStreamMessage<T>(
+    id: string,
+    state: ServerPeerRequestStateInternal | undefined,
+    queue: Queue<T> | undefined,
+    message: T,
+  ): Promise<void> {
+    if (!state || !queue) {
+      return
+    }
+
+    if (queue.size < this.maxBufferedStreamMessages) {
+      queue.push(message)
+      return
+    }
+
+    /**
+     * The handler is not keeping up with the request body. Drop the buffer, so body reads reject,
+     * and drop the queue so later stream messages are ignored. The request itself keeps running.
+     */
+    queue.abort(
+      new Error(
+        `Request body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
+      ),
+    )
+    state.eventStreamMessageQueue = undefined
+    state.octetStreamMessageQueue = undefined
+
+    await this.send({ id, kind: 'stream/cancel' })
   }
 
   async close(reason?: unknown): Promise<void> {

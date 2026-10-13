@@ -1,5 +1,5 @@
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
-import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
+import { AsyncIteratorClass, promiseWithResolvers, Queue, sleep } from '@standard-server/shared'
 
 import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream'
 import type { PeerEventStreamMessage } from './types'
@@ -315,6 +315,45 @@ describe('eventStreamTransmitter', () => {
     // The first next() was already in progress when cancel was called.
     // After cancel, the transmitter should not send the result.
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('pulls the next item only after send settles', async () => {
+    let pulls = 0
+    const iter = new AsyncIteratorClass<unknown>(
+      async () => ({ done: false, value: pulls++ }),
+      async () => {},
+    )
+
+    const sends: ReturnType<typeof promiseWithResolvers<void>>[] = []
+    const send = vi.fn<(message: PeerEventStreamMessage) => Promise<void>>(() => {
+      const deferred = promiseWithResolvers<void>()
+      sends.push(deferred)
+      return deferred.promise
+    })
+
+    const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
+    const transmitPromise = transmitter.transmit()
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    await sleep(10)
+    expect(pulls).toBeLessThanOrEqual(2)
+    expect(send).toHaveBeenCalledTimes(1)
+
+    for (let i = 1; i <= 5; i++) {
+      const pullsBefore = pulls
+      sends[i - 1]!.resolve()
+
+      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(i + 1))
+      await sleep(10)
+      expect(send).toHaveBeenCalledTimes(i + 1)
+      expect(pulls).toBe(pullsBefore + 1)
+    }
+
+    expect(send.mock.calls.map(([message]) => message.json.data)).toEqual([0, 1, 2, 3, 4, 5])
+
+    await transmitter.cancel()
+    sends.at(-1)!.resolve()
+    await transmitPromise
   })
 
   it('cancel is idempotent', async () => {
