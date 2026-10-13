@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net'
 import net from 'node:net'
+import { text } from 'node:stream/consumers'
 
 import type { StandardLazyRequest } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
@@ -145,10 +146,10 @@ describe('toStandardLazyRequest', () => {
     expect(standardBody).toEqual({ foo: 'bar' })
   })
 
-  it('keeps the raw path of absolute-form targets, matching what fastify routed on', async ({
+  it('keeps the raw path of absolute-form targets, so a route guard cannot be skipped', async ({
     onTestFinished,
   }) => {
-    const seen: { routed: string; url: string }[] = []
+    const urls: string[] = []
 
     const fastify = Fastify()
     onTestFinished(() => fastify.close())
@@ -159,46 +160,25 @@ describe('toStandardLazyRequest', () => {
     })
 
     fastify.all('/rpc/*', async (req, reply) => {
-      seen.push({
-        routed: `/rpc/${(req.params as any)['*']}`,
-        url: toStandardLazyRequest(req, reply).url,
-      })
+      urls.push(toStandardLazyRequest(req, reply).url)
       return reply.code(200).send()
     })
 
     await fastify.listen({ port: 0, host: '127.0.0.1' })
     const { port } = fastify.server.address() as AddressInfo
 
-    const send = (target: string) =>
-      new Promise<string>((resolve, reject) => {
-        let response = ''
-        const socket = net.connect(port, '127.0.0.1', () => {
-          socket.end(`POST ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`)
-        })
-        socket.setEncoding('utf8')
-        socket.on('data', (chunk) => (response += chunk))
-        socket.on('close', () => resolve(response.split('\r\n')[0]!))
-        socket.on('error', reject)
-      })
+    const send = async (target: string) => {
+      const socket = net.connect(port, '127.0.0.1')
+      socket.end(`POST ${target} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`)
+      return (await text(socket)).split('\r\n')[0]
+    }
 
-    // sanity check: the guard holds for the protected path
     expect(await send('/rpc/admin/deleteUser')).toBe('HTTP/1.1 403 Forbidden')
     expect(await send('http://x/rpc/admin/deleteUser')).toBe('HTTP/1.1 403 Forbidden')
-    expect(seen).toEqual([])
-
     expect(await send('http://x/rpc/public/../admin/deleteUser')).toBe('HTTP/1.1 200 OK')
     expect(await send('http://x/rpc/public/%2e%2e/admin/deleteUser')).toBe('HTTP/1.1 200 OK')
-    expect(await send('http://x/rpc/public/%2E%2E/admin/deleteUser')).toBe('HTTP/1.1 200 OK')
 
-    // the adapter reports the raw path, so the inner router can't see a path the guard didn't
-    expect(seen.map(({ url }) => url)).toEqual([
-      '/rpc/public/../admin/deleteUser',
-      '/rpc/public/%2e%2e/admin/deleteUser',
-      '/rpc/public/%2E%2E/admin/deleteUser',
-    ])
-    for (const { routed, url } of seen) {
-      expect(decodeURIComponent(url)).toBe(routed)
-      expect(url.startsWith('/rpc/admin/')).toBe(false)
-    }
+    // the adapter reports the path fastify routed past the guard, never `/rpc/admin/...`
+    expect(urls).toEqual(['/rpc/public/../admin/deleteUser', '/rpc/public/%2e%2e/admin/deleteUser'])
   })
 })

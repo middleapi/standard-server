@@ -88,24 +88,16 @@ createServer(async (req, res) => {
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.
 
-## Request URL
-
-`request.url` is the request target as Node received it, read from `req.originalUrl` (set by Express) or `req.url`. `@standard-server/fastify` uses the same helper on Fastify's `req.url`. The path is passed through raw in both request-target forms:
-
-- **Origin-form** (`/rpc/ping?x=1`) is returned unchanged.
-- **Absolute-form** (`http://host/rpc/ping?x=1`, which Node accepts from clients that treat the server as a proxy) has only its scheme and authority stripped, so the result is `/rpc/ping?x=1`.
-
-Dot segments (`.`, `..`) are not resolved and percent-encoding is not decoded, so `http://host/rpc/public/../admin` yields `/rpc/public/../admin`, and `%2e%2e` stays `%2e%2e`. Express and Fastify don't resolve dot segments before routing either, so a path that skipped a framework path guard can't turn into one the guard would have matched. Unlike this adapter, `@standard-server/fetch` returns WHATWG-normalized URLs, because the `Request` object already holds them.
-
-> [!IMPORTANT]
-> If your handler canonicalizes the path (resolves dot segments or decodes it) before routing, do it consistently with any framework path guards in front of the adapter. Otherwise a path such as `/rpc/public/../admin/x` can skip a guard on `/rpc/admin` and still reach the protected route. Enforcing authorization in the handler itself avoids the problem.
-
 ## Resolving Body
 
 `resolveBody(hint?)` follows the shared Standard Server resolution rules: an explicit `hint` wins, then the [`standard-server` header](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#the-standard-server-header), then inference from the content headers. See [how body parsing works](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md#how-body-parsing-works) in the core README for the full algorithm.
 
 > [!TIP]
 > For efficient communication, set the `standard-server` header to explicitly hint the body type, especially for file or binary streaming. For example, if you upload a file with a common `content-type` such as `application/json` but omit the `standard-server` header, the server may interpret it as JSON and parse it unexpectedly.
+
+## Node behavior to be aware of
+
+- **Request URLs keep their raw path.** `request.url` comes from `req.originalUrl` (set by Express) or `req.url`, in this adapter and in `@standard-server/fastify`. Origin-form targets (`/rpc/ping`) pass through unchanged, and absolute-form targets (`http://host/rpc/ping`, sent by clients that treat the server as a proxy) only lose their scheme and authority. Dot segments (`..`) and percent-encoding (`%2e%2e`) are never resolved, matching the path Express and Fastify route on. If your handler canonicalizes the path before routing, do it consistently with any framework path guards, otherwise `/rpc/public/../admin/x` can skip a guard on `/rpc/admin` and still reach the protected route.
 
 ## Learn more
 

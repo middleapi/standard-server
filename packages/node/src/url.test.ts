@@ -1,6 +1,7 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import net from 'node:net'
+import { text } from 'node:stream/consumers'
 
 import { toStandardUrl } from './url'
 
@@ -120,20 +121,14 @@ describe('toStandardUrl', () => {
     await new Promise<void>((r) => server.listen(0, r))
     const { port } = server.address() as AddressInfo
 
-    const send = (target: string) =>
-      new Promise<void>((resolve, reject) => {
-        const socket = net.connect(port, '127.0.0.1', () => {
-          socket.end(
-            `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`,
-          )
-        })
-        socket.resume()
-        socket.on('close', resolve)
-        socket.on('error', reject)
-      })
+    const send = async (target: string) => {
+      const socket = net.connect(port, '127.0.0.1')
+      socket.end(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`)
+      await text(socket)
+    }
 
     await send(`http://127.0.0.1:${port}/ping?x=1`)
-    // dot segments stay raw, exactly as Express (parseurl) and Fastify (find-my-way) route on them
+    // dot segments and percent-encoding stay raw, like origin-form
     await send(`http://127.0.0.1:${port}/rpc/public/../admin/x`)
     await send(`http://127.0.0.1:${port}/rpc/public/%2e%2e/admin/x`)
 
