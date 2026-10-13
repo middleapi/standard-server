@@ -74,9 +74,8 @@ export function getFilenameFromContentDisposition(contentDisposition: string): s
 }
 
 /**
- * Join a header's values into one string with `, `, like `Headers.get()`.
- * Not safe for `set-cookie`: a folded line corrupts the cookies,
- * so send each value as its own header line instead.
+ * Join a header's values with `, `, like `Headers.get()`.
+ * Not safe for `set-cookie`: each cookie must stay its own header line.
  */
 export function flattenStandardHeader(
   header: string | readonly string[] | undefined,
