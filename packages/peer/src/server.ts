@@ -5,7 +5,6 @@ import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard
 
 import { encodeAtomicStandardBody, toStandardBody } from './body'
 import { EventStreamTransmitter } from './event-stream'
-import { toStandardHeaders } from './headers'
 import { HibernationAsyncIteratorClass } from './hibernation'
 import { OctetStreamTransmitter } from './octet-stream'
 import type {
@@ -66,10 +65,7 @@ export class ServerPeer {
     let untransmittedBody: StandardBody | undefined
 
     try {
-      // the body parser must see the same normalized headers as the handler
-      const headers = toStandardHeaders(message.json.headers)
-      const normalizedMessage = { ...message, json: { ...message.json, headers } }
-      const decoded = toStandardBody(normalizedMessage, async ({ kind, error }) => {
+      const decoded = toStandardBody(message, async ({ kind, error }) => {
         /**
          * The request body is finished (fully read, errored, or cancelled).
          * Abort the queues so nothing is left waiting on them, then drop them
@@ -94,7 +90,7 @@ export class ServerPeer {
       const response = await handleRequest({
         url: message.json.url,
         method: message.json.method ?? 'POST',
-        headers,
+        headers: decoded.headers,
         resolveBody: decoded.resolveBody,
         signal,
       })

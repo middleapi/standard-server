@@ -220,15 +220,11 @@ describe('serverPeer', () => {
 
       const req = handler.mock.calls[0]![0]
       expect(Object.getPrototypeOf(req.headers)).toBe(null)
-      expect(Object.keys(req.headers)).toEqual(['x-user-id', 'content-type', '__proto__'])
-      expect(req.headers['x-user-id']).toEqual(['admin', 'bob'])
-      expect(req.headers['content-type']).toBe('text/plain')
-      expect(Object.getOwnPropertyDescriptor(req.headers, '__proto__')).toEqual({
-        value: 'proto',
-        writable: true,
-        enumerable: true,
-        configurable: true,
-      })
+      expect(Object.entries(req.headers)).toEqual([
+        ['x-user-id', ['admin', 'bob']],
+        ['content-type', 'text/plain'],
+        ['__proto__', 'proto'],
+      ])
 
       // stripping a header by its lowercase name removes every copy of it
       const h = { ...req.headers }

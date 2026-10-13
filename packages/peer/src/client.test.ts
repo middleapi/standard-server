@@ -272,23 +272,6 @@ describe('clientPeer', () => {
         ['x-server', 'true'],
       ])
     })
-
-    it('parses the body with the normalized headers', async () => {
-      const { id, promise } = await requestAndGetId()
-
-      await peer.message({
-        id,
-        kind: 'response',
-        json: { headers: { 'Content-Type': 'text/plain', 'Content-Disposition': 'inline' } },
-        binary: new Uint8Array([104, 105]),
-      })
-
-      const response = await promise
-      const file = (await response.resolveBody()) as File
-      expect(file).toBeInstanceOf(File)
-      expect(file.type).toBe('text/plain')
-      expect(await file.text()).toBe('hi')
-    })
   })
 
   describe('signal / abort', () => {

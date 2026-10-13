@@ -8,6 +8,7 @@ import type { AsyncCleanupFn } from '@standard-server/shared'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 
 import { toAsyncIteratorObject } from './event-stream'
+import { toStandardHeaders } from './headers'
 import { toOctetStream } from './octet-stream'
 import type {
   PeerEventStreamMessage,
@@ -17,6 +18,10 @@ import type {
 } from './types'
 
 export interface ToStandardBodyResult {
+  /**
+   * The message headers normalized to lowercase keys, as the body was parsed with them.
+   */
+  headers: StandardHeaders
   resolveBody: () => Promise<StandardBody>
   eventStreamMessageQueue?: Queue<PeerEventStreamMessage>
   octetStreamMessageQueue?: Queue<PeerOctetStreamMessage>
@@ -29,15 +34,17 @@ export function toStandardBody(
   message: PeerRequestMessage | PeerResponseMessage,
   cleanup: AsyncCleanupFn,
 ): ToStandardBodyResult {
-  const rawContentType = message.json.headers?.['content-type']
+  const headers = toStandardHeaders(message.json.headers)
+  const rawContentType = headers['content-type']
   const contentType = flattenStandardHeader(rawContentType)
-  const bodyHint = flattenStandardHeader(message.json.headers?.['standard-server'])
+  const bodyHint = flattenStandardHeader(headers['standard-server'])
 
   if (message.json.body === undefined && message.binary === undefined) {
     // Check the raw header: a stream sent with `content-type: []` has no content-type once flattened
     if (rawContentType === undefined && bodyHint === ('event-stream' satisfies StandardBodyHint)) {
       const eventStreamMessageQueue = new Queue<PeerEventStreamMessage>()
       return {
+        headers,
         resolveBody: resolveStreamBodyOnce(() =>
           toAsyncIteratorObject(eventStreamMessageQueue, cleanup),
         ),
@@ -48,6 +55,7 @@ export function toStandardBody(
     if (rawContentType !== undefined) {
       const octetStreamMessageQueue = new Queue<PeerOctetStreamMessage>()
       return {
+        headers,
         resolveBody: resolveStreamBodyOnce(() => toOctetStream(octetStreamMessageQueue, cleanup)),
         octetStreamMessageQueue,
       }
@@ -74,9 +82,7 @@ export function toStandardBody(
           return form
         }
 
-        const contentDisposition = flattenStandardHeader(
-          message.json.headers?.['content-disposition'],
-        )
+        const contentDisposition = flattenStandardHeader(headers['content-disposition'])
         const filename =
           contentDisposition !== undefined
             ? getFilenameFromContentDisposition(contentDisposition)
@@ -106,7 +112,7 @@ export function toStandardBody(
     }
   }
 
-  return { resolveBody }
+  return { headers, resolveBody }
 }
 
 /**
