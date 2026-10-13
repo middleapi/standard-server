@@ -50,10 +50,8 @@ export async function toStandardBody(
     return undefined
   }
 
-  // `readable` only turns false once the stream ends, so it misses a read that overlaps
-  // another or follows a lazy (stream/iterator) one, where a second consumer would
-  // silently get an empty body. Like the fetch and peer adapters, reject reading it
-  // more than once. Marking happens synchronously, before any parser touches the stream.
+  // `readable` stays true until the stream ends, so it misses overlapping or lazy
+  // (stream/iterator) reads; mark the request before the first await to catch those.
   if (!req.readable || consumedRequests.has(req)) {
     // native fetch error use TypeError
     throw new TypeError('Failed to read body: body stream already read or destroyed')

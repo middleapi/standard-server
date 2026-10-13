@@ -140,11 +140,13 @@ describe('toStandardLazyRequest', () => {
       .set('content-type', 'application/octet-stream')
       .send('{"amount":100}')
 
-    const [first, second] = results as [PromiseFulfilledResult<unknown>, PromiseRejectedResult]
-    expect(first).toEqual({ status: 'fulfilled', value: { amount: 100 } })
-    expect(second.status).toBe('rejected')
-    expect(second.reason).toBeInstanceOf(TypeError)
-    expect(second.reason.message).toContain('Failed to read body: body stream already read')
+    expect(results).toEqual([
+      { status: 'fulfilled', value: { amount: 100 } },
+      {
+        status: 'rejected',
+        reason: new TypeError('Failed to read body: body stream already read or destroyed'),
+      },
+    ])
   })
 
   it('forwards the body hint to the standard body parser', async ({ onTestFinished }) => {
