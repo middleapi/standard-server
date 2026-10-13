@@ -304,17 +304,17 @@ const filename = getFilenameFromContentDisposition(disposition)
 import { flattenStandardHeader, mergeStandardHeaders } from '@standard-server/core'
 
 const headers = mergeStandardHeaders(
-  { 'accept': 'application/json', 'set-cookie': ['a=1'] },
-  { 'set-cookie': 'b=2', 'vary': 'accept', 'warning': undefined },
+  { 'accept': 'application/json', 'set-cookie': ['a=1'], 'vary': 'accept' },
+  { 'set-cookie': 'b=2', 'vary': 'accept-encoding', 'warning': undefined },
 )
 // {
 //   accept: 'application/json',
 //   'set-cookie': ['a=1', 'b=2'],
-//   vary: 'accept',
+//   vary: ['accept', 'accept-encoding'],
 // }
 
-const cookieHeader = flattenStandardHeader(headers['set-cookie'])
-// 'a=1, b=2'
+const varyHeader = flattenStandardHeader(headers['vary'])
+// 'accept, accept-encoding'
 ```
 
 ### URL parsing
