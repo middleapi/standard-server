@@ -84,8 +84,7 @@ export async function toStandardBody(
 
     const blob = await _limitBody(re, maxBodySize).blob()
     return new File([blob], fileName ?? 'blob', {
-      // FIX: Bun leaves the type empty for the blob of a stream body, like the limited one
-      type: blob.type || (re.headers.get('content-type') ?? ''),
+      type: re.headers.get('content-type') ?? '',
     })
   }
 
@@ -198,47 +197,45 @@ function _limitBody(re: Request | Response, maxBodySize: number): Request | Resp
   }
 
   if (Number(re.headers.get('content-length')) > maxBodySize) {
-    throw _payloadTooLarge(maxBodySize)
+    throw new PayloadTooLargeError(maxBodySize)
   }
 
-  const reader = re.body?.getReader()
+  if (re.body === null) {
+    return re
+  }
+
+  const reader = re.body.getReader()
   let size = 0
 
-  const body =
-    reader &&
-    new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        const { done, value } = await reader.read()
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read()
 
-        if (done) {
-          controller.close()
-          return
-        }
+      if (done) {
+        controller.close()
+        return
+      }
 
-        size += value.byteLength
+      size += value.byteLength
 
-        if (size > maxBodySize) {
-          const error = _payloadTooLarge(maxBodySize)
-          // Errors mean the source is already torn down
-          void reader.cancel(error).catch(() => {})
-          throw error
-        }
+      if (size > maxBodySize) {
+        const error = new PayloadTooLargeError(maxBodySize)
+        // Errors mean the source is already torn down
+        void reader.cancel(error).catch(() => {})
+        throw error
+      }
 
-        controller.enqueue(value)
-      },
-      cancel(reason) {
-        return reader.cancel(reason)
-      },
-    })
+      controller.enqueue(value)
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
 
-  // the content-type carries the multipart boundary and the blob type
+  // the content-type carries the multipart boundary
   const contentType = re.headers.get('content-type')
 
   return new Response(body, {
     headers: contentType === null ? undefined : { 'content-type': contentType },
   })
-}
-
-function _payloadTooLarge(maxBodySize: number): PayloadTooLargeError {
-  return new PayloadTooLargeError(`Body exceeds the size limit of ${maxBodySize} bytes`)
 }

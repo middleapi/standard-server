@@ -40,7 +40,7 @@ describe('toStandardLazyRequest', () => {
     expect(toStandardHeadersSpy).toBeCalledWith(request.headers)
 
     expect(toStandardBodySpy).toBeCalledTimes(1)
-    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json', maxBodySize: undefined })
+    expect(toStandardBodySpy).toBeCalledWith(request, { hint: 'json' })
   })
 
   it('forwards maxBodySize to the body parser', async () => {

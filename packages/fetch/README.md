@@ -126,7 +126,7 @@ The `json`, `url-search-params`, `form-data`, and `file` hints read the whole bo
 const standardRequest = toStandardLazyRequest(request, { maxBodySize: 1024 * 1024 }) // 1 MiB
 ```
 
-A larger body makes `resolveBody()` reject with a `PayloadTooLargeError` (from `@standard-server/shared`) whose `status` is `413`. A larger `content-length` is rejected before the body is read. Otherwise the bytes are counted as they arrive, and the body stream is cancelled once they pass the limit. `octet-stream` and `event-stream` bodies are never limited, since they resolve to streams you consume chunk by chunk. `toStandardBody()` accepts the same `maxBodySize` option, for requests and responses alike.
+A larger body makes `resolveBody()` reject with a `PayloadTooLargeError` (from `@standard-server/shared`) whose `status` is `413`. `octet-stream` and `event-stream` bodies are never limited, since they resolve to streams you consume chunk by chunk. `toStandardBody()` accepts the same `maxBodySize` option, for requests and responses alike.
 
 > [!NOTE]
 > The limit is opt-in because runtimes, platforms, and reverse proxies in front of the adapter often cap request bodies already. Set it when nothing in front of your handler does.

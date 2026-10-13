@@ -30,7 +30,7 @@ describe('toStandardLazyRequest', () => {
         expect(standardRequest.headers).toBe(req.headers)
 
         expect(toStandardBodySpy).toBeCalledTimes(1)
-        expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'json', maxBodySize: undefined })
+        expect(toStandardBodySpy).toBeCalledWith(req, { hint: 'json' })
         expect(toAbortSignalSpy).toBeCalledTimes(1)
         expect(toAbortSignalSpy).toBeCalledWith(res)
         res.end()

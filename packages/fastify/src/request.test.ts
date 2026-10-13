@@ -233,89 +233,84 @@ describe('toStandardLazyRequest', () => {
     }
 
     describe.each([false, true])('chunked: %s', (chunked) => {
-      it('rejects a larger body with 413 behind a catch-all parser', async ({ onTestFinished }) => {
-        const url = await listen(onTestFinished, { catchAllParser: true })
-
-        const [fileStatus, fileResponse] = await send(
-          url,
-          'POST',
-          FILE_HEADERS,
-          fileBody(4096),
-          chunked,
-        )
-        expect(fileStatus).toBe(413)
-        expect(fileResponse).toContain('Body exceeds the size limit of 1024 bytes')
-
-        const [jsonStatus, jsonResponse] = await send(
-          url,
-          'POST',
-          JSON_HEADERS,
-          jsonBody(4096),
-          chunked,
-        )
-        expect(jsonStatus).toBe(413)
-        expect(jsonResponse).toContain('Body exceeds the size limit of 1024 bytes')
-
-        expect(toStandardBodySpy).toBeCalledTimes(2)
-        expect(toStandardBodySpy).toHaveBeenNthCalledWith(1, expect.anything(), {
-          hint: undefined,
-          maxBodySize: 1024,
-        })
-
-        expect(await send(url, 'POST', FILE_HEADERS, fileBody(512), chunked)).toEqual([
-          200,
-          'parsed',
-        ])
-        expect(await send(url, 'POST', JSON_HEADERS, jsonBody(512), chunked)).toEqual([
-          200,
-          'parsed',
-        ])
-      })
-
-      it('rejects a larger GET body with 413, which fastify leaves unparsed', async ({
-        onTestFinished,
-      }) => {
-        const url = await listen(onTestFinished, { catchAllParser: false })
-
-        const [status, response] = await send(url, 'GET', JSON_HEADERS, jsonBody(4096), chunked)
-        expect(status).toBe(413)
-        expect(response).toContain('Body exceeds the size limit of 1024 bytes')
-
-        expect(await send(url, 'GET', JSON_HEADERS, jsonBody(512), chunked)).toEqual([
-          200,
-          'parsed',
-        ])
-      })
-
-      it('prefers the route bodyLimit, then an explicit maxBodySize', async ({
-        onTestFinished,
-      }) => {
-        const routeUrl = await listen(onTestFinished, {
+      it.for<{
+        title: string
+        method: string
+        catchAllParser: boolean
+        headers: Record<string, string>
+        createBody: (size: number) => Buffer
+      }>([
+        {
+          title: 'a file POST behind the catch-all parser',
+          method: 'POST',
           catchAllParser: true,
-          routeBodyLimit: 8192,
-        })
-        expect(await send(routeUrl, 'POST', FILE_HEADERS, fileBody(4096), chunked)).toEqual([
-          200,
-          'parsed',
-        ])
-
-        const unlimitedUrl = await listen(onTestFinished, {
+          headers: FILE_HEADERS,
+          createBody: fileBody,
+        },
+        {
+          title: 'a json POST behind the catch-all parser',
+          method: 'POST',
           catchAllParser: true,
+          headers: JSON_HEADERS,
+          createBody: jsonBody,
+        },
+        {
+          title: 'a json GET, which fastify leaves unparsed',
+          method: 'GET',
+          catchAllParser: false,
+          headers: JSON_HEADERS,
+          createBody: jsonBody,
+        },
+      ])(
+        'answers $title over bodyLimit with 413',
+        async ({ method, catchAllParser, headers, createBody }, { onTestFinished }) => {
+          const url = await listen(onTestFinished, { catchAllParser })
+
+          const [status, response] = await send(url, method, headers, createBody(4096), chunked)
+          expect(status).toBe(413)
+          expect(response).toContain('Body exceeds the size limit of 1024 bytes')
+
+          expect(await send(url, method, headers, createBody(512), chunked)).toEqual([
+            200,
+            'parsed',
+          ])
+        },
+      )
+
+      it.for<{
+        title: string
+        routeBodyLimit?: number
+        adapter?: ToStandardLazyRequestOptions
+        size: number
+        status: number
+      }>([
+        { title: 'the route bodyLimit', routeBodyLimit: 8192, size: 4096, status: 200 },
+        {
+          title: 'maxBodySize: Infinity',
           adapter: { maxBodySize: Number.POSITIVE_INFINITY },
-        })
-        expect(await send(unlimitedUrl, 'POST', FILE_HEADERS, fileBody(4096), chunked)).toEqual([
-          200,
-          'parsed',
-        ])
-
-        const explicitUrl = await listen(onTestFinished, {
-          catchAllParser: true,
+          size: 4096,
+          status: 200,
+        },
+        {
+          title: 'maxBodySize over the route bodyLimit',
           routeBodyLimit: 8192,
           adapter: { maxBodySize: 256 },
-        })
-        const [status] = await send(explicitUrl, 'POST', FILE_HEADERS, fileBody(512), chunked)
-        expect(status).toBe(413)
-      })
+          size: 512,
+          status: 413,
+        },
+      ])(
+        'prefers $title',
+        async ({ routeBodyLimit, adapter, size, status }, { onTestFinished }) => {
+          const url = await listen(onTestFinished, {
+            catchAllParser: true,
+            routeBodyLimit,
+            adapter,
+          })
+          const [actual] = await send(url, 'POST', FILE_HEADERS, fileBody(size), chunked)
+
+          expect(actual).toBe(status)
+        },
+      )
     })
   })
 })

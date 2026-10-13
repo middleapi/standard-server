@@ -119,21 +119,17 @@ Register it inside an encapsulated plugin if you only want it to apply to the ro
 
 Fastify enforces its `bodyLimit` (1 MiB by default) only in the parsers that read the body for it. So the adapter applies the same limit to the bodies it parses itself: those behind the catch-all parser above, and those of `GET`, `HEAD`, and `TRACE` requests, which Fastify treats as bodyless. It takes the route's `bodyLimit`, which falls back to the server's.
 
-A larger body makes `resolveBody()` reject with a `PayloadTooLargeError` (from `@standard-server/shared`), and Fastify's error handler answers it with its `status`, `413 Payload Too Large`. A larger `content-length` is rejected before anything is read. Otherwise the bytes are counted as they arrive, and once they pass the limit the rest of the request is read and discarded instead of destroyed, so the connection can still carry the `413` response. `octet-stream` and `event-stream` bodies are never limited, since they resolve to streams you consume chunk by chunk.
+A larger body makes `resolveBody()` reject with a `PayloadTooLargeError`, which Fastify's error handler answers with `413 Payload Too Large`. See [limiting the body size](https://github.com/middleapi/standard-server/blob/main/packages/node/README.md#limiting-the-body-size) in the Node.js adapter for how the limit applies.
 
-To accept larger bodies, raise the route's `bodyLimit`, or set the adapter's limit alone with `maxBodySize`:
+To accept larger bodies, raise the route's `bodyLimit`:
 
 ```ts
-// raises the limit for fastify's own parsers and the adapter alike
 fastify.all('/*', { bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
-  // or sets the adapter's limit alone; `Infinity` lifts it
-  const standardRequest = toStandardLazyRequest(req, reply, { maxBodySize: 10 * 1024 * 1024 })
   // ...
 })
 ```
 
-> [!IMPORTANT]
-> Earlier versions read the bodies the adapter parses without any limit. They now get a `413` once larger than `bodyLimit`; pass `maxBodySize: Infinity` to opt out.
+Or set the adapter's limit alone with `toStandardLazyRequest(req, reply, { maxBodySize })`, where `Infinity` lifts it.
 
 ## Fastify behavior to be aware of
 

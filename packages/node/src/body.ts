@@ -183,41 +183,44 @@ export function toNodeHttpBody(
  * as the bytes read pass it.
  *
  * Pulls through the iterator rather than `for await`, which destroys the stream when left
- * early: destroying an http1 request kills the socket its 413 response needs.
+ * early: destroying an http1 request kills the socket its 413 response needs. Leaving early
+ * discards the rest with `discardNodeReadable` instead.
  */
 async function* _readBody(
   req: NodeHttpRequest,
   maxBodySize: number,
 ): AsyncGenerator<Uint8Array<ArrayBuffer>, void, undefined> {
   if (Number(req.headers['content-length']) > maxBodySize) {
-    throw _payloadTooLarge(maxBodySize)
+    throw new PayloadTooLargeError(maxBodySize)
   }
 
   const iterator = req[Symbol.asyncIterator]()
   let size = 0
+  let ended = false
 
-  while (true) {
-    const { done, value } = await iterator.next()
+  try {
+    while (true) {
+      const { done, value } = await iterator.next()
 
-    if (done) {
-      return
+      if (done) {
+        ended = true
+        return
+      }
+
+      const bytes = readableChunkToBytes(req, value)
+      size += bytes.byteLength
+
+      if (size > maxBodySize) {
+        throw new PayloadTooLargeError(maxBodySize)
+      }
+
+      yield bytes
     }
-
-    const bytes = readableChunkToBytes(req, value)
-    size += bytes.byteLength
-
-    if (size > maxBodySize) {
-      const error = _payloadTooLarge(maxBodySize)
-      discardNodeReadable(req, iterator, error)
-      throw error
+  } finally {
+    if (!ended) {
+      discardNodeReadable(req, iterator)
     }
-
-    yield bytes
   }
-}
-
-function _payloadTooLarge(maxBodySize: number): PayloadTooLargeError {
-  return new PayloadTooLargeError(`Body exceeds the size limit of ${maxBodySize} bytes`)
 }
 
 function _streamToFormData(
@@ -225,21 +228,7 @@ function _streamToFormData(
   contentType: string | undefined,
   maxBodySize: number,
 ): Promise<FormData> {
-  const chunks = _readBody(req, maxBodySize)
-
-  const body = new ReadableStream<Uint8Array<ArrayBuffer>>({
-    async pull(controller) {
-      const { done, value } = await chunks.next()
-
-      if (done) {
-        controller.close()
-      } else {
-        controller.enqueue(value)
-      }
-    },
-  })
-
-  const response = new Response(body, {
+  const response = new Response(ReadableStream.from(_readBody(req, maxBodySize)), {
     headers: {
       'content-type': contentType ?? '',
     },

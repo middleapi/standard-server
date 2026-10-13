@@ -1,5 +1,6 @@
 import http2 from 'node:http2'
 import type { AddressInfo } from 'node:net'
+import { text } from 'node:stream/consumers'
 
 import Fastify from 'fastify'
 
@@ -148,13 +149,7 @@ describe('http2', () => {
       stream.once('error', reject)
     })
 
-    let text = ''
-    stream.setEncoding('utf8')
-    for await (const chunk of stream) {
-      text += chunk
-    }
-
     expect(headers[':status']).toBe(413)
-    expect(text).toContain('Body exceeds the size limit of 1024 bytes')
+    expect(await text(stream)).toContain('Body exceeds the size limit of 1024 bytes')
   })
 })

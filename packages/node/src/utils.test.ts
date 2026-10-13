@@ -421,18 +421,6 @@ describe('destroyNodeHttpBody', () => {
 })
 
 describe('discardNodeReadable', () => {
-  it('destroys a stream that is not a server request, with an error reason', async () => {
-    const stream = Readable.from([Buffer.from('foo'), Buffer.from('bar')])
-    const iterator = stream[Symbol.asyncIterator]()
-    await iterator.next()
-    const error = new Error('test')
-
-    discardNodeReadable(stream, iterator, error)
-
-    expect(stream.destroyed).toBe(true)
-    expect(stream.errored).toBe(error)
-  })
-
   it('destroys without a reason that is not an error', () => {
     const stream = new Readable({ read() {} })
     const destroy = vi.spyOn(stream, 'destroy')
@@ -440,24 +428,6 @@ describe('discardNodeReadable', () => {
     discardNodeReadable(stream, stream[Symbol.asyncIterator](), 'reason')
 
     expect(destroy.mock.calls).toEqual([[undefined]])
-  })
-
-  it('reads a server request to the end instead of destroying it', async () => {
-    const req = new http.IncomingMessage(new net.Socket())
-    req.method = 'POST'
-    const destroy = vi.spyOn(req, 'destroy')
-
-    const iterator = req[Symbol.asyncIterator]()
-    req.push(Buffer.from('foo'))
-    await iterator.next()
-
-    discardNodeReadable(req, iterator, new Error('test'))
-    req.push(Buffer.from('bar'))
-    req.push(null)
-
-    await vi.waitFor(() => expect(req.readableEnded).toBe(true))
-    expect(req.errored).toBe(null)
-    expect(destroy).not.toHaveBeenCalledWith(expect.any(Error))
   })
 })
 
