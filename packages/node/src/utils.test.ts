@@ -6,13 +6,14 @@ import type { AddressInfo } from 'node:net'
 import net, { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isBodylessNodeResponse,
   toWebReadableStream,
 } from './utils'
 
@@ -193,6 +194,65 @@ describe('canWriteToNodeResponse', () => {
           res.end()
 
           expect(canWriteToNodeResponse(res)).toBe(false)
+
+          resolve()
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+
+    await new Promise<void>((r) => server.listen(0, r))
+    const port = (server.address() as any).port
+
+    const client = http2.connect(`http://localhost:${port}`)
+    const reqStream = client.request({ ':path': '/', ':method': 'HEAD' })
+    reqStream.resume()
+    reqStream.once('close', () => client.close())
+
+    await handled
+  })
+})
+
+describe('isBodylessNodeResponse', () => {
+  function createHttp1Response(method: string): http.ServerResponse {
+    const req = new http.IncomingMessage(new net.Socket())
+    req.method = method
+
+    return new http.ServerResponse(req)
+  }
+
+  it('on http1 HEAD request', () => {
+    expect(isBodylessNodeResponse(createHttp1Response('HEAD'), 200)).toBe(true)
+  })
+
+  it.each([100, 101, 103, 199, 204, 304])('on http1 status %i', (status) => {
+    expect(isBodylessNodeResponse(createHttp1Response('GET'), status)).toBe(true)
+  })
+
+  it.each([200, 201, 205, 206, 302, 404, 500])('on http1 status %i with a body', (status) => {
+    expect(isBodylessNodeResponse(createHttp1Response('GET'), status)).toBe(false)
+  })
+
+  it('on a writable without a request', () => {
+    const res = new Writable()
+
+    expect(isBodylessNodeResponse(res, 200)).toBe(false)
+    expect(isBodylessNodeResponse(res, 204)).toBe(true)
+  })
+
+  it('on http2 HEAD request, whose stream Node ends itself', async ({ onTestFinished }) => {
+    const server = http2.createServer()
+    onTestFinished(() => new Promise<any>((r) => server.close(r)))
+
+    const handled = new Promise<void>((resolve, reject) => {
+      server.on('request', async (req, res) => {
+        try {
+          expect(isBodylessNodeResponse(res, 200)).toBe(false)
+          expect(isBodylessNodeResponse(res, 204)).toBe(false)
+          expect(isBodylessNodeResponse(res, 304)).toBe(false)
+
+          res.end()
 
           resolve()
         } catch (error) {

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import type { ServerResponse } from 'node:http'
 import { IncomingMessage } from 'node:http'
 import { Http2ServerRequest } from 'node:http2'
 import type { Readable } from 'node:stream'
@@ -83,6 +84,29 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
     !('headersSent' in res && res.headersSent) &&
     !res.writableEnded &&
     !('stream' in res ? res.stream : res).destroyed
+  )
+}
+
+/**
+ * Check the http1 response cannot carry a body: it answers a HEAD request, or has
+ * a 1xx, 204 or 304 status. Node drops every write to such a response (or throws
+ * with `rejectNonStandardBodyWrites`) without applying backpressure, so a stream
+ * piped into it is read to the end before the response ends. Always false on
+ * http2, where Node ends the stream itself and later writes fail.
+ */
+export function isBodylessNodeResponse(
+  res: Stream.Writable | NodeHttpResponse,
+  status: number,
+): boolean {
+  if ('stream' in res) {
+    return false
+  }
+
+  return (
+    (res as Partial<ServerResponse>).req?.method === 'HEAD' ||
+    (status >= 100 && status < 200) ||
+    status === 204 ||
+    status === 304
   )
 }
 

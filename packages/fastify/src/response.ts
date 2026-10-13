@@ -1,9 +1,12 @@
+import { Readable } from 'node:stream'
+
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isBodylessNodeResponse,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -59,8 +62,20 @@ export async function sendStandardResponse(
         }
       }
 
-      // fastify pipes the stream body itself, no manual piping needed
-      reply.send(resBody)
+      if (
+        typeof resBody === 'object' &&
+        isBodylessNodeResponse(reply.raw, standardResponse.status)
+      ) {
+        // Node would drop the body anyway, and on an explicit HEAD route or a 304 fastify
+        // pipes it into a response that only ends once the source does, so release it unread.
+        // Send an empty stream rather than nothing: fastify's auto HEAD route would replace
+        // the content-length with 0 for a missing payload.
+        destroyNodeHttpBody(resBody, undefined, reject)
+        reply.send(Readable.from([]))
+      } else {
+        // fastify pipes the stream body itself, no manual piping needed
+        reply.send(resBody)
+      }
     } catch (error) {
       destroyNodeHttpBody(resBody, error, reject)
 

@@ -702,6 +702,96 @@ describe('sendStandardResponse', () => {
       })
     })
 
+    it('keeps the content-length of a blob body on an auto-exposed HEAD route', async ({
+      onTestFinished,
+    }) => {
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify.get('/', async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 200,
+          headers: {},
+          body: new Blob(['foo'], { type: 'text/plain' }),
+        })
+        await sending
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).head('/')
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(200)
+      expect(res.headers).toMatchObject({ 'content-length': '3', 'content-type': 'text/plain' })
+    })
+
+    it.for([
+      ['an explicit HEAD route', 'head', '/'],
+      ['a catch-all route', 'all', '/*'],
+    ] as const)('releases the body on %s', async ([_, method, url], { onTestFinished }) => {
+      const { body, isReleased } = createEndlessBody()
+      let sending: Promise<void> | undefined
+
+      const fastify = Fastify()
+      onTestFinished(() => fastify.close())
+
+      fastify[method](url, async (req, reply) => {
+        sending = sendStandardResponse(reply, {
+          status: 201,
+          headers: { 'x-custom-header': 'custom-value' },
+          body,
+        })
+        await sending
+      })
+
+      await fastify.ready()
+      const res = await request(fastify.server).head('/').timeout(2000)
+
+      await expect(sending).resolves.toBeUndefined()
+
+      expect(res.status).toBe(201)
+      expect(res.headers).toMatchObject({
+        'content-type': 'text/event-stream',
+        'x-custom-header': 'custom-value',
+      })
+      expect(res.text).toBeFalsy()
+
+      await vi.waitFor(() => {
+        expect(isReleased()).toBe(true)
+      })
+    })
+
+    it.for([
+      ['an explicit HEAD route', 'head', '/'],
+      ['a catch-all route', 'all', '/*'],
+    ] as const)(
+      'cancels the body without reading it on %s',
+      async ([_, method, url], { onTestFinished }) => {
+        const { body, cancel, pulled } = createCountingStream()
+        let sending: Promise<void> | undefined
+
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify[method](url, async (req, reply) => {
+          sending = sendStandardResponse(reply, { status: 200, headers: {}, body })
+          await sending
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).head('/')
+
+        await expect(sending).resolves.toBeUndefined()
+
+        expect(res.status).toBe(200)
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(pulled()).toBeLessThan(1024 * 1024)
+      },
+    )
+
     it('rejects and releases the body on an explicit http2 HEAD route', async ({
       onTestFinished,
     }) => {
@@ -731,6 +821,38 @@ describe('sendStandardResponse', () => {
         expect(isReleased()).toBe(true)
       })
     })
+  })
+
+  describe('status without a body', () => {
+    it.for([204, 304])(
+      'cancels a stream body without reading it on %i',
+      async (status, { onTestFinished }) => {
+        const { body, cancel, pulled } = createCountingStream()
+        let sending: Promise<void> | undefined
+
+        const fastify = Fastify()
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          sending = sendStandardResponse(reply, {
+            status,
+            headers: { 'x-custom-header': 'custom-value' },
+            body,
+          })
+          await sending
+        })
+
+        await fastify.ready()
+        const res = await request(fastify.server).get('/')
+
+        await expect(sending).resolves.toBeUndefined()
+
+        expect(res.status).toBe(status)
+        expect(res.headers).toMatchObject({ 'x-custom-header': 'custom-value' })
+        expect(cancel).toHaveBeenCalledTimes(1)
+        expect(pulled()).toBeLessThan(1024 * 1024)
+      },
+    )
   })
 
   it('rejects with the stream error when the client resets an http2 stream with an error code', async ({
@@ -779,6 +901,31 @@ function createEndlessBody() {
   })()
 
   return { body, isReleased: () => released }
+}
+
+/**
+ * Counts the bytes pulled from it. Capped, so a body that gets drained instead
+ * of released fails the test rather than hanging it.
+ */
+function createCountingStream() {
+  const chunk = new Uint8Array(64 * 1024)
+  const cancel = vi.fn()
+  let pulled = 0
+
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (pulled >= 32 * 1024 * 1024) {
+        controller.close()
+        return
+      }
+
+      pulled += chunk.byteLength
+      controller.enqueue(chunk)
+    },
+    cancel,
+  })
+
+  return { body, cancel, pulled: () => pulled }
 }
 
 async function requestHttp2Head(
