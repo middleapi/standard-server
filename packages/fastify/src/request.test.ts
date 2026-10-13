@@ -113,6 +113,42 @@ describe('toStandardLazyRequest', () => {
     expect(standardBody).toEqual(expectedBody)
   })
 
+  it('fallback to standard body parser rejects overlapping body reads', async ({
+    onTestFinished,
+  }) => {
+    let results: PromiseSettledResult<unknown>[] = []
+
+    const fastify = Fastify()
+    onTestFinished(() => fastify.close())
+
+    // allow any content type, and leave the body unparsed
+    fastify.addContentTypeParser('*', (req, payload, done) => {
+      done(null, undefined)
+    })
+
+    fastify.all('/', async (req, reply) => {
+      const standardRequest = toStandardLazyRequest(req, reply)
+      results = await Promise.allSettled([
+        standardRequest.resolveBody('json'),
+        standardRequest.resolveBody('json'),
+      ])
+    })
+
+    await fastify.ready()
+    await request(fastify.server)
+      .post('/')
+      .set('content-type', 'application/octet-stream')
+      .send('{"amount":100}')
+
+    expect(results).toEqual([
+      { status: 'fulfilled', value: { amount: 100 } },
+      {
+        status: 'rejected',
+        reason: new TypeError('Failed to read body: body stream already read or destroyed'),
+      },
+    ])
+  })
+
   it('forwards the body hint to the standard body parser', async ({ onTestFinished }) => {
     let fastifyReq: any
     let standardBody: any

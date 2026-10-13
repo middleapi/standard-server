@@ -21,6 +21,11 @@ export interface ToStandardBodyOptions {
 }
 
 /**
+ * Requests whose body stream a parser has already been attached to.
+ */
+const consumedRequests = new WeakSet<NodeHttpRequest>()
+
+/**
  * Parses the body of a node http request.
  */
 export async function toStandardBody(
@@ -45,10 +50,14 @@ export async function toStandardBody(
     return undefined
   }
 
-  if (!req.readable) {
+  // `readable` stays true until the stream ends, so it misses overlapping or lazy
+  // (stream/iterator) reads; mark the request before the first await to catch those.
+  if (!req.readable || consumedRequests.has(req)) {
     // native fetch error use TypeError
     throw new TypeError('Failed to read body: body stream already read or destroyed')
   }
+
+  consumedRequests.add(req)
 
   if (hint === 'json') {
     const text = await _streamToString(req)
