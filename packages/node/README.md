@@ -37,7 +37,7 @@ Standard Server ships as a small ecosystem of packages:
 | [`@standard-server/peer`](https://github.com/middleapi/standard-server/blob/main/packages/peer/README.md)             | Message-based adapter for WebSocket, MessagePort, and custom transports     |
 | [`@standard-server/shared`](https://github.com/middleapi/standard-server/blob/main/packages/shared/README.md)         | Internal utilities shared across the ecosystem                              |
 
-This package is the Node.js adapter for that model. It converts between native Node request and response objects and the corresponding Standard Server shapes from [`@standard-server/core`](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md), while also exposing lower-level utilities for body parsing, URL normalization, abort signals, and server-sent events.
+This package is the Node.js adapter for that model. It converts between native Node request and response objects and the corresponding Standard Server shapes from [`@standard-server/core`](https://github.com/middleapi/standard-server/blob/main/packages/core/README.md), while also exposing lower-level utilities for body parsing, request URLs, abort signals, and server-sent events.
 
 ## Package overview
 
@@ -47,7 +47,7 @@ The package exposes four groups of helpers:
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | Request and response    | `toStandardLazyRequest()`, `sendStandardResponse()`                                                                    | Adapt Node request and response objects to Standard Server         |
 | Body and event streams  | `toStandardBody()`, `toNodeHttpBody()`, `toAsyncIteratorObject()`, `toEventStream()`                                   | Parse incoming bodies and serialize outgoing bodies, including SSE |
-| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                             | Normalize Node request metadata and connection lifecycle state     |
+| Request utilities       | `toStandardMethod()`, `toStandardUrl()`, `toAbortSignal()`                                                             | Read Node request metadata and connection lifecycle state          |
 | Types and option shapes | `NodeHttpRequest`, `NodeHttpResponse`, `ToStandardBodyOptions`, `ToNodeHttpBodyOptions`, `SendStandardResponseOptions` | Type request/response inputs and serializer options                |
 
 Use these helpers when you want Standard Server handlers to run in Node runtimes such as `node:http`, `node:http2`, Express-style middleware, or frameworks that expose Node-compatible request and response objects.
@@ -87,6 +87,18 @@ createServer(async (req, res) => {
 
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.
+
+## Request URL
+
+`request.url` is the request target as Node received it, read from `req.originalUrl` (set by Express) or `req.url`. `@standard-server/fastify` uses the same helper on Fastify's `req.url`. The path is passed through raw in both request-target forms:
+
+- **Origin-form** (`/rpc/ping?x=1`) is returned unchanged.
+- **Absolute-form** (`http://host/rpc/ping?x=1`, which Node accepts from clients that treat the server as a proxy) has only its scheme and authority stripped, so the result is `/rpc/ping?x=1`.
+
+Dot segments (`.`, `..`) are not resolved and percent-encoding is not decoded, so `http://host/rpc/public/../admin` yields `/rpc/public/../admin`, and `%2e%2e` stays `%2e%2e`. Express and Fastify don't resolve dot segments before routing either, so a path that skipped a framework path guard can't turn into one the guard would have matched. Unlike this adapter, `@standard-server/fetch` returns WHATWG-normalized URLs, because the `Request` object already holds them.
+
+> [!IMPORTANT]
+> If your handler canonicalizes the path (resolves dot segments or decodes it) before routing, do it consistently with any framework path guards in front of the adapter. Otherwise a path such as `/rpc/public/../admin/x` can skip a guard on `/rpc/admin` and still reach the protected route. Enforcing authorization in the handler itself avoids the problem.
 
 ## Resolving Body
 
