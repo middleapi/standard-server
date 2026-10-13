@@ -8,7 +8,6 @@ import type { Writable } from 'node:stream'
 export interface APIGatewayProxyEvent {
   /**
    * `'1.0'` when delivered by an HTTP API, absent from a REST API.
-   * Tells whether `path` is already url-decoded.
    */
   version?: string
   /**
@@ -16,9 +15,9 @@ export interface APIGatewayProxyEvent {
    */
   httpMethod: string
   /**
-   * Url-decoded when delivered by an HTTP API (detected by `version`), still encoded from a REST API.
-   * `toStandardUrl` re-escapes a decoded path, `%` and `\` included, but a `%2F` or dot segment
-   * already decoded into `/` or `..` cannot be recovered.
+   * Url-decoded when delivered by an HTTP API, still encoded from a REST API,
+   * told apart by `version`.
+   * `toStandardUrl` re-escapes a decoded `%` and `\`, a `/` or `..` decoded by API Gateway stays.
    *
    * @example '/example'
    */
@@ -53,9 +52,9 @@ export interface APIGatewayProxyEvent {
  */
 export interface APIGatewayProxyEventV2 {
   /**
-   * Url-decoded when delivered by an HTTP API (detected by `requestContext.domainName`), still encoded from a Lambda Function URL.
-   * `toStandardUrl` re-escapes a decoded path, `%` and `\` included, but a `%2F` or dot segment
-   * already decoded into `/` or `..` cannot be recovered.
+   * Url-decoded when delivered by an HTTP API, still encoded from a Lambda Function URL,
+   * told apart by `requestContext.domainName`.
+   * `toStandardUrl` re-escapes a decoded `%` and `\`, a `/` or `..` decoded by API Gateway stays.
    *
    * @example '/example'
    */
@@ -76,7 +75,6 @@ export interface APIGatewayProxyEventV2 {
     /**
      * `<url-id>.lambda-url.<region>.on.aws` for a Lambda Function URL,
      * an `execute-api` or custom domain for an HTTP API.
-     * Tells whether `rawPath` is already url-decoded.
      */
     domainName?: string
     http: {

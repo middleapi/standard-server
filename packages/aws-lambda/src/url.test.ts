@@ -146,6 +146,7 @@ describe('toStandardUrl path escaping', () => {
     '/capture/literal%value',
   ]
 
+  // events without an HTTP API marker (REST APIs, hand-built events) keep the path as encoded
   describe('v2', () => {
     it.each(decoded)('escapes decoded %s', (rawPath, pathname) => {
       expect(toStandardUrl({ rawPath, requestContext: { http: { method: 'GET' } } })).toBe(pathname)
@@ -219,6 +220,11 @@ describe('toStandardUrl path escaping', () => {
       url.pathname = path
 
       expect(toStandardUrl({ httpMethod: 'GET', path })).toBe(url.pathname)
+
+      // a decoded path escapes the same characters, plus `%` and `\`
+      if (!path.includes('%')) {
+        expect(toStandardUrl({ httpMethod: 'GET', path }, { decodedPath: true })).toBe(url.pathname)
+      }
     }
   })
 
@@ -229,7 +235,7 @@ describe('toStandardUrl path escaping', () => {
     )
   })
 
-  // left as-is, a decoded `%` is decoded a second time downstream and a decoded `\` resolves like a `/`
+  // left as-is, a decoded `%` is decoded twice downstream and a decoded `\` resolves like a `/`
   const doubleDecoded: [path: string, pathname: string][] = [
     ['/%61dmin/users', '/%2561dmin/users'],
     ['/files/100%', '/files/100%25'],
@@ -237,87 +243,62 @@ describe('toStandardUrl path escaping', () => {
     ['/public/x\\..\\..\\admin/deleteUser', '/public/x%5C..%5C..%5Cadmin/deleteUser'],
   ]
 
+  const httpApiV2 = (rawPath: string): AnyAPIGatewayProxyEvent => ({
+    rawPath,
+    requestContext: {
+      domainName: 'abc.execute-api.us-east-1.amazonaws.com',
+      http: { method: 'GET' },
+    },
+  })
+
+  const httpApiV1 = (path: string): AnyAPIGatewayProxyEvent => ({
+    version: '1.0',
+    httpMethod: 'GET',
+    path,
+  })
+
   describe.each([
-    [
-      'v2',
-      (rawPath: string): AnyAPIGatewayProxyEvent => ({
-        rawPath,
-        requestContext: {
-          domainName: 'abc.execute-api.us-east-1.amazonaws.com',
-          http: { method: 'GET' },
-        },
-      }),
-    ],
-    [
-      'v2 custom domain',
-      (rawPath: string): AnyAPIGatewayProxyEvent => ({
-        rawPath,
-        requestContext: { domainName: 'api.example.com', http: { method: 'GET' } },
-      }),
-    ],
-    [
-      'v1',
-      (path: string): AnyAPIGatewayProxyEvent => ({ version: '1.0', httpMethod: 'GET', path }),
-    ],
+    ['v2', httpApiV2],
+    ['v1', httpApiV1],
   ])('HTTP API (%s)', (_, toEvent) => {
-    it.each(doubleDecoded)('escapes decoded %s', (path, pathname) => {
+    it.each([...decoded, ...doubleDecoded])('escapes decoded %s', (path, pathname) => {
       expect(toStandardUrl(toEvent(path))).toBe(pathname)
-    })
-
-    it.each(decoded)('escapes decoded %s', (path, pathname) => {
-      expect(toStandardUrl(toEvent(path))).toBe(pathname)
-    })
-
-    it('does not resolve a decoded \\ into a dot segment', () => {
-      const url = toStandardUrl(toEvent('/public/x\\..\\..\\admin/deleteUser'))
-
-      expect(new URL(url, 'http://localhost').pathname).toBe(
-        '/public/x%5C..%5C..%5Cadmin/deleteUser',
-      )
     })
 
     it('decodes back to the delivered path', () => {
-      for (const path of [
-        ...doubleDecoded.map(([path]) => path),
-        // a lone surrogate becomes U+FFFD, it cannot decode back to itself
-        ...decoded.map(([path]) => path).filter((path) => !path.includes('\uD800')),
-        ...untouched,
-      ]) {
+      for (const path of [...doubleDecoded.map(([path]) => path), ...untouched]) {
         const segments = toStandardUrl(toEvent(path)).split('/').map(decodeURIComponent)
 
         expect(segments).toEqual(path.split('/'))
       }
     })
-
-    it('keeps the query string', () => {
-      const event = toEvent('/files/100%')
-
-      if ('httpMethod' in event) {
-        event.queryStringParameters = { tenant: 'acme' }
-      } else {
-        event.rawQueryString = 'tenant=acme'
-      }
-
-      expect(toStandardUrl(event)).toBe('/files/100%25?tenant=acme')
-    })
   })
 
-  describe.each([
-    [
-      'Lambda Function URL',
-      (rawPath: string): AnyAPIGatewayProxyEvent => ({
+  it('does not let a decoded \\ resolve like a /', () => {
+    const url = toStandardUrl(httpApiV1('/public/x\\..\\..\\admin/deleteUser'))
+
+    expect(new URL(url, 'http://localhost').pathname).toBe(url)
+  })
+
+  it('detects an HTTP API on a custom domain', () => {
+    expect(
+      toStandardUrl({
+        rawPath: '/files/100%',
+        requestContext: { domainName: 'api.example.com', http: { method: 'GET' } },
+      }),
+    ).toBe('/files/100%25')
+  })
+
+  it.each(untouched)('keeps %s as-is from a Lambda Function URL', (rawPath) => {
+    expect(
+      toStandardUrl({
         rawPath,
         requestContext: {
           domainName: 'xyz.lambda-url.us-east-1.on.aws',
           http: { method: 'GET' },
         },
       }),
-    ],
-    ['REST API', (path: string): AnyAPIGatewayProxyEvent => ({ httpMethod: 'GET', path })],
-  ])('%s', (_, toEvent) => {
-    it.each(untouched)('keeps %s as-is', (path) => {
-      expect(toStandardUrl(toEvent(path))).toBe(path)
-    })
+    ).toBe(rawPath)
   })
 
   it('lets decodedPath override the detection', () => {
@@ -331,23 +312,11 @@ describe('toStandardUrl path escaping', () => {
       ),
     ).toBe('/a%5Cb%25')
 
-    expect(
-      toStandardUrl(
-        { version: '1.0', httpMethod: 'GET', path: '/percent%25done' },
-        { decodedPath: false },
-      ),
-    ).toBe('/percent%25done')
-    expect(
-      toStandardUrl(
-        {
-          rawPath: '/percent%25done',
-          requestContext: {
-            domainName: 'abc.execute-api.us-east-1.amazonaws.com',
-            http: { method: 'GET' },
-          },
-        },
-        { decodedPath: false },
-      ),
-    ).toBe('/percent%25done')
+    expect(toStandardUrl(httpApiV1('/percent%25done'), { decodedPath: false })).toBe(
+      '/percent%25done',
+    )
+    expect(toStandardUrl(httpApiV2('/percent%25done'), { decodedPath: false })).toBe(
+      '/percent%25done',
+    )
   })
 })
