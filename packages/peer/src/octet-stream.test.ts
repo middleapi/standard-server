@@ -258,8 +258,7 @@ describe('octetStreamTransmitter', () => {
     const transmitter = new OctetStreamTransmitter(stream, 'msg-1', send)
     const transmitPromise = transmitter.transmit()
 
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
-    await sleep(10)
+    await sleep(0)
     // the read chunk plus the one the stream pulls ahead to fill its buffer
     expect(pulls).toBeLessThanOrEqual(2)
     expect(send).toHaveBeenCalledTimes(1)
@@ -268,8 +267,7 @@ describe('octetStreamTransmitter', () => {
       const pullsBefore = pulls
       sends[i - 1]!.resolve()
 
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(i + 1))
-      await sleep(10)
+      await sleep(0)
       expect(send).toHaveBeenCalledTimes(i + 1)
       expect(pulls).toBe(pullsBefore + 1)
     }

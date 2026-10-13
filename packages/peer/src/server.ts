@@ -69,15 +69,30 @@ export class ServerPeer {
       return
     }
 
-    if (message.kind === 'event-stream') {
+    if (message.kind === 'event-stream' || message.kind === 'octet-stream') {
       const state = this.requests.get(id)
-      await this.pushStreamMessage(id, state, state?.eventStreamMessageQueue, message)
+      const queue =
+        message.kind === 'event-stream'
+          ? state?.eventStreamMessageQueue
+          : state?.octetStreamMessageQueue
+
+      if (state && queue && queue.size >= this.maxBufferedStreamMessages) {
+        // the handler is not keeping up with its body: drop the body, but keep the request running
+        const error = new Error(
+          `Request body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
+        )
+        await this.releaseRequestBody(id, state, error, true)
+        return
+      }
+    }
+
+    if (message.kind === 'event-stream') {
+      this.requests.get(id)?.eventStreamMessageQueue?.push(message)
       return
     }
 
     if (message.kind === 'octet-stream') {
-      const state = this.requests.get(id)
-      await this.pushStreamMessage(id, state, state?.octetStreamMessageQueue, message)
+      this.requests.get(id)?.octetStreamMessageQueue?.push(message)
       return
     }
 
@@ -94,25 +109,10 @@ export class ServerPeer {
     let untransmittedBody: StandardBody | undefined
 
     try {
-      const decoded = toStandardBody(message, async ({ kind, error }) => {
-        /**
-         * The request body is finished (fully read, errored, or cancelled).
-         * Abort the queues so nothing is left waiting on them, then drop them
-         * so late stream messages are ignored instead of buffered forever.
-         */
-        const streamActive =
-          state.eventStreamMessageQueue !== undefined || state.octetStreamMessageQueue !== undefined
-
-        state.eventStreamMessageQueue?.abort(error)
-        state.octetStreamMessageQueue?.abort(error)
-        state.eventStreamMessageQueue = undefined
-        state.octetStreamMessageQueue = undefined
-
-        if (kind === 'cancelled' && streamActive) {
-          // only need cancel stream if streams is still active
-          await this.send({ id, kind: 'stream/cancel' })
-        }
-      })
+      // The request body is finished (fully read, errored, or cancelled)
+      const decoded = toStandardBody(message, ({ kind, error }) =>
+        this.releaseRequestBody(id, state, error, kind === 'cancelled'),
+      )
       state.eventStreamMessageQueue = decoded.eventStreamMessageQueue
       state.octetStreamMessageQueue = decoded.octetStreamMessageQueue
 
@@ -205,34 +205,28 @@ export class ServerPeer {
     }
   }
 
-  private async pushStreamMessage<T>(
+  /**
+   * Abort the request body queues so nothing is left waiting on them, then drop them
+   * so late stream messages are ignored instead of buffered forever.
+   * With `cancel`, also tell the client to stop sending the body if it is still streaming.
+   */
+  private async releaseRequestBody(
     id: string,
-    state: ServerPeerRequestStateInternal | undefined,
-    queue: Queue<T> | undefined,
-    message: T,
+    state: ServerPeerRequestStateInternal,
+    error: unknown,
+    cancel: boolean,
   ): Promise<void> {
-    if (!state || !queue) {
-      return
-    }
+    const streamActive =
+      state.eventStreamMessageQueue !== undefined || state.octetStreamMessageQueue !== undefined
 
-    if (queue.size < this.maxBufferedStreamMessages) {
-      queue.push(message)
-      return
-    }
-
-    /**
-     * The handler is not keeping up with the request body. Drop the buffer, so body reads reject,
-     * and drop the queue so later stream messages are ignored. The request itself keeps running.
-     */
-    queue.abort(
-      new Error(
-        `Request body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
-      ),
-    )
+    state.eventStreamMessageQueue?.abort(error)
+    state.octetStreamMessageQueue?.abort(error)
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    await this.send({ id, kind: 'stream/cancel' })
+    if (cancel && streamActive) {
+      await this.send({ id, kind: 'stream/cancel' })
+    }
   }
 
   async close(reason?: unknown): Promise<void> {

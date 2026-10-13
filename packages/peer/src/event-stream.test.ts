@@ -334,17 +334,15 @@ describe('eventStreamTransmitter', () => {
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     const transmitPromise = transmitter.transmit()
 
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
-    await sleep(10)
-    expect(pulls).toBeLessThanOrEqual(2)
+    await sleep(0)
+    expect(pulls).toBe(1)
     expect(send).toHaveBeenCalledTimes(1)
 
     for (let i = 1; i <= 5; i++) {
       const pullsBefore = pulls
       sends[i - 1]!.resolve()
 
-      await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(i + 1))
-      await sleep(10)
+      await sleep(0)
       expect(send).toHaveBeenCalledTimes(i + 1)
       expect(pulls).toBe(pullsBefore + 1)
     }

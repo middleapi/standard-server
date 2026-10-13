@@ -204,15 +204,24 @@ export class ClientPeer {
       return
     }
 
+    if (message.kind === 'event-stream' || message.kind === 'octet-stream') {
+      const queue =
+        message.kind === 'event-stream'
+          ? state.eventStreamMessageQueue
+          : state.octetStreamMessageQueue
+
+      if (queue && queue.size >= this.maxBufferedStreamMessages) {
+        const error = new Error(
+          `Response body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
+        )
+        await this.abortById(id, error)
+        return
+      }
+    }
+
     // by the last stream message the server has already released the request, so release it too
     if (message.kind === 'event-stream') {
       const queue = state.eventStreamMessageQueue
-
-      if (queue && queue.size >= this.maxBufferedStreamMessages) {
-        await this.abortById(id, this.bufferOverflowError())
-        return
-      }
-
       queue?.push(message)
 
       if (queue && (message.json.event === 'close' || message.json.event === 'error')) {
@@ -224,12 +233,6 @@ export class ClientPeer {
 
     if (message.kind === 'octet-stream') {
       const queue = state.octetStreamMessageQueue
-
-      if (queue && queue.size >= this.maxBufferedStreamMessages) {
-        await this.abortById(id, this.bufferOverflowError())
-        return
-      }
-
       queue?.push(message)
 
       if (queue && message.json.close) {
@@ -272,12 +275,6 @@ export class ClientPeer {
     } catch (reason) {
       await this.closeById(id, reason)
     }
-  }
-
-  private bufferOverflowError(): Error {
-    return new Error(
-      `Response body exceeded ${this.maxBufferedStreamMessages} unread stream messages (maxBufferedStreamMessages)`,
-    )
   }
 
   async close(reason?: unknown): Promise<void> {
