@@ -9,7 +9,17 @@ export function toOctetStream(
   return new ReadableStream({
     async pull(controller) {
       try {
-        const { json, binary } = await queue.pull()
+        /**
+         * Skip messages with neither `binary` nor `close`: the stream calls `pull` again only if
+         * a read arrived meanwhile, so returning without enqueuing or closing can leave a pending
+         * read with nothing waiting on the queue.
+         */
+        let message: PeerOctetStreamMessage
+        do {
+          message = await queue.pull()
+        } while (!message.binary && !message.json.close)
+
+        const { json, binary } = message
 
         if (binary) {
           controller.enqueue(
