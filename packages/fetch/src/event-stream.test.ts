@@ -638,3 +638,92 @@ it.each([[[1, 2, 3, 4, 5, 6]], [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 
     await iterator.next()
   },
 )
+
+describe('relaying decoded events', () => {
+  const options = { initialComment: { enabled: false }, keepAlive: { enabled: false } }
+  const inboundMeta = { id: 'x', retry: 99999, comments: ['c'] }
+
+  function decode(event: string) {
+    return toAsyncIteratorObject(
+      new ReadableStream<string>({
+        start(controller) {
+          controller.enqueue(`${event}id: x\nretry: 99999\n: c\ndata: {"a":1}\n\n`)
+          controller.close()
+        },
+      }).pipeThrough(new TextEncoderStream()),
+    )
+  }
+
+  async function readFirst(iterator: AsyncIterator<unknown, unknown>) {
+    const reader = toEventStream(iterator, options).pipeThrough(new TextDecoderStream()).getReader()
+    const { value } = await reader.read()
+    await reader.cancel()
+    return value
+  }
+
+  it('message', async () => {
+    const { value } = await decode('').next()
+    expect(getEventMeta(value)).toEqual(inboundMeta)
+
+    expect(
+      await readFirst(
+        (async function* () {
+          yield value
+        })(),
+      ),
+    ).toBe('data: {"a":1}\n\n')
+
+    expect(
+      await readFirst(
+        (async function* () {
+          yield withEventMeta(value as object, getEventMeta(value)!)
+        })(),
+      ),
+    ).toBe(': c\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
+  })
+
+  it('close', async () => {
+    const { done, value } = await decode('event: close\n').next()
+    expect(done).toBe(true)
+    expect(getEventMeta(value)).toEqual(inboundMeta)
+
+    expect(
+      await readFirst({
+        next: async () => ({ done: true, value }),
+      }),
+    ).toBe('event: close\ndata: {"a":1}\n\n')
+
+    expect(
+      await readFirst({
+        next: async () => ({
+          done: true,
+          value: withEventMeta(value as object, getEventMeta(value)!),
+        }),
+      }),
+    ).toBe(': c\nevent: close\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
+  })
+
+  it('error', async () => {
+    const error = await decode('event: error\n')
+      .next()
+      .catch((err) => err)
+    expect(error).toBeInstanceOf(ErrorEvent)
+    expect(getEventMeta(error)).toEqual(inboundMeta)
+
+    expect(
+      await readFirst({
+        next: async () => {
+          throw error
+        },
+      }),
+    ).toBe('event: error\ndata: {"a":1}\n\n')
+
+    expect(
+      await readFirst({
+        next: async () => {
+          throw withEventMeta(error, getEventMeta(error)!)
+        },
+      }),
+    ).toBe(': c\nevent: error\nretry: 99999\nid: x\ndata: {"a":1}\n\n')
+  })
+})

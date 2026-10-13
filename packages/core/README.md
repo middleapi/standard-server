@@ -441,6 +441,23 @@ const response: StandardResponse = {
 > [!WARNING]
 > Metadata is validated before it is attached: `id`, `event`, and comments must not contain line breaks, and `retry` must be a non-negative integer.
 
+#### Received metadata
+
+Values decoded from an inbound event stream (an event-stream request body, a fetched SSE response, or a peer stream) carry the **sender's** metadata. You can still read it with `getEventMeta()` and `unwrapEvent()`, but it is marked as received, and encoders do not emit it again. If a server relays a decoded value to other clients by reference (chat, pub/sub), the sender's `id`, `retry`, and comments never reach them. This applies to yielded, returned, and thrown (`ErrorEvent`) values alike.
+
+To forward the metadata on purpose, for example in a gateway, attach it again with `withEventMeta()`:
+
+```ts
+import { getEventMeta, withEventMeta } from '@standard-server/core'
+
+function forwardEventMeta<T>(value: T): T {
+  const meta = getEventMeta(value)
+  return meta ? withEventMeta(value as T & object, meta) : value
+}
+```
+
+Attaching new metadata, as in `withEventMeta(value, { id: '2' })`, also replaces the received metadata. `withEventMeta(value, {})` returns the value unchanged, so it stays received and its metadata is still dropped.
+
 ### Errors and low-level assertions
 
 The package also exports:

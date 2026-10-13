@@ -1,4 +1,4 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { ErrorEvent, unwrapEventForEmit, withReceivedEventMeta } from '@standard-server/core'
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 import { AsyncIteratorClass, isTypescriptObject } from '@standard-server/shared'
 
@@ -18,7 +18,7 @@ export function toAsyncIteratorObject(
           let data = json.data
 
           if (isTypescriptObject(data)) {
-            data = withEventMeta(data, json)
+            data = withReceivedEventMeta(data, json)
           }
 
           return { value: data, done: false }
@@ -26,14 +26,14 @@ export function toAsyncIteratorObject(
 
         case 'error': {
           // Error events are surfaced by throwing a special error type
-          throw withEventMeta(new ErrorEvent(json.data), json)
+          throw withReceivedEventMeta(new ErrorEvent(json.data), json)
         }
 
         case 'close': {
           let data = json.data
 
           if (isTypescriptObject(data)) {
-            data = withEventMeta(data, json)
+            data = withReceivedEventMeta(data, json)
           }
 
           return { value: data, done: true }
@@ -73,7 +73,7 @@ export class EventStreamTransmitter {
         }
 
         try {
-          const [data, meta] = unwrapEvent(item.value)
+          const [data, meta] = unwrapEventForEmit(item.value)
           await this.send({
             kind: 'event-stream',
             id: this.messageId,
@@ -93,7 +93,7 @@ export class EventStreamTransmitter {
           if (!this.isDone) {
             this.isDone = true
 
-            const [resolvedError, meta] = unwrapEvent(error)
+            const [resolvedError, meta] = unwrapEventForEmit(error)
             await this.send({
               kind: 'event-stream',
               id: this.messageId,

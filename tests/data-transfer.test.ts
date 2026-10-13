@@ -1,4 +1,4 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { ErrorEvent, getEventMeta, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
@@ -24,6 +24,33 @@ import { createNodeWsClientServerTest } from './client-server.node-ws'
  */
 const CHUNK_DELAY = 60
 const PARALLEL_THRESHOLD = 150
+
+/**
+ * Encoders do not re-emit metadata received from the remote sender, so a handler
+ * that relays a decoded event stream must re-attach the metadata explicitly.
+ */
+async function* forwardEventStream(
+  iterator: AsyncIterator<unknown, unknown>,
+): AsyncGenerator<unknown, unknown> {
+  const forward = <T>(value: T): T => {
+    const meta = getEventMeta(value)
+    return meta ? withEventMeta(value as T & object, meta) : value
+  }
+
+  try {
+    while (true) {
+      const result = await iterator.next()
+
+      if (result.done) {
+        return forward(result.value)
+      }
+
+      yield forward(result.value)
+    }
+  } catch (error) {
+    throw error instanceof ErrorEvent ? forward(error) : error
+  }
+}
 
 describe.each([
   ['expressjs', () => createExpressjsClientServerTest()],
@@ -239,7 +266,7 @@ describe.each([
       return {
         headers: {},
         status: 200,
-        body,
+        body: forwardEventStream(body),
       }
     })
 
@@ -318,7 +345,7 @@ describe.each([
       return {
         headers: {},
         status: 200,
-        body: actualBody,
+        body: forwardEventStream(actualBody),
       }
     })
 

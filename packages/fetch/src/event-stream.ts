@@ -2,9 +2,8 @@ import {
   encodeEventStreamMessage,
   ErrorEvent,
   EventStreamDecoderStream,
-  getEventMeta,
-  unwrapEvent,
-  withEventMeta,
+  unwrapEventForEmit,
+  withReceivedEventMeta,
 } from '@standard-server/core'
 import {
   AsyncIteratorClass,
@@ -45,7 +44,7 @@ export function toAsyncIteratorObject(
             let message = parseEmptyableJSON(value.data)
 
             if (isTypescriptObject(message)) {
-              message = withEventMeta(message, value)
+              message = withReceivedEventMeta(message, value)
             }
 
             return { done: false, value: message }
@@ -54,7 +53,7 @@ export function toAsyncIteratorObject(
           case 'error': {
             let error = new ErrorEvent(parseEmptyableJSON(value.data))
 
-            error = withEventMeta(error, value)
+            error = withReceivedEventMeta(error, value)
 
             throw error
           }
@@ -63,7 +62,7 @@ export function toAsyncIteratorObject(
             let close = parseEmptyableJSON(value.data)
 
             if (isTypescriptObject(close)) {
-              close = withEventMeta(close, value)
+              close = withReceivedEventMeta(close, value)
             }
 
             return { done: true, value: close }
@@ -180,9 +179,11 @@ export function toEventStream(
         }
 
         if (err instanceof ErrorEvent) {
+          const [, meta] = unwrapEventForEmit(err)
+
           controller.enqueue(
             encodeEventStreamMessage({
-              ...getEventMeta(err),
+              ...meta,
               event: 'error',
               data: stringifyJSON(err.data),
             }),
@@ -205,7 +206,7 @@ export function toEventStream(
       }
 
       try {
-        const [data, meta] = unwrapEvent(result.value)
+        const [data, meta] = unwrapEventForEmit(result.value)
 
         controller.enqueue(
           encodeEventStreamMessage({
