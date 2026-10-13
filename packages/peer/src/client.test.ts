@@ -1215,6 +1215,43 @@ describe('clientPeer', () => {
         await expect(reader.read()).rejects.toThrow('Server canceled the request')
       })
 
+      it('rejects a pending read on signal abort after messages with neither binary nor close', async () => {
+        const controller = new AbortController()
+        const { id, promise } = await requestAndGetId(makeRequest({ signal: controller.signal }))
+        await peer.message(makeStreamingResponse(id, 'octet-stream'))
+        const response = await promise
+
+        const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+        const readPromise = reader.read()
+
+        await peer.message(makeOctetStreamMessage(id))
+        await peer.message(makeOctetStreamMessage(id))
+        await sleep(1) // let the stream process both messages
+
+        const error = new Error('timeout')
+        controller.abort(error)
+
+        await expect(readPromise).rejects.toBe(error)
+        expect(send.mock.calls.map(([m]) => m.kind)).toEqual(['request', 'cancel'])
+      })
+
+      it('rejects a pending read on close after messages with neither binary nor close', async () => {
+        const { id, promise } = await requestAndGetId()
+        await peer.message(makeStreamingResponse(id, 'octet-stream'))
+        const response = await promise
+
+        const reader = ((await response.resolveBody()) as ReadableStream<Uint8Array>).getReader()
+        const readPromise = reader.read()
+
+        await peer.message(makeOctetStreamMessage(id))
+        await peer.message(makeOctetStreamMessage(id))
+        await sleep(1) // let the stream process both messages
+
+        await peer.close()
+
+        await expect(readPromise).rejects.toThrow(AbortError)
+      })
+
       it('throws on resolving the octet-stream response body multiple times', async () => {
         const { id, promise } = await requestAndGetId()
         await peer.message(makeStreamingResponse(id, 'octet-stream'))

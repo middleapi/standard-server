@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { Queue } from '@standard-server/shared'
+import { Queue, sleep } from '@standard-server/shared'
 
 import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
 import type { PeerOctetStreamMessage } from './types'
@@ -82,6 +82,44 @@ describe('toOctetStream', () => {
     await reader.read()
     expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
   })
+
+  it('skips messages with neither binary nor close', async () => {
+    const queue = new Queue<PeerOctetStreamMessage>()
+    const cleanup = vi.fn()
+    const stream = toOctetStream(queue, cleanup)
+
+    queue.push({ id: '1', kind: 'octet-stream', json: {} })
+    queue.push({ id: '1', kind: 'octet-stream', json: {} })
+    queue.push({ id: '1', kind: 'octet-stream', json: {}, binary: new Uint8Array([1, 2, 3]) })
+    queue.push({ id: '1', kind: 'octet-stream', json: { close: true } })
+
+    const reader = stream.getReader()
+    expect(await reader.read()).toEqual({ value: new Uint8Array([1, 2, 3]), done: false })
+    expect(await reader.read()).toEqual({ value: undefined, done: true })
+    expect(cleanup).toHaveBeenCalledWith({ kind: 'success' })
+  })
+
+  it.each(['close', 'abort'] as const)(
+    'rejects a pending read on queue %s after messages with neither binary nor close',
+    async (method) => {
+      const queue = new Queue<PeerOctetStreamMessage>()
+      const cleanup = vi.fn()
+      const stream = toOctetStream(queue, cleanup)
+
+      const reader = stream.getReader()
+      const pending = reader.read()
+
+      queue.push({ id: '1', kind: 'octet-stream', json: {} })
+      queue.push({ id: '1', kind: 'octet-stream', json: {} })
+      await sleep(1) // let the stream process both messages
+
+      const error = new Error('closed')
+      queue[method](error)
+
+      await expect(pending).rejects.toBe(error)
+      expect(cleanup).toHaveBeenCalledWith({ kind: 'error', error })
+    },
+  )
 
   it('calls cleanup(cancelled) on cancel', async () => {
     const queue = new Queue<PeerOctetStreamMessage>()

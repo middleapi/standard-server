@@ -4,6 +4,7 @@ import {
   AbortError,
   AsyncIteratorClass,
   isAsyncIteratorObject,
+  promiseWithResolvers,
   sleep,
 } from '@standard-server/shared'
 
@@ -692,6 +693,39 @@ describe('serverPeer', () => {
 
         box.resolve(jsonResponse())
         await promise
+      })
+
+      it('aborts a pending read on close after messages with neither binary nor close', async () => {
+        const reading = promiseWithResolvers<void>()
+        const finished = vi.fn()
+        const handler = vi.fn<HandlerFn>().mockImplementation(async (req) => {
+          const body = (await req.resolveBody()) as ReadableStream<Uint8Array>
+          const reader = body.getReader()
+          try {
+            const read = reader.read()
+            reading.resolve()
+            await expect(read).rejects.toThrow(AbortError)
+            return jsonResponse()
+          } finally {
+            finished()
+          }
+        })
+
+        const msg = makeRequestMessage({
+          headers: { 'content-type': 'application/octet-stream' },
+        })
+        const promise = peer.message(msg, handler)
+        await reading.promise
+
+        await peer.message(makeOctetStreamMessage('1'), vi.fn())
+        await peer.message(makeOctetStreamMessage('1'), vi.fn())
+        await sleep(1) // let the stream process both messages
+
+        await peer.close()
+
+        await promise
+        expect(finished).toHaveBeenCalledOnce()
+        expect(send).not.toHaveBeenCalled()
       })
 
       it('ignores octet-stream for non-existing request', async () => {
