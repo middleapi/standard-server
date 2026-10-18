@@ -182,7 +182,7 @@ const response: StandardResponse = {
 }
 ```
 
-Events are interpreted as follows: `yield` emits a `message`, `throw` emits an `error`, and `return` emits a `close` event. Note that `close` does not cause [EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) to close the connection because it is not part of the SSE specification. However, when using Standard Server for client-side streaming, `close` is treated as the end of the stream, so the connection is closed and no reconnection is attempted.
+Events are interpreted as follows: `yield` emits a `message`, `throw` emits an `error`, and `return` emits a `close` event. Note that `close` does not cause [EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) to close the connection because it is not part of the SSE specification. However, when using Standard Server for client-side streaming, `close` is treated as the end of the stream, so the connection is closed and no reconnection is attempted. A stream that ends without a `close` or `error` event is treated as cut off, so reading it throws an `EventStreamDecoderError`.
 
 For explicit SSE encoding, decoding, and metadata handling, see the [Event-Stream Helpers](#event-stream-helpers) below.
 
