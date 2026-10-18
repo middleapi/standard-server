@@ -222,6 +222,19 @@ describe('toStandardBody', () => {
       expect(await toStandardBody(response)).toBe(undefined)
     })
 
+    it('ends an event stream without error when there is no body (e.g. HEAD or 204)', async () => {
+      const response = new Response(null, {
+        status: 204,
+        headers: {
+          'content-type': 'text/event-stream',
+        },
+      })
+
+      const standardBody = (await toStandardBody(response)) as any
+      expect(standardBody).toSatisfy(isAsyncIteratorObject)
+      expect(await standardBody.next()).toEqual({ done: true, value: undefined })
+    })
+
     it('throw on read body multiple time except (hint=none)', async () => {
       const request = new Request('https://example.com', {
         method: 'POST',

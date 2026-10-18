@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream'
 
+import { EventStreamIncompleteError, getEventMeta } from '@standard-server/core'
 import * as FetchAdapter from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
@@ -20,6 +21,7 @@ it('toAsyncIteratorObject', async () => {
       controller.enqueue('event: message\ndata: 1\n\n')
       controller.enqueue('event: message\ndata: 2\n\n')
       controller.enqueue('event: message\ndata: 3\n\n')
+      controller.enqueue('event: close\n\n')
       controller.close()
     },
   }).pipeThrough(new TextEncoderStream())
@@ -37,6 +39,20 @@ it('toAsyncIteratorObject', async () => {
   expect(toAsyncIteratorObjectFetch).toHaveBeenCalledWith(
     toWebReadableStreamSpy.mock.results[0]!.value,
   )
+})
+
+it('toAsyncIteratorObject without close event', async () => {
+  const readable = Readable.from(['event: message\ndata: 1\nid: id-1\n\n'])
+
+  const generator = toAsyncIteratorObject(readable)
+
+  expect(await generator.next()).toEqual({ done: false, value: 1 })
+  await expect(generator.next()).rejects.toSatisfy((error: any) => {
+    expect(error).toBeInstanceOf(EventStreamIncompleteError)
+    expect(getEventMeta(error)).toEqual({ id: 'id-1' })
+
+    return true
+  })
 })
 
 it('toEventStream', async () => {

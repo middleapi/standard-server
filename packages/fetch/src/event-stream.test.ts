@@ -1,4 +1,10 @@
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  EventStreamDecoderError,
+  EventStreamIncompleteError,
+  getEventMeta,
+  withEventMeta,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
@@ -82,15 +88,64 @@ describe('toAsyncIteratorObject', () => {
       return true
     })
 
-    expect(await generator.next()).toSatisfy(({ done, value }) => {
-      expect(done).toEqual(true)
-      expect(value).toEqual(undefined)
-      expect(getEventMeta(value)).toEqual(undefined)
+    // the stream was cut short, so carry the last id and retry for a reconnect
+    await expect(generator.next()).rejects.toSatisfy((error: any) => {
+      expect(error).toBeInstanceOf(EventStreamIncompleteError)
+      expect(error).toBeInstanceOf(EventStreamDecoderError)
+      expect(error.message).toBe('Event Stream ended without a close event')
+      expect(getEventMeta(error)).toEqual({ id: 'id-2', retry: 10000 })
 
       return true
     })
 
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
     await expect(stream.getReader().closed).resolves.toBe(undefined)
+  })
+
+  it('without close event carries the id and retry of messages with nothing to attach them to', async () => {
+    const stream = new ReadableStream<string>({
+      async pull(controller) {
+        controller.enqueue('event: message\ndata: {"order": 1}\nid: id-1\n\n')
+        controller.enqueue('event: message\ndata: 2\nid: id-2\nretry: 10000\n\n')
+        controller.enqueue(': ping\nid: id-3\n\n')
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 1 } })
+    expect(await generator.next()).toEqual({ done: false, value: 2 })
+
+    await expect(generator.next()).rejects.toSatisfy((error: any) => {
+      expect(error).toBeInstanceOf(EventStreamIncompleteError)
+      expect(getEventMeta(error)).toEqual({ id: 'id-3', retry: 10000 })
+
+      return true
+    })
+  })
+
+  it.each([
+    ['an empty body', []],
+    ['only comments', [': \n\n', ': ping\n\n']],
+  ])('without any event (%s)', async (_, chunks) => {
+    const stream = new ReadableStream<string>({
+      async pull(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(chunk)
+        }
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    await expect(generator.next()).rejects.toSatisfy((error: any) => {
+      expect(error).toBeInstanceOf(EventStreamIncompleteError)
+      expect(getEventMeta(error)).toBe(undefined)
+
+      return true
+    })
   })
 
   it('with extra blank lines', async () => {
@@ -100,6 +155,7 @@ describe('toAsyncIteratorObject', () => {
         controller.enqueue('event: message\ndata: {"order": 1}\n\n\n')
         controller.enqueue('\r\n: ping\r\n\r\n\r\n')
         controller.enqueue('event: message\ndata: {"order": 2}\n\n\n')
+        controller.enqueue('\nevent: close\n\n\n')
         controller.close()
       },
     }).pipeThrough(new TextEncoderStream())
@@ -120,6 +176,7 @@ describe('toAsyncIteratorObject', () => {
         controller.enqueue('event:\ndata: {"order": 3}\nid: id-3\n\n')
         controller.enqueue('data: 4\n\n')
         controller.enqueue('data:\n\n')
+        controller.enqueue('event: close\n\n')
         controller.close()
       },
     }).pipeThrough(new TextEncoderStream())

@@ -184,6 +184,8 @@ const response: StandardResponse = {
 
 Events are interpreted as follows: `yield` emits a `message`, `throw` emits an `error`, and `return` emits a `close` event. Note that `close` does not cause [EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) to close the connection because it is not part of the SSE specification. However, when using Standard Server for client-side streaming, `close` is treated as the end of the stream, so the connection is closed and no reconnection is attempted.
 
+Since every stream ends with a `close` event, a stream that ends without one was cut short (a proxy idle timeout, a serverless time limit, a dropped connection, ...). The iterator then throws an `EventStreamIncompleteError` that carries the last `id` and `retry` it received, readable with `getEventMeta()`, so you can reconnect and resume the way EventSource does. A response without a body, such as a `HEAD` request or a `204` response, still ends the iterator without an error.
+
 For explicit SSE encoding, decoding, and metadata handling, see the [Event-Stream Helpers](#event-stream-helpers) below.
 
 ### Octet-stream body
@@ -447,6 +449,7 @@ The package also exports:
 
 - `EventStreamEncoderError` for invalid outbound SSE messages
 - `EventStreamDecoderError` for incomplete or invalid inbound stream decoding
+- `EventStreamIncompleteError`, a subclass of `EventStreamDecoderError`, for an event stream that ends without a `close` event
 - `ErrorEvent` for wrapping structured event-stream error payloads in an `Error`
 - `assertEventStreamMessageId()`, `assertEventStreamMessageName()`, `assertEventStreamMessageRetry()`, and `assertEventStreamMessageComment()` for low-level validation when building custom SSE tooling
 

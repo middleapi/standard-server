@@ -1,4 +1,10 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  EventStreamIncompleteError,
+  getEventMeta,
+  unwrapEvent,
+  withEventMeta,
+} from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
@@ -25,6 +31,17 @@ import { createNodeWsClientServerTest } from './client-server.node-ws'
 const CHUNK_DELAY = 60
 const PARALLEL_THRESHOLD = 150
 
+/**
+ * Adapters that hand a `ReadableStream` body over as is, so it cannot carry a pre-encoded event stream.
+ */
+const NON_ENCODING_ADAPTERS = new Set([
+  'inprogress',
+  'message-port',
+  'message-port-fetch-streamed',
+  'node-ws',
+  'node-ws-fetch-streamed',
+])
+
 describe.each([
   ['expressjs', () => createExpressjsClientServerTest()],
   ['expressjs-body-parser', () => createExpressjsClientServerTest({ bodyParser: true })],
@@ -49,7 +66,7 @@ describe.each([
   ['message-port-fetch-streamed', () => createMessagePortClientServerTest({ fetchStreamed: true })],
   ['node-ws', () => createNodeWsClientServerTest()],
   ['node-ws-fetch-streamed', () => createNodeWsClientServerTest({ fetchStreamed: true })],
-])('data transfer: $0', (_, createClientServer) => {
+])('data transfer: $0', (adapter, createClientServer) => {
   const clientServer = createClientServer()
 
   beforeEach(() => {
@@ -387,6 +404,46 @@ describe.each([
       ],
     })
   })
+
+  it.skipIf(NON_ENCODING_ADAPTERS.has(adapter))(
+    'event stream cut short without a close event',
+    async () => {
+      clientServer.handler.mockImplementationOnce(async () => ({
+        headers: {
+          'standard-server': 'event-stream',
+          'content-type': 'text/event-stream',
+        },
+        status: 200,
+        // a pre-encoded stream that ends cleanly before its close event, like after a proxy timeout
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode('id: id-1\nretry: 1000\ndata: "order1"\n\n'),
+            )
+            controller.close()
+          },
+        }),
+      }))
+
+      const response = await clientServer.request({
+        headers: {},
+        method: 'GET',
+        url: '/event-stream',
+        body: undefined,
+      })
+
+      expect(response.status).toEqual(200)
+      const body = (await response.resolveBody()) as AsyncGenerator
+      expect(body).toSatisfy(isAsyncIteratorObject)
+
+      expect(await body.next()).toEqual({ done: false, value: 'order1' })
+      await expect(body.next()).rejects.toSatisfy((error) => {
+        expect(error).toBeInstanceOf(EventStreamIncompleteError)
+        expect(getEventMeta(error)).toEqual({ id: 'id-1', retry: 1000 })
+        return true
+      })
+    },
+  )
 
   it('octet stream in parallel', async () => {
     clientServer.handler.mockImplementationOnce(async (request) => {

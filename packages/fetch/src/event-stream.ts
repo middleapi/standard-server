@@ -2,6 +2,7 @@ import {
   encodeEventStreamMessage,
   ErrorEvent,
   EventStreamDecoderStream,
+  EventStreamIncompleteError,
   getEventMeta,
   unwrapEvent,
   withEventMeta,
@@ -22,23 +23,40 @@ export function toAsyncIteratorObject(
 
   const reader = eventStream?.getReader()
 
+  let cancelled = false
+  let lastEventId: string | undefined
+  let lastEventRetry: number | undefined
+
   return new AsyncIteratorClass(
     async () => {
       while (true) {
+        // no body at all (e.g. a HEAD request or a 204 response), so nothing was cut short
         if (reader === undefined) {
           return { done: true, value: undefined }
         }
 
         const { done, value } = await reader.read()
 
-        /**
-         * The sender closed the stream without sending a 'close' event.
-         * A read cancelled by `return()` also ends here, and AsyncIteratorClass
-         * resolves it as done either way.
-         */
         if (done) {
-          return { done: true, value: undefined }
+          // a read cancelled by `return()` ends here too
+          if (cancelled) {
+            return { done: true, value: undefined }
+          }
+
+          /**
+           * `toEventStream` always ends with a 'close' event, so the stream was cut short
+           * (e.g. a proxy timeout or a dropped connection). Carry the last id and retry,
+           * so the consumer can reconnect and resume like EventSource.
+           */
+          throw withEventMeta(
+            new EventStreamIncompleteError('Event Stream ended without a close event'),
+            { id: lastEventId, retry: lastEventRetry },
+          )
         }
+
+        // like EventSource, keep them from any message, including ones without a value to attach to
+        lastEventId = value.id ?? lastEventId
+        lastEventRetry = value.retry ?? lastEventRetry
 
         switch (value.event) {
           case 'message': {
@@ -72,6 +90,7 @@ export function toAsyncIteratorObject(
       }
     },
     async () => {
+      cancelled = true
       await reader?.cancel()
     },
   )
