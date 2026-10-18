@@ -1,4 +1,9 @@
-import { ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import {
+  ErrorEvent,
+  EventStreamDecoderError,
+  getEventMeta,
+  withEventMeta,
+} from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
 import { toAsyncIteratorObject, toEventStream } from './event-stream'
@@ -82,15 +87,54 @@ describe('toAsyncIteratorObject', () => {
       return true
     })
 
-    expect(await generator.next()).toSatisfy(({ done, value }) => {
-      expect(done).toEqual(true)
-      expect(value).toEqual(undefined)
-      expect(getEventMeta(value)).toEqual(undefined)
+    // ending without a close event is treated like ending with an incomplete message
+    await expect(generator.next()).rejects.toSatisfy((error: any) => {
+      expect(error).toBeInstanceOf(EventStreamDecoderError)
+      expect(error.message).toBe('Event Stream ended before complete')
 
       return true
     })
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
 
     await expect(stream.getReader().closed).resolves.toBe(undefined)
+  })
+
+  it.each([
+    ['nothing', ''],
+    ['only comments', ': \n\n: ping\n\n'],
+    ['blank lines', '\n\n\r\n'],
+  ])('throws when the stream sends %s and ends without a close event', async (_, body) => {
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue(body)
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    await expect(generator.next()).rejects.toThrowError(
+      new EventStreamDecoderError('Event Stream ended before complete'),
+    )
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
+  })
+
+  it('throws when the stream ends with an incomplete message', async () => {
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue('event: message\ndata: {"order": 1}\n\n')
+        controller.enqueue('event: close\ndata: {"order": 2}\n')
+        controller.close()
+      },
+    }).pipeThrough(new TextEncoderStream())
+
+    const generator = toAsyncIteratorObject(stream)
+
+    expect(await generator.next()).toEqual({ done: false, value: { order: 1 } })
+    await expect(generator.next()).rejects.toThrowError(
+      new EventStreamDecoderError('Event Stream ended before complete'),
+    )
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 
   it('with extra blank lines', async () => {
@@ -100,6 +144,7 @@ describe('toAsyncIteratorObject', () => {
         controller.enqueue('event: message\ndata: {"order": 1}\n\n\n')
         controller.enqueue('\r\n: ping\r\n\r\n\r\n')
         controller.enqueue('event: message\ndata: {"order": 2}\n\n\n')
+        controller.enqueue('\n\nevent: close\n\n\n')
         controller.close()
       },
     }).pipeThrough(new TextEncoderStream())
@@ -120,6 +165,7 @@ describe('toAsyncIteratorObject', () => {
         controller.enqueue('event:\ndata: {"order": 3}\nid: id-3\n\n')
         controller.enqueue('data: 4\n\n')
         controller.enqueue('data:\n\n')
+        controller.enqueue('event: close\n\n')
         controller.close()
       },
     }).pipeThrough(new TextEncoderStream())
@@ -149,11 +195,13 @@ describe('toAsyncIteratorObject', () => {
     expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 
-  it('with empty stream', async () => {
+  it('with null stream', async () => {
     const generator = toAsyncIteratorObject(null)
     expect(generator).toSatisfy(isAsyncIteratorObject)
-    expect(await generator.next()).toEqual({ done: true })
-    expect(await generator.next()).toEqual({ done: true })
+    await expect(generator.next()).rejects.toThrowError(
+      new EventStreamDecoderError('Event Stream ended before complete'),
+    )
+    expect(await generator.next()).toEqual({ done: true, value: undefined })
   })
 
   it.skipIf(process.version.startsWith('v26.'))('with error event', async () => {

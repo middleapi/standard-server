@@ -20,6 +20,7 @@ it('toAsyncIteratorObject', async () => {
       controller.enqueue('event: message\ndata: 1\n\n')
       controller.enqueue('event: message\ndata: 2\n\n')
       controller.enqueue('event: message\ndata: 3\n\n')
+      controller.enqueue('event: close\n\n')
       controller.close()
     },
   }).pipeThrough(new TextEncoderStream())

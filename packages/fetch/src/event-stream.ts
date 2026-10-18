@@ -1,6 +1,7 @@
 import {
   encodeEventStreamMessage,
   ErrorEvent,
+  EventStreamDecoderError,
   EventStreamDecoderStream,
   getEventMeta,
   unwrapEvent,
@@ -25,20 +26,19 @@ export function toAsyncIteratorObject(
   return new AsyncIteratorClass(
     async () => {
       while (true) {
-        if (reader === undefined) {
-          return { done: true, value: undefined }
-        }
-
-        const { done, value } = await reader.read()
+        const result = await reader?.read()
 
         /**
-         * The sender closed the stream without sending a 'close' event.
+         * A stream only completes with a 'close' or 'error' event, so ending without
+         * one means it was cut off, like a stream ending with an incomplete message.
          * A read cancelled by `return()` also ends here, and AsyncIteratorClass
-         * resolves it as done either way.
+         * resolves it as done instead.
          */
-        if (done) {
-          return { done: true, value: undefined }
+        if (result === undefined || result.done) {
+          throw new EventStreamDecoderError('Event Stream ended before complete')
         }
+
+        const { value } = result
 
         switch (value.event) {
           case 'message': {
