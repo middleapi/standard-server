@@ -173,8 +173,8 @@ importers:
         specifier: ^2.1.4
         version: 2.1.4(hono@4.13.5)
       '@remix-run/node-fetch-server':
-        specifier: ^0.14.0
-        version: 0.14.1
+        specifier: ^1.0.0
+        version: 1.0.0
       '@standard-server/core':
         specifier: workspace:*
         version: link:packages/core
@@ -1126,8 +1126,8 @@ packages:
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
 
-  '@remix-run/node-fetch-server@0.14.1':
-    resolution: {integrity: sha512-pKenF5ysIN5lDCnCyvoUxDhKP0tfnGagvGbZh01xxHG6DJXSIXWVC9NpLSDGjxcxd1CKdCOKuZFleXBF3pChIg==}
+  '@remix-run/node-fetch-server@1.0.0':
+    resolution: {integrity: sha512-M/zI70dmLQdIae+mG95XecvoI3uw0o/ZwflsMAFtaQA/MceznyKaT8aSPvvGVK6yRufzQrY++Ohwei7EhyY3qw==}
 
   '@rollup/plugin-alias@5.1.1':
     resolution: {integrity: sha512-PR9zDb+rOzkRb2VD+EuKB7UC41vU5DIwZ5qqCpk0KJudcWAyi8rvYOhS7+L5aZCspw1stTViLgN5v6FF1p5cgQ==}
@@ -3703,7 +3703,7 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
-  '@remix-run/node-fetch-server@0.14.1': {}
+  '@remix-run/node-fetch-server@1.0.0': {}
 
   '@rollup/plugin-alias@5.1.1(rollup@4.63.1)':
     optionalDependencies:
