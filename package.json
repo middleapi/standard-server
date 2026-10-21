@@ -30,7 +30,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "bumpp": "^12.1.1",
     "changelogithub": "^15.0.4",
-    "express": "^5.2.1",
+    "express": "^5.3.0",
     "express4": "npm:express@^4.22.3",
     "fastify": "^5.12.5",
     "h3": "2.0.2",
