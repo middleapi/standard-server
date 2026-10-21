@@ -196,6 +196,16 @@ Like what we build over at [middleapi](https://github.com/middleapi)? You can he
 
 With thanks to [39 past sponsors](https://htmlpreview.github.io/?https://github.com/middleapi/static/blob/main/sponsors.svg) who helped get us here.
 
+## Open Source Programs
+
+Standard Server's development is supported by these programs for open source maintainers:
+
+<table>
+  <tr>
+   <td align="center"><a href="https://claude.com/contact-sales/claude-for-oss" target="_blank" rel="noopener" title="Claude for Open Source"><img src="https://cdn.simpleicons.org/claude" width="64" alt="Claude"/><br />Claude for Open Source</a></td>
+  </tr>
+</table>
+
 ## License
 
 Distributed under the MIT License. See [LICENCE](https://github.com/middleapi/standard-server/blob/main/LICENCE) for more information.
