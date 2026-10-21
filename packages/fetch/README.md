@@ -221,7 +221,7 @@ With thanks to [39 past sponsors](https://htmlpreview.github.io/?https://github.
 
 ## Open Source Programs
 
-Standard Server's development is supported by these programs for open source maintainers:
+What we build at [middleapi](https://github.com/middleapi) is supported by these programs for open source maintainers:
 
 <table>
   <tr>
