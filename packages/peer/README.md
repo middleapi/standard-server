@@ -260,7 +260,7 @@ With thanks to [39 past sponsors](https://htmlpreview.github.io/?https://github.
 
 ## Open Source Programs
 
-What we build at [middleapi](https://github.com/middleapi) is supported by these programs for open source maintainers:
+[middleapi](https://github.com/middleapi) is supported by these open source programs:
 
 <table>
   <tr>
