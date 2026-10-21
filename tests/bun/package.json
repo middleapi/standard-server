@@ -1,6 +1,6 @@
 {
   "name": "@standard-server/bun",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "license": "MIT",
   "repository": {
     "type": "git",
