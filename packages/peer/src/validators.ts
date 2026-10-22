@@ -137,21 +137,23 @@ export function isPeerStreamCancelMessage(maybe: PeerMessage): maybe is PeerStre
   return maybe.kind === 'stream/cancel' && maybe.json === undefined && maybe.binary === undefined
 }
 
-export function isClientPeerSendMessage(maybe: PeerMessage): maybe is ClientPeerSendMessage {
+export function isClientPeerSendMessage(maybe: unknown): maybe is ClientPeerSendMessage {
   return (
-    isPeerRequestMessage(maybe) ||
-    isPeerCancelMessage(maybe) ||
-    isPeerEventStreamMessage(maybe) ||
-    isPeerOctetStreamMessage(maybe)
+    isPeerMessage(maybe) &&
+    (isPeerRequestMessage(maybe) ||
+      isPeerCancelMessage(maybe) ||
+      isPeerEventStreamMessage(maybe) ||
+      isPeerOctetStreamMessage(maybe))
   )
 }
 
-export function isServerPeerSendMessage(maybe: PeerMessage): maybe is ServerPeerSendMessage {
+export function isServerPeerSendMessage(maybe: unknown): maybe is ServerPeerSendMessage {
   return (
-    isPeerResponseMessage(maybe) ||
-    isPeerCancelMessage(maybe) ||
-    isPeerEventStreamMessage(maybe) ||
-    isPeerOctetStreamMessage(maybe) ||
-    isPeerStreamCancelMessage(maybe)
+    isPeerMessage(maybe) &&
+    (isPeerResponseMessage(maybe) ||
+      isPeerCancelMessage(maybe) ||
+      isPeerEventStreamMessage(maybe) ||
+      isPeerOctetStreamMessage(maybe) ||
+      isPeerStreamCancelMessage(maybe))
   )
 }

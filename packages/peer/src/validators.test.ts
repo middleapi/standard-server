@@ -254,6 +254,15 @@ describe('isClientPeerSendMessage', () => {
   ])('rejects %s', (_, overrides) => {
     expect(isClientPeerSendMessage(base(overrides))).toBe(false)
   })
+
+  it.each([
+    ['non-string id', base({ id: 123 as any, kind: 'request', json: { url: '/path' } })],
+    ['binary as string', base({ kind: 'octet-stream', json: {}, binary: 'data' as any })],
+    ['null', null],
+    ['array', []],
+  ])('rejects %s, which is not a peer message', (_, v) => {
+    expect(isClientPeerSendMessage(v)).toBe(false)
+  })
 })
 
 describe('isServerPeerSendMessage', () => {
@@ -269,5 +278,14 @@ describe('isServerPeerSendMessage', () => {
 
   it('rejects request', () => {
     expect(isServerPeerSendMessage(base({ kind: 'request', json: { url: '/path' } }))).toBe(false)
+  })
+
+  it.each([
+    ['non-string id', base({ id: 123 as any, kind: 'response', json: {} })],
+    ['binary as string', base({ kind: 'response', json: {}, binary: 'data' as any })],
+    ['null', null],
+    ['array', []],
+  ])('rejects %s, which is not a peer message', (_, v) => {
+    expect(isServerPeerSendMessage(v)).toBe(false)
   })
 })
