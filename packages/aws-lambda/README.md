@@ -86,7 +86,7 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
 })
 ```
 
-`sendStandardResponse()` sends the status, headers, and cookies as the response stream metadata prelude via `awslambda.HttpResponseStream.from()`, then streams the body. It resolves once the response is fully flushed, and rejects if the stream errors.
+`sendStandardResponse()` sends the status, headers, and cookies as the response stream metadata prelude via `awslambda.HttpResponseStream.from()`, then streams the body. It resolves once the response is fully flushed or the client disconnects, and rejects if the stream fails otherwise.
 
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.

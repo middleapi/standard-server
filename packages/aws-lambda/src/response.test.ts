@@ -288,6 +288,41 @@ describe('sendStandardResponse', () => {
     await sendPromise
   })
 
+  it('destroys the body and resolves when the client disconnects while streaming', async () => {
+    const responseStream = createResponseStream()
+
+    let clean = false
+    const standardResponse: StandardResponse = {
+      body: (async function* () {
+        try {
+          yield 1
+          await new Promise((r) => setTimeout(r, 100))
+          yield 2
+          await new Promise((r) => setTimeout(r, 9999999))
+          yield 3
+        } finally {
+          clean = true
+        }
+      })(),
+      headers: {},
+      status: 200,
+    }
+
+    const sendPromise = sendStandardResponse(responseStream, standardResponse)
+
+    await vi.waitFor(() => {
+      expect(bodyOf(responseStream)).toContain('data: 1')
+    })
+
+    responseStream.destroy(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))
+
+    await expect(sendPromise).resolves.toBeUndefined()
+
+    await vi.waitFor(() => {
+      expect(clean).toBe(true)
+    })
+  })
+
   it.each([
     [
       '`from` throws',
@@ -375,6 +410,37 @@ describe('sendStandardResponse', () => {
           body: { foo: 'bar' },
         }),
       ).rejects.toThrow('test')
+
+      expect(fromSpy).not.toHaveBeenCalled()
+    })
+
+    it('resolves and destroys the body when the client disconnected', async () => {
+      const responseStream = createResponseStream()
+      responseStream.once('error', () => {})
+      responseStream.destroy(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))
+
+      await vi.waitFor(() => {
+        expect(responseStream.closed).toBe(true)
+      })
+
+      let clean = false
+      const standardResponse: StandardResponse = {
+        body: (async function* () {
+          try {
+            yield 1
+          } finally {
+            clean = true
+          }
+        })(),
+        headers: {},
+        status: 200,
+      }
+
+      await expect(sendStandardResponse(responseStream, standardResponse)).resolves.toBeUndefined()
+
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
 
       expect(fromSpy).not.toHaveBeenCalled()
     })

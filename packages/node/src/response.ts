@@ -3,7 +3,12 @@ import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from './body'
 import { toNodeHttpBody } from './body'
 import type { NodeHttpResponse } from './types'
-import { canWriteToNodeResponse, destroyNodeHttpBody, getNodeResponseError } from './utils'
+import {
+  canWriteToNodeResponse,
+  destroyNodeHttpBody,
+  getNodeResponseError,
+  isNodeResponseDisconnectError,
+} from './utils'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 
@@ -24,7 +29,7 @@ export async function sendStandardResponse(
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error) {
+      if (error && !isNodeResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -35,7 +40,12 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in res ? res.stream : res
 
-    connection.once('error', reject)
+    // a client disconnect resolves on `close`, like on http1
+    connection.once('error', (error) => {
+      if (!isNodeResponseDisconnectError(error)) {
+        reject(error)
+      }
+    })
     connection.once('close', resolve)
 
     try {

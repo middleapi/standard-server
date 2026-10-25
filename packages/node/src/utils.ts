@@ -98,6 +98,29 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
 }
 
 /**
+ * Codes of the errors Node gives a response when the client goes away mid-response:
+ * - `ERR_HTTP2_STREAM_ERROR`: the client reset the stream (`RST_STREAM`) with an error code
+ * - `ERR_HTTP2_SESSION_ERROR`: the client shut the session down (`GOAWAY`) with an error code
+ * - `ECONNRESET`, `EPIPE`: the client dropped the connection
+ */
+const NODE_RESPONSE_DISCONNECT_ERROR_CODES = new Set<unknown>([
+  'ERR_HTTP2_STREAM_ERROR',
+  'ERR_HTTP2_SESSION_ERROR',
+  'ECONNRESET',
+  'EPIPE',
+])
+
+/**
+ * Check whether a response error only means the client disconnected.
+ *
+ * A client disconnect only closes an http1 response, while on http2 it usually errors
+ * the response too, so these errors should be handled like a plain close.
+ */
+export function isNodeResponseDisconnectError(error: Error): boolean {
+  return NODE_RESPONSE_DISCONNECT_ERROR_CODES.has((error as { code?: unknown }).code)
+}
+
+/**
  * Destroy a body that won't be sent. `onError` is attached first, so an `error`
  * event from `destroy` is never unhandled.
  */

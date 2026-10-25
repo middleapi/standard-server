@@ -85,6 +85,8 @@ createServer(async (req, res) => {
 }).listen(3000)
 ```
 
+`sendStandardResponse()` resolves once the response is fully flushed or the client disconnects (an HTTP/2 stream reset included), and rejects if sending fails otherwise.
+
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.
 

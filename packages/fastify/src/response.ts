@@ -4,6 +4,7 @@ import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isNodeResponseDisconnectError,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -28,7 +29,7 @@ export async function sendStandardResponse(
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error) {
+      if (error && !isNodeResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -39,7 +40,12 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
 
-    connection.once('error', reject)
+    // a client disconnect resolves on `close`, like on http1
+    connection.once('error', (error) => {
+      if (!isNodeResponseDisconnectError(error)) {
+        reject(error)
+      }
+    })
     connection.once('close', () => {
       if (typeof resBody === 'object' && !resBody.closed) {
         resBody.destroy()

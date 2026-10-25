@@ -90,7 +90,7 @@ fastify.all('/*', async (req, reply) => {
 await fastify.listen({ port: 3000 })
 ```
 
-`sendStandardResponse()` resolves once the response is fully flushed, and rejects if the underlying connection errors. Do not return a value from the route handler afterwards — Fastify would try to send a second response.
+`sendStandardResponse()` resolves once the response is fully flushed or the client disconnects (an HTTP/2 stream reset included), and rejects if sending fails otherwise. Do not return a value from the route handler afterwards — Fastify would try to send a second response.
 
 > [!TIP]
 > When sending responses, you can pass additional options such as event-stream keep-alive.
