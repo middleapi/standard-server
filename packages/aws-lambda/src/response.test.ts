@@ -48,6 +48,10 @@ function createResponseStream(): HttpResponseStream & { chunks: Buffer[] } {
   return stream
 }
 
+function createDisconnectError(): Error {
+  return Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })
+}
+
 function metadataOf(stream: HttpResponseStream & { chunks: Buffer[] }): Record<string, unknown> {
   return JSON.parse(stream.chunks[0]!.toString())
 }
@@ -253,75 +257,46 @@ describe('sendStandardResponse', () => {
     await sendPromise
   })
 
-  it('destroys the body without error when the response stream closes cleanly while streaming', async () => {
-    const responseStream = createResponseStream()
+  it.each([
+    ['cleanly', undefined],
+    ['on a client disconnect', createDisconnectError()],
+  ])(
+    'resolves and destroys the body when the response stream closes %s while streaming',
+    async (_, error) => {
+      const responseStream = createResponseStream()
 
-    let clean = false
-    const standardResponse: StandardResponse = {
-      body: (async function* () {
-        try {
-          yield 1
-          await new Promise((r) => setTimeout(r, 100))
-          yield 2
-          await new Promise((r) => setTimeout(r, 9999999))
-          yield 3
-        } finally {
-          clean = true
-        }
-      })(),
-      headers: {},
-      status: 200,
-    }
+      let clean = false
+      const standardResponse: StandardResponse = {
+        body: (async function* () {
+          try {
+            yield 1
+            await new Promise((r) => setTimeout(r, 100))
+            yield 2
+            await new Promise((r) => setTimeout(r, 9999999))
+            yield 3
+          } finally {
+            clean = true
+          }
+        })(),
+        headers: {},
+        status: 200,
+      }
 
-    const sendPromise = sendStandardResponse(responseStream, standardResponse)
+      const sendPromise = sendStandardResponse(responseStream, standardResponse)
 
-    await vi.waitFor(() => {
-      expect(bodyOf(responseStream)).toContain('data: 1')
-    })
+      await vi.waitFor(() => {
+        expect(bodyOf(responseStream)).toContain('data: 1')
+      })
 
-    responseStream.destroy()
+      responseStream.destroy(error)
 
-    await vi.waitFor(() => {
-      expect(clean).toBe(true)
-    })
+      await vi.waitFor(() => {
+        expect(clean).toBe(true)
+      })
 
-    await sendPromise
-  })
-
-  it('destroys the body and resolves when the client disconnects while streaming', async () => {
-    const responseStream = createResponseStream()
-
-    let clean = false
-    const standardResponse: StandardResponse = {
-      body: (async function* () {
-        try {
-          yield 1
-          await new Promise((r) => setTimeout(r, 100))
-          yield 2
-          await new Promise((r) => setTimeout(r, 9999999))
-          yield 3
-        } finally {
-          clean = true
-        }
-      })(),
-      headers: {},
-      status: 200,
-    }
-
-    const sendPromise = sendStandardResponse(responseStream, standardResponse)
-
-    await vi.waitFor(() => {
-      expect(bodyOf(responseStream)).toContain('data: 1')
-    })
-
-    responseStream.destroy(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))
-
-    await expect(sendPromise).resolves.toBeUndefined()
-
-    await vi.waitFor(() => {
-      expect(clean).toBe(true)
-    })
-  })
+      await expect(sendPromise).resolves.toBeUndefined()
+    },
+  )
 
   it.each([
     [
@@ -364,9 +339,13 @@ describe('sendStandardResponse', () => {
   })
 
   describe('response stream closed before sending', () => {
-    it('resolves and destroys the body', async () => {
+    it.each([
+      ['closed cleanly', undefined],
+      ['destroyed by a client disconnect', createDisconnectError()],
+    ])('resolves and destroys the body when the response stream was %s', async (_, error) => {
       const responseStream = createResponseStream()
-      responseStream.destroy()
+      responseStream.once('error', () => {})
+      responseStream.destroy(error)
 
       await vi.waitFor(() => {
         expect(responseStream.closed).toBe(true)
@@ -410,37 +389,6 @@ describe('sendStandardResponse', () => {
           body: { foo: 'bar' },
         }),
       ).rejects.toThrow('test')
-
-      expect(fromSpy).not.toHaveBeenCalled()
-    })
-
-    it('resolves and destroys the body when the client disconnected', async () => {
-      const responseStream = createResponseStream()
-      responseStream.once('error', () => {})
-      responseStream.destroy(Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }))
-
-      await vi.waitFor(() => {
-        expect(responseStream.closed).toBe(true)
-      })
-
-      let clean = false
-      const standardResponse: StandardResponse = {
-        body: (async function* () {
-          try {
-            yield 1
-          } finally {
-            clean = true
-          }
-        })(),
-        headers: {},
-        status: 200,
-      }
-
-      await expect(sendStandardResponse(responseStream, standardResponse)).resolves.toBeUndefined()
-
-      await vi.waitFor(() => {
-        expect(clean).toBe(true)
-      })
 
       expect(fromSpy).not.toHaveBeenCalled()
     })

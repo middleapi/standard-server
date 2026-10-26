@@ -778,12 +778,11 @@ describe('sendStandardResponse', () => {
       'resolves and releases the body on %s before sending',
       async ([, disconnect], { onTestFinished }) => {
         const { body, isReleased } = createEndlessBody()
-        let sending: Promise<void> | undefined
 
         let received!: () => void
         const receivedPromise = new Promise<void>((r) => (received = r))
-        let handled!: () => void
-        const handledPromise = new Promise<void>((r) => (handled = r))
+        let send!: (sending: Promise<void>) => void
+        const sending = new Promise<void>((r) => (send = r))
 
         const fastify = Fastify({ http2: true })
         onTestFinished(() => fastify.close())
@@ -793,8 +792,7 @@ describe('sendStandardResponse', () => {
           received()
           await closed
 
-          sending = sendStandardResponse(reply, { status: 200, headers: {}, body })
-          handled()
+          send(sendStandardResponse(reply, { status: 200, headers: {}, body }))
           await sending
         })
 
@@ -807,7 +805,6 @@ describe('sendStandardResponse', () => {
 
         await receivedPromise
         disconnect(client, reqStream)
-        await handledPromise
 
         await expect(sending).resolves.toBeUndefined()
 

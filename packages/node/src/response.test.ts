@@ -7,6 +7,7 @@ import { connect } from 'node:net'
 import Stream from 'node:stream'
 
 import type { StandardResponse } from '@standard-server/core'
+import { promiseWithResolvers } from '@standard-server/shared'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -576,17 +577,7 @@ describe('sendStandardResponse', () => {
     })
 
     it('rejects and releases a stream body it cannot send', async () => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          while (true) {
-            yield 'foo'
-            await new Promise((r) => setTimeout(r, 10))
-          }
-        } finally {
-          clean = true
-        }
-      })()
+      const { body, isReleased } = createEndlessBody()
 
       let sending: Promise<void> | undefined
 
@@ -604,7 +595,7 @@ describe('sendStandardResponse', () => {
       expect(response.body).toBe('')
 
       await vi.waitFor(() => {
-        expect(clean).toBe(true)
+        expect(isReleased()).toBe(true)
       })
     })
   })
@@ -655,32 +646,26 @@ describe('sendStandardResponse', () => {
       'resolves and releases the body on %s before sending',
       async ([, disconnect], { onTestFinished }) => {
         const { body, isReleased } = createEndlessBody()
-        let sending: Promise<void> | undefined
-
-        let received!: () => void
-        const receivedPromise = new Promise<void>((r) => (received = r))
-        let handled!: () => void
-        const handledPromise = new Promise<void>((r) => (handled = r))
+        const received = promiseWithResolvers<void>()
+        const sending = promiseWithResolvers<Promise<void>>()
 
         const { client, socket } = await connectHttp2(onTestFinished, (req, res) => {
           res.stream.once('close', () => {
-            sending = sendStandardResponse(res, { status: 200, headers: {}, body })
-            handled()
+            sending.resolve(sendStandardResponse(res, { status: 200, headers: {}, body }))
           })
 
-          received()
+          received.resolve()
         })
 
         const reqStream = client.request({ ':path': '/' })
         reqStream.once('error', () => {})
 
-        await receivedPromise
+        await received.promise
         // a round trip first, or the server can see a connection reset as a plain close
         await new Promise((r) => client.ping(r))
         disconnect({ client, reqStream, socket })
-        await handledPromise
 
-        await expect(sending).resolves.toBeUndefined()
+        await expect(sending.promise).resolves.toBeUndefined()
 
         await vi.waitFor(() => {
           expect(isReleased()).toBe(true)
