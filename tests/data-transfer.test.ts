@@ -198,7 +198,43 @@ describe.each([
         await expect(reader.read()).resolves.toEqual({ done: true })
       },
     },
-  ])('buffered body $name', async ({ createBody, assertBody }) => {
+    {
+      name: 'undefined as text/html',
+      createBody: () => undefined,
+      contentType: 'text/html',
+    },
+    {
+      name: 'json-object as application/problem+json',
+      createBody: () => ({ a: 1, b: [2, 3, { c: 4 }] }),
+      contentType: 'application/problem+json',
+    },
+    {
+      name: 'json-object with removed content-type',
+      createBody: () => ({ a: 1 }),
+      contentType: [],
+    },
+    {
+      name: 'URLSearchParams as text/plain',
+      createBody: () => new URLSearchParams('a=b&c=d'),
+      contentType: 'text/plain',
+    },
+    {
+      name: 'event-stream as application/x-ndjson',
+      createBody: () => {
+        return (async function* () {
+          yield 'a'
+          return { b: 1 }
+        })()
+      },
+      contentType: 'application/x-ndjson',
+      assertBody: async (body: any) => {
+        expect(body).toSatisfy(isAsyncIteratorObject)
+        const iterator = body as AsyncGenerator
+        await expect(iterator.next()).resolves.toEqual({ done: false, value: 'a' })
+        await expect(iterator.next()).resolves.toEqual({ done: true, value: { b: 1 } })
+      },
+    },
+  ])('buffered body $name', async ({ createBody, contentType, assertBody }) => {
     clientServer.handler.mockImplementationOnce(async (request) => {
       if (assertBody) {
         await assertBody(await request.resolveBody())
@@ -207,7 +243,7 @@ describe.each([
       }
 
       return {
-        headers: {},
+        headers: { 'content-type': contentType },
         status: 200,
         body: createBody(),
       }
@@ -216,6 +252,7 @@ describe.each([
     const response = await clientServer.request({
       headers: {
         'x-from': 'client',
+        'content-type': contentType,
       },
       method: 'POST',
       url: '/test',

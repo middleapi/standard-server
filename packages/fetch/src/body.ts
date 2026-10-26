@@ -145,7 +145,7 @@ export function toFetchBody(
   headers['content-length'] = undefined
 
   if (body === undefined) {
-    headers['content-type'] = undefined
+    headers['standard-server'] = _requiredBodyHint('none', headers)
     return [undefined, headers]
   }
 
@@ -156,16 +156,25 @@ export function toFetchBody(
   }
 
   if (body instanceof URLSearchParams) {
-    // Fetch automatically sets content-type for URLSearchParams bodies.
-    headers['content-type'] = undefined
+    headers['content-type'] ??= 'application/x-www-form-urlencoded'
+    headers['standard-server'] = _requiredBodyHint('url-search-params', headers)
     return [body, headers]
   }
 
   if (isAsyncIteratorObject(body)) {
-    headers['content-type'] = 'text/event-stream'
+    headers['content-type'] ??= 'text/event-stream'
+    headers['standard-server'] = _requiredBodyHint('event-stream', headers)
     return [toEventStream(body, options.eventStream), headers]
   }
 
-  headers['content-type'] = 'application/json'
+  headers['content-type'] ??= 'application/json'
+  headers['standard-server'] = _requiredBodyHint('json', headers)
   return [stringifyJSON(body), headers]
+}
+
+function _requiredBodyHint(
+  hint: StandardBodyHint,
+  headers: StandardHeaders,
+): StandardBodyHint | undefined {
+  return resolveStandardBodyHint(headers) === hint ? undefined : hint
 }
