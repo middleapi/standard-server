@@ -157,6 +157,29 @@ export function resolveStandardBodyHint(headers: {
 }
 
 /**
+ * Returns the `standard-server` header a sender must set for the receiver to parse the body as `hint`,
+ * or `undefined` when the content headers already resolve to it.
+ * A `standard-server` header already in `headers` is ignored, since the result replaces it.
+ */
+export function getRequiredStandardBodyHint(
+  hint: StandardBodyHint,
+  headers: {
+    'standard-server'?: undefined | string | string[]
+    'content-type'?: undefined | string | string[]
+    'content-length'?: undefined | string | string[]
+    'content-disposition'?: undefined | string | string[]
+  },
+): StandardBodyHint | undefined {
+  const resolved = resolveStandardBodyHint({
+    'content-type': headers['content-type'],
+    'content-length': headers['content-length'],
+    'content-disposition': headers['content-disposition'],
+  })
+
+  return resolved === hint ? undefined : hint
+}
+
+/**
  * Cancel a body that will not be consumed, so its stream or iterator source can clean up.
  * Other bodies are left as is. Rejects if that cleanup fails.
  */
