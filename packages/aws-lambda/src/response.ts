@@ -4,6 +4,7 @@ import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isNodeResponseDisconnectError,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -40,7 +41,7 @@ export async function sendStandardResponse(
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error) {
+      if (error && !isNodeResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -49,7 +50,11 @@ export async function sendStandardResponse(
       return
     }
 
-    responseStream.once('error', reject)
+    responseStream.once('error', (error) => {
+      if (!isNodeResponseDisconnectError(error)) {
+        reject(error)
+      }
+    })
     responseStream.once('close', resolve)
 
     try {

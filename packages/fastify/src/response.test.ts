@@ -733,34 +733,86 @@ describe('sendStandardResponse', () => {
     })
   })
 
-  it('rejects with the stream error when the client resets an http2 stream with an error code', async ({
-    onTestFinished,
-  }) => {
-    const { body, isReleased } = createEndlessBody()
-    let sending: Promise<void> | undefined
+  describe('http2 client disconnect', () => {
+    const disconnects: [
+      string,
+      (client: http2.ClientHttp2Session, reqStream: http2.ClientHttp2Stream) => void,
+    ][] = [
+      ['an error reset', (_, reqStream) => reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR)],
+      ['an error goaway', (client) => client.goaway(http2.constants.NGHTTP2_PROTOCOL_ERROR)],
+    ]
 
-    const fastify = Fastify({ http2: true })
-    onTestFinished(() => fastify.close())
+    it.for(disconnects)(
+      'resolves and releases the body on %s while sending',
+      async ([, disconnect], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+        let sending: Promise<void> | undefined
 
-    fastify.get('/', async (req, reply) => {
-      sending = sendStandardResponse(reply, { status: 200, headers: {}, body })
-      await sending.catch(() => {})
-    })
+        const fastify = Fastify({ http2: true })
+        onTestFinished(() => fastify.close())
 
-    const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
-    onTestFinished(() => client.close())
+        fastify.get('/', async (req, reply) => {
+          sending = sendStandardResponse(reply, { status: 200, headers: {}, body })
+          await sending
+        })
 
-    const reqStream = client.request({ ':path': '/' })
-    reqStream.once('error', () => {})
+        const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+        client.once('error', () => {})
+        onTestFinished(() => client.close())
 
-    await new Promise((r) => reqStream.once('data', r))
-    reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR)
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.once('error', () => {})
 
-    await expect(sending).rejects.toMatchObject({ code: 'ERR_HTTP2_STREAM_ERROR' })
+        await new Promise((r) => reqStream.once('data', r))
+        disconnect(client, reqStream)
 
-    await vi.waitFor(() => {
-      expect(isReleased()).toBe(true)
-    })
+        await expect(sending).resolves.toBeUndefined()
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
+
+    it.for(disconnects)(
+      'resolves and releases the body on %s before sending',
+      async ([, disconnect], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+
+        let received!: () => void
+        const receivedPromise = new Promise<void>((r) => (received = r))
+        let send!: (sending: Promise<void>) => void
+        const sending = new Promise<void>((r) => (send = r))
+
+        const fastify = Fastify({ http2: true })
+        onTestFinished(() => fastify.close())
+
+        fastify.get('/', async (req, reply) => {
+          const closed = new Promise((r) => reply.raw.stream.once('close', r))
+          received()
+          await closed
+
+          send(sendStandardResponse(reply, { status: 200, headers: {}, body }))
+          await sending
+        })
+
+        const client = http2.connect(await fastify.listen({ port: 0, host: '127.0.0.1' }))
+        client.once('error', () => {})
+        onTestFinished(() => client.close())
+
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.once('error', () => {})
+
+        await receivedPromise
+        disconnect(client, reqStream)
+
+        await expect(sending).resolves.toBeUndefined()
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
   })
 })
 

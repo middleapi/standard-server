@@ -2,10 +2,12 @@ import { Buffer } from 'node:buffer'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Http2ServerRequest, Http2ServerResponse } from 'node:http2'
 import http2 from 'node:http2'
-import type { AddressInfo } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
+import { connect } from 'node:net'
 import Stream from 'node:stream'
 
 import type { StandardResponse } from '@standard-server/core'
+import { promiseWithResolvers } from '@standard-server/shared'
 import request from 'supertest'
 
 import * as Body from './body'
@@ -575,17 +577,7 @@ describe('sendStandardResponse', () => {
     })
 
     it('rejects and releases a stream body it cannot send', async () => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          while (true) {
-            yield 'foo'
-            await new Promise((r) => setTimeout(r, 10))
-          }
-        } finally {
-          clean = true
-        }
-      })()
+      const { body, isReleased } = createEndlessBody()
 
       let sending: Promise<void> | undefined
 
@@ -603,64 +595,130 @@ describe('sendStandardResponse', () => {
       expect(response.body).toBe('')
 
       await vi.waitFor(() => {
-        expect(clean).toBe(true)
+        expect(isReleased()).toBe(true)
       })
     })
   })
 
-  describe('http2 stream reset by the client', () => {
-    it.each([
-      ['resolves on a cancel', http2.constants.NGHTTP2_CANCEL, undefined],
+  describe('http2 client disconnect', () => {
+    const disconnects: [string, Http2Disconnect][] = [
+      ['a cancel reset', ({ reqStream }) => reqStream.close(http2.constants.NGHTTP2_CANCEL)],
       [
-        'rejects with the stream error on an error code',
-        http2.constants.NGHTTP2_INTERNAL_ERROR,
-        'ERR_HTTP2_STREAM_ERROR',
+        'a refused stream reset',
+        ({ reqStream }) => reqStream.close(http2.constants.NGHTTP2_REFUSED_STREAM),
       ],
-    ])('%s', async (_, code, errorCode) => {
-      let clean = false
-      const body = (async function* () {
-        try {
-          while (true) {
-            yield 'foo'
-            await new Promise((r) => setTimeout(r, 10))
-          }
-        } finally {
-          clean = true
-        }
-      })()
+      [
+        'an internal error reset',
+        ({ reqStream }) => reqStream.close(http2.constants.NGHTTP2_INTERNAL_ERROR),
+      ],
+      [
+        'a protocol error goaway',
+        ({ client }) => client.goaway(http2.constants.NGHTTP2_PROTOCOL_ERROR),
+      ],
+      ['a connection reset', ({ socket }) => socket.resetAndDestroy()],
+    ]
 
-      let sending: Promise<void> | undefined
+    it.for(disconnects)(
+      'resolves and releases the body on %s while sending',
+      async ([, disconnect], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+        let sending: Promise<void> | undefined
 
-      const server = http2.createServer((req, res) => {
-        sending = sendStandardResponse(res, { status: 200, headers: {}, body })
-      })
-      await new Promise<void>((r) => server.listen(0, r))
+        const { client, socket } = await connectHttp2(onTestFinished, (req, res) => {
+          sending = sendStandardResponse(res, { status: 200, headers: {}, body })
+        })
 
-      const client = http2.connect(`http://localhost:${(server.address() as AddressInfo).port}`)
-
-      try {
         const reqStream = client.request({ ':path': '/' })
         reqStream.once('error', () => {})
 
         await new Promise((r) => reqStream.once('data', r))
-        reqStream.close(code)
+        disconnect({ client, reqStream, socket })
 
-        if (errorCode) {
-          await expect(sending).rejects.toMatchObject({ code: errorCode })
-        } else {
-          await expect(sending).resolves.toBeUndefined()
-        }
+        await expect(sending).resolves.toBeUndefined()
 
         await vi.waitFor(() => {
-          expect(clean).toBe(true)
+          expect(isReleased()).toBe(true)
         })
-      } finally {
-        client.close()
-        await new Promise((r) => server.close(r))
-      }
-    })
+      },
+    )
+
+    it.for(disconnects)(
+      'resolves and releases the body on %s before sending',
+      async ([, disconnect], { onTestFinished }) => {
+        const { body, isReleased } = createEndlessBody()
+        const received = promiseWithResolvers<void>()
+        const sending = promiseWithResolvers<Promise<void>>()
+
+        const { client, socket } = await connectHttp2(onTestFinished, (req, res) => {
+          res.stream.once('close', () => {
+            sending.resolve(sendStandardResponse(res, { status: 200, headers: {}, body }))
+          })
+
+          received.resolve()
+        })
+
+        const reqStream = client.request({ ':path': '/' })
+        reqStream.once('error', () => {})
+
+        await received.promise
+        // a round trip first, or the server can see a connection reset as a plain close
+        await new Promise((r) => client.ping(r))
+        disconnect({ client, reqStream, socket })
+
+        await expect(sending.promise).resolves.toBeUndefined()
+
+        await vi.waitFor(() => {
+          expect(isReleased()).toBe(true)
+        })
+      },
+    )
   })
 })
+
+type Http2Disconnect = (connection: {
+  client: http2.ClientHttp2Session
+  reqStream: http2.ClientHttp2Stream
+  socket: Socket
+}) => void
+
+async function connectHttp2(
+  onTestFinished: (fn: () => Promise<void>) => void,
+  listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,
+): Promise<{ client: http2.ClientHttp2Session; socket: Socket }> {
+  const server = http2.createServer(listener)
+  await new Promise<void>((r) => server.listen(0, r))
+
+  const port = (server.address() as AddressInfo).port
+  let socket!: Socket
+  const client = http2.connect(`http://localhost:${port}`, {
+    createConnection: () => (socket = connect(port, 'localhost')),
+  })
+  client.once('error', () => {})
+
+  onTestFinished(async () => {
+    client.destroy()
+    await new Promise((r) => server.close(r))
+  })
+
+  return { client, socket }
+}
+
+function createEndlessBody() {
+  let released = false
+
+  const body = (async function* () {
+    try {
+      while (true) {
+        yield 'foo'
+        await new Promise((r) => setTimeout(r, 10))
+      }
+    } finally {
+      released = true
+    }
+  })()
+
+  return { body, isReleased: () => released }
+}
 
 async function requestHttp2Head(
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,

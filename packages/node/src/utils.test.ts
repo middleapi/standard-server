@@ -13,6 +13,7 @@ import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
+  isNodeResponseDisconnectError,
   toWebReadableStream,
 } from './utils'
 
@@ -346,6 +347,25 @@ describe('getNodeResponseError', () => {
     reqStream.once('end', () => client.close())
 
     await handled
+  })
+})
+
+describe('isNodeResponseDisconnectError', () => {
+  it.each(['ERR_HTTP2_STREAM_ERROR', 'ERR_HTTP2_SESSION_ERROR', 'ECONNRESET', 'EPIPE'])(
+    'on an error with code %s',
+    (code) => {
+      expect(isNodeResponseDisconnectError(Object.assign(new Error('test'), { code }))).toBe(true)
+    },
+  )
+
+  it.each([
+    ['an error without a code', new Error('test')],
+    [
+      'an error with another code',
+      Object.assign(new Error('test'), { code: 'ERR_STREAM_WRITE_AFTER_END' }),
+    ],
+  ])('on %s', (_, error) => {
+    expect(isNodeResponseDisconnectError(error)).toBe(false)
   })
 })
 
