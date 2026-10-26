@@ -681,9 +681,6 @@ type Http2Disconnect = (connection: {
   socket: Socket
 }) => void
 
-/**
- * Connect an http2 client over a socket the test can reset.
- */
 async function connectHttp2(
   onTestFinished: (fn: () => Promise<void>) => void,
   listener: (req: Http2ServerRequest, res: Http2ServerResponse) => void,

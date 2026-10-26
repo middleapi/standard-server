@@ -40,7 +40,6 @@ export async function sendStandardResponse(
 
     const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
 
-    // a client disconnect resolves on `close`, like on http1
     connection.once('error', (error) => {
       if (!isNodeResponseDisconnectError(error)) {
         reject(error)

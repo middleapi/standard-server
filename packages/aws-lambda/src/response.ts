@@ -50,7 +50,6 @@ export async function sendStandardResponse(
       return
     }
 
-    // a client disconnect resolves on `close` instead of rejecting
     responseStream.once('error', (error) => {
       if (!isNodeResponseDisconnectError(error)) {
         reject(error)
