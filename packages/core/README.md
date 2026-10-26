@@ -275,6 +275,18 @@ resolveStandardBodyHint({})
 
 Use it when building a custom adapter, or when you need to know how a body will parse without consuming it.
 
+On the sending side, `getRequiredStandardBodyHint(hint, headers)` returns the `standard-server` value to send so the body parses as `hint`, or `undefined` when the content headers already resolve to it. Any `standard-server` header already in `headers` is ignored:
+
+```ts
+import { getRequiredStandardBodyHint } from '@standard-server/core'
+
+getRequiredStandardBodyHint('json', { 'content-type': 'application/json; charset=utf-8' })
+// undefined
+
+getRequiredStandardBodyHint('json', { 'content-type': 'application/problem+json' })
+// 'json'
+```
+
 ## Utilities
 
 The package also exports a small set of helpers for common header, URL, and body operations.

@@ -5,6 +5,7 @@ import {
   flattenStandardHeader,
   generateContentDisposition,
   getFilenameFromContentDisposition,
+  getRequiredStandardBodyHint,
   mergeStandardHeaders,
   parseStandardUrl,
   resolveStandardBodyHint,
@@ -449,6 +450,50 @@ describe('resolveStandardBodyHint', () => {
       'octet-stream',
     )
     expect(resolveStandardBodyHint({ 'content-type': '' })).toBe('octet-stream')
+  })
+})
+
+describe('getRequiredStandardBodyHint', () => {
+  it('undefined when the content headers already resolve to the hint', () => {
+    expect(getRequiredStandardBodyHint('none', {})).toBeUndefined()
+    expect(
+      getRequiredStandardBodyHint('json', { 'content-type': 'application/json; charset=utf-8' }),
+    ).toBeUndefined()
+    expect(
+      getRequiredStandardBodyHint('url-search-params', {
+        'content-type': 'application/x-www-form-urlencoded',
+      }),
+    ).toBeUndefined()
+    expect(
+      getRequiredStandardBodyHint('event-stream', { 'content-type': 'text/event-stream' }),
+    ).toBeUndefined()
+  })
+
+  it('the hint when the content headers would resolve to another body type', () => {
+    expect(getRequiredStandardBodyHint('none', { 'content-type': 'text/plain' })).toBe('none')
+    expect(
+      getRequiredStandardBodyHint('json', { 'content-type': 'application/problem+json' }),
+    ).toBe('json')
+    expect(getRequiredStandardBodyHint('json', { 'content-type': 'text/plain' })).toBe('json')
+    expect(getRequiredStandardBodyHint('url-search-params', {})).toBe('url-search-params')
+    expect(
+      getRequiredStandardBodyHint('event-stream', { 'content-type': 'application/json' }),
+    ).toBe('event-stream')
+  })
+
+  it('ignores a standard-server header already set', () => {
+    expect(
+      getRequiredStandardBodyHint('json', {
+        'standard-server': 'json',
+        'content-type': 'text/plain',
+      }),
+    ).toBe('json')
+    expect(
+      getRequiredStandardBodyHint('json', {
+        'standard-server': 'file',
+        'content-type': 'application/json',
+      }),
+    ).toBeUndefined()
   })
 })
 

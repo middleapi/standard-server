@@ -2,6 +2,7 @@ import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-
 import {
   generateContentDisposition,
   getFilenameFromContentDisposition,
+  getRequiredStandardBodyHint,
   resolveStandardBodyHint,
 } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
@@ -145,7 +146,7 @@ export function toFetchBody(
   headers['content-length'] = undefined
 
   if (body === undefined) {
-    headers['standard-server'] = _requiredBodyHint('none', headers)
+    headers['standard-server'] = getRequiredStandardBodyHint('none', headers)
     return [undefined, headers]
   }
 
@@ -157,24 +158,17 @@ export function toFetchBody(
 
   if (body instanceof URLSearchParams) {
     headers['content-type'] ??= 'application/x-www-form-urlencoded'
-    headers['standard-server'] = _requiredBodyHint('url-search-params', headers)
+    headers['standard-server'] = getRequiredStandardBodyHint('url-search-params', headers)
     return [body, headers]
   }
 
   if (isAsyncIteratorObject(body)) {
     headers['content-type'] ??= 'text/event-stream'
-    headers['standard-server'] = _requiredBodyHint('event-stream', headers)
+    headers['standard-server'] = getRequiredStandardBodyHint('event-stream', headers)
     return [toEventStream(body, options.eventStream), headers]
   }
 
   headers['content-type'] ??= 'application/json'
-  headers['standard-server'] = _requiredBodyHint('json', headers)
+  headers['standard-server'] = getRequiredStandardBodyHint('json', headers)
   return [stringifyJSON(body), headers]
-}
-
-function _requiredBodyHint(
-  hint: StandardBodyHint,
-  headers: StandardHeaders,
-): StandardBodyHint | undefined {
-  return resolveStandardBodyHint(headers) === hint ? undefined : hint
 }
