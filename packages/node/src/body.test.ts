@@ -4,7 +4,7 @@ import http2 from 'node:http2'
 import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
-import type { StandardBody } from '@standard-server/core'
+import type { StandardBody, StandardBodyHint } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
@@ -614,7 +614,11 @@ describe('toNodeHttpBody', () => {
     form.append('foo', 'bar')
     form.append('bar', 'baz')
 
-    const [body, headers] = toNodeHttpBody(form, baseHeaders, {})
+    const [body, headers] = toNodeHttpBody(
+      form,
+      { ...baseHeaders, 'content-type': 'multipart/form-data' },
+      {},
+    )
 
     expect(body).toBeInstanceOf(Readable)
     expect(headers).toEqual({
@@ -928,6 +932,29 @@ describe('toNodeHttpBody', () => {
 
       const fetchHeaders = toFetchHeaders(headers)
       expect(fetchHeaders.has('content-type')).toBe(false)
+    })
+  })
+
+  it.each<[string, StandardBody, string | string[], StandardBodyHint | undefined]>([
+    ['json as json', { foo: 'bar' }, 'application/json; charset=utf-8', undefined],
+    ['json as problem+json', { foo: 'bar' }, 'application/problem+json', 'json'],
+    ['json with removed content-type', { foo: 'bar' }, [], 'json'],
+    [
+      'url-search-params as urlencoded',
+      new URLSearchParams('a=b'),
+      'application/x-www-form-urlencoded',
+      undefined,
+    ],
+    ['url-search-params as text', new URLSearchParams('a=b'), 'text/plain', 'url-search-params'],
+    ['event stream as event-stream', (async function* () {})(), 'text/event-stream', undefined],
+    ['event stream as text', (async function* () {})(), 'text/plain', 'event-stream'],
+    ['undefined as html', undefined, 'text/html', 'none'],
+  ])('keeps a given content-type and replaces a user hint: %s', (_, body, contentType, hint) => {
+    const headers = { 'content-type': contentType, 'standard-server': 'file' }
+
+    expect(toNodeHttpBody(body, headers)[1]).toEqual({
+      'content-type': contentType,
+      'standard-server': hint,
     })
   })
 })

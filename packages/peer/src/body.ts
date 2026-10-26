@@ -140,7 +140,7 @@ export interface EncodedAtomicStandardBody {
  * Unlike HTTP adapter, peer adapter has parsed `message.json.body` and `message.binary`
  * so they way it use `standard-server` header to indicate how the body is sent is different.
  *
- * In sematic "content-type" only need to set when transfering binary data.
+ * Content-type is only generated for binary bodies; JSON and URLSearchParams keep a given one.
  */
 export async function encodeAtomicStandardBody(
   body: StandardBody,
@@ -169,9 +169,15 @@ export async function encodeAtomicStandardBody(
   }
 
   headers['standard-server'] = undefined
-  headers['content-type'] = undefined
+
+  // undefined and event-stream bodies have no inline body, where a content-type marks an octet stream
+  if (body === undefined) {
+    headers['content-type'] = undefined
+    return { jsonBody: undefined, headers, binary: undefined }
+  }
 
   if (isAsyncIteratorObject(body)) {
+    headers['content-type'] = undefined
     // standard-server used to distinguish vs. undefined
     headers['standard-server'] = 'event-stream' satisfies StandardBodyHint
     return { jsonBody: undefined, headers, binary: undefined }

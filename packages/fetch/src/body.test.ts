@@ -1,3 +1,4 @@
+import type { StandardBody, StandardBodyHint } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
@@ -338,7 +339,11 @@ describe('toFetchBody', () => {
     form.append('foo', 'bar')
     form.append('bar', 'baz')
 
-    const [body, headers] = toFetchBody(form, baseHeaders, {})
+    const [body, headers] = toFetchBody(
+      form,
+      { ...baseHeaders, 'content-type': 'multipart/form-data' },
+      {},
+    )
 
     expect(body).toBe(form)
     expect(headers).toEqual({
@@ -354,6 +359,7 @@ describe('toFetchBody', () => {
     expect(body).toBe(query)
     expect(headers).toEqual({
       'x-custom-header': 'custom-value',
+      'content-type': 'application/x-www-form-urlencoded',
     })
   })
 
@@ -533,6 +539,29 @@ describe('toFetchBody', () => {
     expect(await reader.read()).toEqual({ done: false, value: 'order2' })
     expect(await reader.read()).toEqual({ done: false, value: 'order3' })
     expect(await reader.read()).toEqual({ done: true })
+  })
+
+  it.each<[string, StandardBody, string | string[], StandardBodyHint | undefined]>([
+    ['json as json', { foo: 'bar' }, 'application/json; charset=utf-8', undefined],
+    ['json as problem+json', { foo: 'bar' }, 'application/problem+json', 'json'],
+    ['json with removed content-type', { foo: 'bar' }, [], 'json'],
+    [
+      'url-search-params as urlencoded',
+      new URLSearchParams('a=b'),
+      'application/x-www-form-urlencoded',
+      undefined,
+    ],
+    ['url-search-params as text', new URLSearchParams('a=b'), 'text/plain', 'url-search-params'],
+    ['event stream as event-stream', (async function* () {})(), 'text/event-stream', undefined],
+    ['event stream as text', (async function* () {})(), 'text/plain', 'event-stream'],
+    ['undefined as html', undefined, 'text/html', 'none'],
+  ])('keeps a given content-type and replaces a user hint: %s', (_, body, contentType, hint) => {
+    const headers = { 'content-type': contentType, 'standard-server': 'file' }
+
+    expect(toFetchBody(body, headers)[1]).toEqual({
+      'content-type': contentType,
+      'standard-server': hint,
+    })
   })
 })
 

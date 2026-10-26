@@ -1,4 +1,4 @@
-import type { StandardBodyHint, StandardHeaders } from '@standard-server/core'
+import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-server/core'
 import { generateContentDisposition } from '@standard-server/core'
 import { AsyncIteratorClass, isAsyncIteratorObject, Queue } from '@standard-server/shared'
 
@@ -333,7 +333,9 @@ describe('toStandardBody', () => {
 
 describe('encodeAtomicStandardBody', () => {
   it('encodes undefined body', async () => {
-    const { jsonBody, headers, binary } = await encodeAtomicStandardBody(undefined, {})
+    const { jsonBody, headers, binary } = await encodeAtomicStandardBody(undefined, {
+      'content-type': 'text/html',
+    })
 
     expect(jsonBody).toBe(undefined)
     expect(binary).toBe(undefined)
@@ -498,6 +500,25 @@ describe('encodeAtomicStandardBody', () => {
 
     expect(octetStreamMessageQueue).toBeInstanceOf(Queue)
     expect(await resolveBody()).toBeInstanceOf(ReadableStream)
+  })
+
+  it.each<[string, StandardBody, string | string[]]>([
+    ['JSON', { a: 1 }, 'application/problem+json'],
+    ['JSON with removed content-type', 'hello', []],
+    ['URLSearchParams', new URLSearchParams('a=1'), 'text/plain'],
+  ])('encodes %s body and keeps a given content-type', async (_, body, contentType) => {
+    const { jsonBody, headers } = await encodeAtomicStandardBody(body, {
+      'content-type': contentType,
+    })
+
+    expect(headers['content-type']).toEqual(contentType)
+
+    const { resolveBody } = toStandardBody(
+      { id: '1', kind: 'request', json: { url: '/test', headers, body: jsonBody } },
+      vi.fn(),
+    )
+
+    expect(await resolveBody()).toEqual(body)
   })
 
   it('encodes AsyncIteratorObject body and remove existing content-type header', async () => {

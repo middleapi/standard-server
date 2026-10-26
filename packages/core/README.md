@@ -226,7 +226,9 @@ A `StandardBody` is richer than what HTTP content headers can describe. `content
 
 The `standard-server` header closes this gap. It carries the sender's `StandardBodyHint` verbatim — `json`, `form-data`, `url-search-params`, `event-stream`, `octet-stream`, `file`, or `none` — so the receiver reconstructs exactly the body representation the sender had.
 
-Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely. For the other body types, the content headers are enough, so adapters clear it.
+Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely.
+
+Other body types get their usual `content-type` (`application/json`, `application/x-www-form-urlencoded`, `text/event-stream`, or none when empty) unless you set one. If yours would be read as another body type, such as JSON sent as `application/problem+json`, adapters add the matching `standard-server` header; otherwise they clear it. `FormData` always gets its generated multipart `content-type`, which carries the boundary.
 
 The header is optional: when it is absent or invalid, the receiver falls back to content-header inference, so plain HTTP clients work as-is. Just set the header yourself whenever the content type alone could be misread:
 
