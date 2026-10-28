@@ -230,7 +230,7 @@ Adapters set the header automatically for the ambiguous body types: a `Blob` or 
 
 Other body types get their usual `content-type` (`application/json`, `application/x-www-form-urlencoded`, or `text/event-stream`) unless you set one. If yours would be read as another body type, such as JSON sent as `application/problem+json`, adapters add the matching `standard-server` header; otherwise they clear it. `FormData` always gets its generated multipart `content-type`, which carries the boundary.
 
-An empty body is always sent without `content-type`. To send one with no body, use an empty `Blob` with `standard-server: none` and `content-disposition: []`.
+An empty body is always sent without `content-type`. To send an empty response with your own headers, such as for `HEAD`, use an already-closed `ReadableStream` with `standard-server: none`, so it still reads back as `undefined`.
 
 The header is optional: when it is absent or invalid, the receiver falls back to content-header inference, so plain HTTP clients work as-is. Just set the header yourself whenever the content type alone could be misread:
 
