@@ -146,8 +146,9 @@ export function toNodeHttpBody(
   headers['standard-server'] = undefined
   headers['content-length'] = undefined
 
+  // An empty body has no media type. Send an empty Blob with `standard-server: none` to keep one.
   if (body === undefined) {
-    headers['standard-server'] = getRequiredStandardBodyHint('none', headers)
+    headers['content-type'] = undefined
     return [undefined, headers]
   }
 

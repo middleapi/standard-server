@@ -228,7 +228,9 @@ The `standard-server` header closes this gap. It carries the sender's `StandardB
 
 Adapters set the header automatically for the ambiguous body types: a `Blob` or `File` body is sent with `standard-server: file`, and a `ReadableStream` body with `standard-server: octet-stream`, alongside the usual content headers. A header you set yourself always wins, and assigning an empty array removes it entirely.
 
-Other body types get their usual `content-type` (`application/json`, `application/x-www-form-urlencoded`, `text/event-stream`, or none when empty) unless you set one. If yours would be read as another body type, such as JSON sent as `application/problem+json`, adapters add the matching `standard-server` header; otherwise they clear it. `FormData` always gets its generated multipart `content-type`, which carries the boundary.
+Other body types get their usual `content-type` (`application/json`, `application/x-www-form-urlencoded`, or `text/event-stream`) unless you set one. If yours would be read as another body type, such as JSON sent as `application/problem+json`, adapters add the matching `standard-server` header; otherwise they clear it. `FormData` always gets its generated multipart `content-type`, which carries the boundary.
+
+An empty (`undefined`) body is sent without `content-type`. To keep one, send an empty `Blob` with `standard-server: none`; set `content-disposition` to an empty array to drop the generated one. For a `HEAD` response, you can also send the same body as `GET`: HTTP servers drop the bytes and keep the headers, so a `Blob` still reports its `content-length`.
 
 The header is optional: when it is absent or invalid, the receiver falls back to content-header inference, so plain HTTP clients work as-is. Just set the header yourself whenever the content type alone could be misread:
 

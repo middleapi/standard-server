@@ -199,7 +199,7 @@ describe.each([
       },
     },
     {
-      name: 'undefined as text/html',
+      name: 'undefined drops text/html',
       createBody: () => undefined,
       contentType: 'text/html',
     },

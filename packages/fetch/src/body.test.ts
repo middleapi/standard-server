@@ -324,6 +324,40 @@ describe('toFetchBody', () => {
     })
   })
 
+  it('undefined drops a given content-type and hint', () => {
+    const [body, headers] = toFetchBody(undefined, {
+      ...baseHeaders,
+      'content-type': 'text/html',
+      'standard-server': 'file',
+    })
+
+    expect(body).toBe(undefined)
+    expect(headers).toEqual({
+      'content-type': undefined,
+      'standard-server': undefined,
+      'x-custom-header': 'custom-value',
+    })
+  })
+
+  it('empty blob with standard-server none keeps a content-type without a body', async () => {
+    const [body, headers] = toFetchBody(new Blob([], { type: 'text/html' }), {
+      'standard-server': 'none',
+      'content-disposition': [],
+    })
+
+    expect(headers).toEqual({
+      'content-type': 'text/html',
+      'content-length': '0',
+      'content-disposition': [],
+      'standard-server': 'none',
+    })
+
+    const response = new Response(body, { headers: toFetchHeaders(headers) })
+    expect(response.headers.get('content-type')).toBe('text/html')
+    expect(response.headers.has('content-disposition')).toBe(false)
+    expect(await toStandardBody(response)).toBe(undefined)
+  })
+
   it('json', () => {
     const [body, headers] = toFetchBody({ foo: 'bar' }, baseHeaders, {})
 
@@ -554,7 +588,6 @@ describe('toFetchBody', () => {
     ['url-search-params as text', new URLSearchParams('a=b'), 'text/plain', 'url-search-params'],
     ['event stream as event-stream', (async function* () {})(), 'text/event-stream', undefined],
     ['event stream as text', (async function* () {})(), 'text/plain', 'event-stream'],
-    ['undefined as html', undefined, 'text/html', 'none'],
   ])('keeps a given content-type and replaces a user hint: %s', (_, body, contentType, hint) => {
     const headers = { 'content-type': contentType, 'standard-server': 'file' }
 
