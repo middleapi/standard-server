@@ -145,7 +145,6 @@ export function toFetchBody(
   headers['standard-server'] = undefined
   headers['content-length'] = undefined
 
-  // An empty body has no media type, so unlike the bodies below it drops a given content-type
   if (body === undefined) {
     headers['content-type'] = undefined
     return [undefined, headers]
