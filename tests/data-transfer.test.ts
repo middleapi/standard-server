@@ -199,11 +199,6 @@ describe.each([
       },
     },
     {
-      name: 'undefined as text/html',
-      createBody: () => undefined,
-      contentType: 'text/html',
-    },
-    {
       name: 'json-object as application/problem+json',
       createBody: () => ({ a: 1, b: [2, 3, { c: 4 }] }),
       contentType: 'application/problem+json',

@@ -316,7 +316,12 @@ describe('toFetchBody', () => {
   }
 
   it('undefined', () => {
-    const [body, headers] = toFetchBody(undefined, baseHeaders, {})
+    // a given content-type and hint are dropped
+    const [body, headers] = toFetchBody(
+      undefined,
+      { ...baseHeaders, 'content-type': 'text/html', 'standard-server': 'file' },
+      {},
+    )
 
     expect(body).toBe(undefined)
     expect(headers).toEqual({
@@ -554,7 +559,6 @@ describe('toFetchBody', () => {
     ['url-search-params as text', new URLSearchParams('a=b'), 'text/plain', 'url-search-params'],
     ['event stream as event-stream', (async function* () {})(), 'text/event-stream', undefined],
     ['event stream as text', (async function* () {})(), 'text/plain', 'event-stream'],
-    ['undefined as html', undefined, 'text/html', 'none'],
   ])('keeps a given content-type and replaces a user hint: %s', (_, body, contentType, hint) => {
     const headers = { 'content-type': contentType, 'standard-server': 'file' }
 
