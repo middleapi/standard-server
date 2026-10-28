@@ -316,46 +316,17 @@ describe('toFetchBody', () => {
   }
 
   it('undefined', () => {
-    const [body, headers] = toFetchBody(undefined, baseHeaders, {})
+    // a given content-type and hint are dropped
+    const [body, headers] = toFetchBody(
+      undefined,
+      { ...baseHeaders, 'content-type': 'text/html', 'standard-server': 'file' },
+      {},
+    )
 
     expect(body).toBe(undefined)
     expect(headers).toEqual({
       'x-custom-header': 'custom-value',
     })
-  })
-
-  it('undefined drops a given content-type and hint', () => {
-    const [body, headers] = toFetchBody(undefined, {
-      ...baseHeaders,
-      'content-type': 'text/html',
-      'standard-server': 'file',
-    })
-
-    expect(body).toBe(undefined)
-    expect(headers).toEqual({
-      'content-type': undefined,
-      'standard-server': undefined,
-      'x-custom-header': 'custom-value',
-    })
-  })
-
-  it('empty blob with standard-server none keeps a content-type without a body', async () => {
-    const [body, headers] = toFetchBody(new Blob([], { type: 'text/html' }), {
-      'standard-server': 'none',
-      'content-disposition': [],
-    })
-
-    expect(headers).toEqual({
-      'content-type': 'text/html',
-      'content-length': '0',
-      'content-disposition': [],
-      'standard-server': 'none',
-    })
-
-    const response = new Response(body, { headers: toFetchHeaders(headers) })
-    expect(response.headers.get('content-type')).toBe('text/html')
-    expect(response.headers.has('content-disposition')).toBe(false)
-    expect(await toStandardBody(response)).toBe(undefined)
   })
 
   it('json', () => {

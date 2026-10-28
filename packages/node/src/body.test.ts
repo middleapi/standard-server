@@ -591,25 +591,15 @@ describe('toNodeHttpBody', () => {
   }
 
   it('undefined', async () => {
-    const [body, headers] = toNodeHttpBody(undefined, baseHeaders, {})
+    // a given content-type and hint are dropped
+    const [body, headers] = toNodeHttpBody(
+      undefined,
+      { ...baseHeaders, 'content-type': 'text/html', 'standard-server': 'file' },
+      {},
+    )
 
     expect(body).toBe(undefined)
     expect(headers).toEqual({
-      'x-custom-header': 'custom-value',
-    })
-  })
-
-  it('undefined drops a given content-type and hint', () => {
-    const [body, headers] = toNodeHttpBody(undefined, {
-      ...baseHeaders,
-      'content-type': 'text/html',
-      'standard-server': 'file',
-    })
-
-    expect(body).toBe(undefined)
-    expect(headers).toEqual({
-      'content-type': undefined,
-      'standard-server': undefined,
       'x-custom-header': 'custom-value',
     })
   })
