@@ -8,10 +8,10 @@
     "type:check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@hono/node-server": "^2.1.4",
+    "@hono/node-server": "^2.1.5",
     "@standard-server/core": "latest",
     "@standard-server/fetch": "latest",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
