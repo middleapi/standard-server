@@ -18,11 +18,13 @@ pnpm vitest run <path>       # one test file
 pnpm check                   # lint and type check, including *.test-d.ts
 pnpm fix                     # check, applying fixes
 pnpm format                  # format with oxfmt
+pnpm repo:fix                # fix monorepo issues (sherif)
 pnpm bench
 pnpm --filter @standard-server/core prepack  # build one package; tests don't need a build
 ```
 
 Before finishing, run `pnpm format`, `pnpm check` and `pnpm test`. CI doesn't check formatting.
+After changing a `package.json`, also run `pnpm repo:fix`.
 
 ## Pull requests
 
