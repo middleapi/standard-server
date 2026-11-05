@@ -9,3 +9,9 @@ updates:
       # pnpm requires minimumReleaseAge of 1, so the value below should be 1 or more
       default-days: 1
     versioning-strategy: increase
+    groups:
+      dev-dependencies-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
