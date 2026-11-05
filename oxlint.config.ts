@@ -1,6 +1,7 @@
 import { defineConfig } from 'oxlint'
 
 export default defineConfig({
+  ignorePatterns: ['.agents/skills/**', '.claude/skills/**'],
   options: {
     typeAware: true,
     typeCheck: true,
