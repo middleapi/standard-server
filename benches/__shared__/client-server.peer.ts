@@ -7,7 +7,7 @@ import {
   ServerPeer,
 } from '@standard-server/peer'
 
-import type { ClientServer } from './client-server'
+import type { ClientServer } from './client-server.ts'
 
 export function createPeerClientServer(): ClientServer {
   const clientServer: ClientServer = {
@@ -25,7 +25,7 @@ export function createPeerClientServer(): ClientServer {
       return
     }
 
-    clientPeer.message(decoded.message)
+    void clientPeer.message(decoded.message)
   })
 
   const clientPeer = new ClientPeer(async (message) => {
@@ -36,7 +36,7 @@ export function createPeerClientServer(): ClientServer {
       throw new Error('not found')
     }
 
-    serverPeer.message(decoded.message, clientServer.handler)
+    void serverPeer.message(decoded.message, clientServer.handler)
   })
 
   return clientServer

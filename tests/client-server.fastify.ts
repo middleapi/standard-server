@@ -2,7 +2,7 @@ import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/fa
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import Fastify from 'fastify'
 
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export function createFastifyClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -37,8 +37,8 @@ export function createFastifyClientServerTest(): ClientServerTest {
 
   const origin = fastify.listen({ port: 0, host: '127.0.0.1' })
 
-  afterAll(async () => {
-    fastify.close()
+  afterAll(() => {
+    void fastify.close()
   })
 
   const request: ClientServerTest['request'] = vi.fn(async (standardRequest) => {

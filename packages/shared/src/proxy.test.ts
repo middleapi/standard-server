@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getOrBind } from './proxy'
+import { getOrBind } from './proxy.ts'
 
 describe('getOrBind', () => {
   it('returns non-function values directly', () => {
@@ -19,6 +19,7 @@ describe('getOrBind', () => {
     }
     const boundGetName = getOrBind(target, 'getName')
     expect(typeof boundGetName).toBe('function')
+    // oxlint-disable-next-line typescript/unbound-method -- compares identity, never calls it
     expect(boundGetName).not.toBe(target.getName)
     expect(boundGetName()).toBe('target')
   })
@@ -102,7 +103,7 @@ describe('getOrBind', () => {
 
   it('we can disable binding', () => {
     const target = {
-      method() {},
+      method(this: void) {},
     }
 
     const bound = getOrBind(target, 'method', { bind: false })

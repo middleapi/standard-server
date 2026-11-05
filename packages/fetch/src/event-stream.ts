@@ -135,7 +135,7 @@ export interface ToEventStreamOptions {
 }
 
 export function toEventStream(
-  iterator: AsyncIterator<unknown | void, unknown | void, void>,
+  iterator: AsyncIterator<unknown, unknown, void>,
   options: ToEventStreamOptions = {},
 ): ReadableStream<Uint8Array<ArrayBuffer>> {
   const keepAliveEnabled = options.keepAlive?.enabled ?? true

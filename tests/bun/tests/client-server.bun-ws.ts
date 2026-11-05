@@ -7,8 +7,8 @@ import {
   ServerPeer,
 } from '@standard-server/peer'
 
-import type { ClientServerHandler, ClientServerTest } from './client-server'
-import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
+import type { ClientServerHandler, ClientServerTest } from './client-server.ts'
+import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server.ts'
 
 export function createBunWsClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER
@@ -20,9 +20,9 @@ export function createBunWsClientServerTest(): ClientServerTest {
 
   const server = Bun.serve({
     port: 0,
-    fetch: (request, server) => {
-      if (server.upgrade(request)) {
-        return
+    fetch: (request, bunServer) => {
+      if (bunServer.upgrade(request)) {
+        return undefined
       }
 
       return new Response('WebSocket only', { status: 426 })
@@ -73,9 +73,9 @@ export function createBunWsClientServerTest(): ClientServerTest {
       handler = next
     },
     request: (standardRequest) => clientPeer.request(standardRequest),
-    close: () => {
+    close: async () => {
       wsc.close()
-      server.stop(true)
+      await server.stop(true)
     },
   }
 }

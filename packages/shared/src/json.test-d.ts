@@ -1,4 +1,4 @@
-import { stringifyJSON } from './json'
+import { stringifyJSON } from './json.ts'
 
 it('stringifyJSON', () => {
   expectTypeOf(stringifyJSON(undefined)).toEqualTypeOf<string | undefined>()

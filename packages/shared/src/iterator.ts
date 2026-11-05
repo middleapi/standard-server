@@ -1,5 +1,5 @@
-import { sequential } from './function'
-import type { AsyncCleanupFn } from './types'
+import { sequential } from './function.ts'
+import type { AsyncCleanupFn } from './types.ts'
 
 export function isAsyncIteratorObject(maybe: unknown): maybe is AsyncIteratorObject<any, any, any> {
   if (!maybe || typeof maybe !== 'object') {

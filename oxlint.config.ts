@@ -1,9 +1,30 @@
 import { defineConfig } from 'oxlint'
-import { middleapi } from 'uncheck/oxlint'
 
 export default defineConfig({
-  extends: [middleapi],
+  ignorePatterns: ['.agents/skills/**', '.claude/skills/**'],
+  options: {
+    typeAware: true,
+    typeCheck: true,
+  },
+  categories: {
+    correctness: 'error',
+    suspicious: 'error',
+  },
+  plugins: ['eslint', 'typescript', 'unicorn', 'oxc', 'import'],
   rules: {
+    'typescript/no-unsafe-type-assertion': 'off',
+    'no-underscore-dangle': 'off',
+
+    'eqeqeq': 'error',
+    'guard-for-in': 'error',
+    'no-prototype-builtins': 'error',
+    'no-throw-literal': 'error',
+    'prefer-promise-reject-errors': 'error',
+    'no-console': ['error', { allow: ['warn', 'error'] }],
+    'no-var': 'error',
+    'prefer-const': 'error',
+    'typescript/no-import-type-side-effects': 'error',
+    'unicorn/prefer-node-protocol': 'error',
     'no-restricted-properties': [
       'error',
       {
@@ -43,19 +64,13 @@ export default defineConfig({
       },
     },
     {
-      files: [
-        '**/*.test.ts',
-        '**/*.test.tsx',
-        '**/*.test-d.ts',
-        '**/*.test-d.tsx',
-        'playgrounds/**',
-        'packages/*/playground/**',
-      ],
+      files: ['**/*.test.ts', '**/*.test-d.ts', 'playgrounds/**'],
       rules: {
         'no-unused-vars': 'off',
         'no-restricted-properties': 'off',
-        'no-restricted-globals': 'off',
         'no-console': 'off',
+        'no-shadow': 'off',
+        'unicorn/consistent-function-scoping': 'off',
       },
     },
   ],

@@ -1,9 +1,9 @@
 import { bench, describe } from 'vitest'
 
-import { echoHandler, roundTrip } from './__shared__/client-server'
-import { createFetchClientServer } from './__shared__/client-server.fetch'
-import { createNodeClientServer } from './__shared__/client-server.node'
-import { createPeerClientServer } from './__shared__/client-server.peer'
+import { createFetchClientServer } from './__shared__/client-server.fetch.ts'
+import { createNodeClientServer } from './__shared__/client-server.node.ts'
+import { createPeerClientServer } from './__shared__/client-server.peer.ts'
+import { echoHandler, roundTrip } from './__shared__/client-server.ts'
 import {
   asAsyncIteratorObject,
   asReadableStream,
@@ -13,7 +13,7 @@ import {
   FORM_10KB,
   JSON_10KB,
   USP_10KB,
-} from './__shared__/payloads'
+} from './__shared__/payloads.ts'
 
 const adapters = [
   ['node-adapter', createNodeClientServer],

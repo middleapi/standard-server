@@ -6,8 +6,8 @@ import {
   toStandardLazyResponse,
 } from '@standard-server/fetch'
 
-import type { ClientServerHandler, ClientServerTest } from './client-server'
-import { NOT_FOUND_HANDLER } from './client-server'
+import type { ClientServerHandler, ClientServerTest } from './client-server.ts'
+import { NOT_FOUND_HANDLER } from './client-server.ts'
 
 export function createBunFetchClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER
@@ -50,8 +50,6 @@ export function createBunFetchClientServerTest(): ClientServerTest {
       handler = next
     },
     request,
-    close: () => {
-      server.stop(true)
-    },
+    close: () => server.stop(true),
   }
 }

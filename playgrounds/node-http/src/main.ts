@@ -11,7 +11,7 @@ async function main(request: StandardLazyRequest): Promise<StandardResponse> {
       yield `${request.method} ${request.url}`
 
       while (true) {
-        yield `now:${new Date()}`
+        yield `now:${new Date().toISOString()}`
         await new Promise((r) => setTimeout(r, 1000))
       }
     })(),

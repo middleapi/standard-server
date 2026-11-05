@@ -1,5 +1,5 @@
-import { AbortError } from './error'
-import { Queue } from './queue'
+import { AbortError } from './error.ts'
+import { Queue } from './queue.ts'
 
 describe('queue', () => {
   it('returns buffered items in order', async () => {

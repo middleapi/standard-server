@@ -1,5 +1,5 @@
-import { AsyncIteratorClass, isAsyncIteratorObject } from './iterator'
-import { promiseWithResolvers } from './promise'
+import { AsyncIteratorClass, isAsyncIteratorObject } from './iterator.ts'
+import { promiseWithResolvers } from './promise.ts'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -39,7 +39,7 @@ it('uses Symbol.for("Symbol.asyncDispose") when Symbol.asyncDispose is not nativ
     }),
   )
   vi.resetModules()
-  const { AsyncIteratorClass } = await import('./iterator')
+  const { AsyncIteratorClass } = await import('./iterator.ts')
   vi.unstubAllGlobals()
 
   const cleanup = vi.fn()

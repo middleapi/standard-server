@@ -7,7 +7,7 @@ import {
 } from '@standard-server/fetch'
 import { serve } from 'srvx/node'
 
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export function createNodeSrvxClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -26,7 +26,7 @@ export function createNodeSrvxClientServerTest(): ClientServerTest {
   })
 
   afterAll(() => {
-    server.close()
+    void server.close()
   })
 
   const port = server.url!.split(':').pop()!.split('/').shift()!

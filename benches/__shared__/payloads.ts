@@ -22,7 +22,7 @@ function createUnit(i: number) {
 
 /** Pad a JSON value so `stringifyJSON` length equals `size`. */
 function padJson(value: object, size: number): object {
-  const base = stringifyJSON({ ...value, _pad: '' })!.length
+  const base = stringifyJSON({ ...value, _pad: '' }).length
   if (base > size) throw new Error(`json core ${base} > ${size}`)
   return { ...value, _pad: 'x'.repeat(size - base) }
 }
@@ -35,14 +35,14 @@ export const JSON_10KB = padJson(
 )
 
 function splitBytes(size: number, parts: number): Uint8Array<ArrayBuffer>[] {
-  const buf = new Uint8Array(size) as Uint8Array<ArrayBuffer>
+  const buf = new Uint8Array(size)
   const base = Math.floor(size / parts)
   let rem = size - base * parts
   const out: Uint8Array<ArrayBuffer>[] = []
   let off = 0
   for (let i = 0; i < parts; i++) {
     const n = base + (rem-- > 0 ? 1 : 0)
-    out.push(buf.subarray(off, off + n) as Uint8Array<ArrayBuffer>)
+    out.push(buf.subarray(off, off + n))
     off += n
   }
   return out
@@ -62,7 +62,7 @@ function formContentSize(form: FormData): number {
 export const FORM_10KB = new FormData()
 FORM_10KB.append('userId', 'user_0')
 FORM_10KB.append('action', 'create')
-FORM_10KB.append('meta', stringifyJSON({ tags: ['a', 'b'], dryRun: false })!)
+FORM_10KB.append('meta', stringifyJSON({ tags: ['a', 'b'], dryRun: false }))
 FORM_10KB.append('note', 'hello world')
 {
   const fileSize = SIZE_10KB - formContentSize(FORM_10KB)
@@ -90,8 +90,8 @@ export const USP_10KB = new URLSearchParams({
 /** Events totaling 10KB of stringified JSON. */
 function makeEvents(size: number): object[] {
   const parts: object[] = [PAYLOAD_UNIT, PAYLOAD_UNIT, PAYLOAD_UNIT, { type: 'pad', text: '' }]
-  const core = parts.slice(0, -1).reduce((n, p) => n + stringifyJSON(p)!.length, 0)
-  const padBase = stringifyJSON({ type: 'pad', text: '' })!.length
+  const core = parts.slice(0, -1).reduce((n, p) => n + stringifyJSON(p).length, 0)
+  const padBase = stringifyJSON({ type: 'pad', text: '' }).length
   if (core + padBase > size) throw new Error(`event core ${core + padBase} > ${size}`)
   parts[parts.length - 1] = { type: 'pad', text: 'x'.repeat(size - core - padBase) }
   return parts

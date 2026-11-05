@@ -9,10 +9,10 @@ import {
 } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 
-import type { ToEventStreamOptions } from './event-stream'
-import { toAsyncIteratorObject, toEventStream } from './event-stream'
-import type { NodeHttpRequest } from './types'
-import { readableChunkToBytes, toWebReadableStream } from './utils'
+import type { ToEventStreamOptions } from './event-stream.ts'
+import { toAsyncIteratorObject, toEventStream } from './event-stream.ts'
+import type { NodeHttpRequest } from './types.ts'
+import { readableChunkToBytes, toWebReadableStream } from './utils.ts'
 
 export interface ToStandardBodyOptions {
   /**

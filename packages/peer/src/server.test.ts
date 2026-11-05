@@ -8,8 +8,8 @@ import {
   sleep,
 } from '@standard-server/shared'
 
-import { HibernationAsyncIteratorClass } from './hibernation'
-import { ServerPeer } from './server'
+import { HibernationAsyncIteratorClass } from './hibernation.ts'
+import { ServerPeer } from './server.ts'
 import type {
   PeerCancelMessage,
   PeerEventStreamMessage,
@@ -18,7 +18,7 @@ import type {
   PeerResponseMessage,
   PeerStreamCancelMessage,
   ServerPeerSendMessage,
-} from './types'
+} from './types.ts'
 
 function makeRequestMessage(
   overrides: Partial<PeerRequestMessage['json']> = {},
@@ -897,7 +897,7 @@ describe('serverPeer', () => {
 
     it('uses custom reason when provided', async () => {
       const { handler, signals } = deferredHandler()
-      peer.message(makeRequestMessage(), handler)
+      void peer.message(makeRequestMessage(), handler)
       await vi.waitFor(() => expect(signals.length).toBe(1))
 
       const customReason = new Error('custom close')

@@ -1,4 +1,4 @@
-import type { PeerMessage } from './types'
+import type { PeerMessage } from './types.ts'
 import {
   isClientPeerSendMessage,
   isPeerCancelMessage,
@@ -9,7 +9,7 @@ import {
   isPeerResponseMessage,
   isPeerStreamCancelMessage,
   isServerPeerSendMessage,
-} from './validators'
+} from './validators.ts'
 
 function base(overrides?: Partial<PeerMessage>): PeerMessage {
   return { id: 'abc', kind: 'request', ...overrides }

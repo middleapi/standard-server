@@ -1,9 +1,6 @@
 {
-  // Format with oxfmt on save, needs the oxc.oxc-vscode extension
   "editor.defaultFormatter": "oxc.oxc-vscode",
   "editor.formatOnSave": true,
-
-  // Apply oxlint's auto fixes on save
   "editor.codeActionsOnSave": {
     "source.fixAll.oxc": "explicit"
   }

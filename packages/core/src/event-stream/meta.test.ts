@@ -1,4 +1,4 @@
-import { getEventMeta, unwrapEvent, withEventMeta } from './meta'
+import { getEventMeta, unwrapEvent, withEventMeta } from './meta.ts'
 
 it('get/withEventMeta', () => {
   const data = { value: 123, meta: undefined }

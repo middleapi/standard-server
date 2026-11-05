@@ -1,4 +1,4 @@
-import { parseEmptyableJSON, stringifyJSON } from './json'
+import { parseEmptyableJSON, stringifyJSON } from './json.ts'
 
 it('parseEmptyableJSON', () => {
   expect(parseEmptyableJSON(undefined)).toBeUndefined()

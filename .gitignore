@@ -6,6 +6,9 @@
 !.vscode/
 !.github/
 !.zed/
+!.agents/
+!.claude/
+.claude/worktrees/
 
 # Common generated folders
 logs/

@@ -4,8 +4,8 @@ import Stream from 'node:stream'
 import type { StandardResponse } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 
-import { sendStandardResponse } from './response'
-import type { HttpResponseStream } from './types'
+import { sendStandardResponse } from './response.ts'
+import type { HttpResponseStream } from './types.ts'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
 
@@ -335,7 +335,7 @@ describe('sendStandardResponse', () => {
     expect(responseStream.errored).toBe(error)
 
     const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
-    expect((resBody as any).destroyed).toBe(true)
+    expect(resBody.destroyed).toBe(true)
   })
 
   describe('response stream closed before sending', () => {

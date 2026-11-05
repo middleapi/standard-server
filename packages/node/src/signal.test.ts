@@ -3,7 +3,7 @@ import Stream from 'node:stream'
 
 import { AbortError } from '@standard-server/shared'
 
-import { toAbortSignal } from './signal'
+import { toAbortSignal } from './signal.ts'
 
 describe('toAbortSignal', async () => {
   it('on success', async () => {

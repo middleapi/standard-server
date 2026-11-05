@@ -8,8 +8,8 @@ import {
   sleep,
 } from '@standard-server/shared'
 
-import * as Body from './body'
-import { ClientPeer } from './client'
+import * as Body from './body.ts'
+import { ClientPeer } from './client.ts'
 import type {
   ClientPeerSendMessage,
   PeerCancelMessage,
@@ -18,7 +18,7 @@ import type {
   PeerRequestMessage,
   PeerResponseMessage,
   PeerStreamCancelMessage,
-} from './types'
+} from './types.ts'
 
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')
 
@@ -113,7 +113,7 @@ describe('clientPeer', () => {
 
   async function waitForSend(n = 1): Promise<string> {
     await vi.waitFor(() => expect(send.mock.calls.length).toBeGreaterThanOrEqual(n))
-    const requestCall = send.mock.calls.find((c: any[]) => (c[0] as any).kind === 'request')
+    const requestCall = send.mock.calls.find((c: any[]) => c[0].kind === 'request')
     return (requestCall![0] as PeerRequestMessage).id
   }
 
@@ -182,7 +182,7 @@ describe('clientPeer', () => {
         peer.message(makeStreamingResponse(id, 'octet-stream')),
       ])
 
-      peer.message(makeOctetStreamMessage(id, true, new Uint8Array([1, 4])))
+      void peer.message(makeOctetStreamMessage(id, true, new Uint8Array([1, 4])))
 
       const response = await promise
       const body = (await response.resolveBody()) as ReadableStream

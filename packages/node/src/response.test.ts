@@ -10,8 +10,8 @@ import type { StandardResponse } from '@standard-server/core'
 import { promiseWithResolvers } from '@standard-server/shared'
 import request from 'supertest'
 
-import * as Body from './body'
-import { sendStandardResponse } from './response'
+import * as Body from './body.ts'
+import { sendStandardResponse } from './response.ts'
 
 const toNodeHttpBodySpy = vi.spyOn(Body, 'toNodeHttpBody')
 
@@ -330,7 +330,7 @@ describe('sendStandardResponse', () => {
     expect(destroySpy).toHaveBeenCalledWith(thrownError)
 
     const [resBody] = toNodeHttpBodySpy.mock.results[0]!.value
-    expect((resBody as any).destroyed).toBe(true)
+    expect(resBody.destroyed).toBe(true)
   })
 
   it('resolves without sending when headers were already flushed', async () => {

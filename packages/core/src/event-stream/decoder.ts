@@ -1,6 +1,6 @@
-import { isEventStreamMessageId, isEventStreamMessageRetry } from './encoder'
-import { EventStreamDecoderError } from './error'
-import type { EventStreamMessage } from './types'
+import { isEventStreamMessageId, isEventStreamMessageRetry } from './encoder.ts'
+import { EventStreamDecoderError } from './error.ts'
+import type { EventStreamMessage } from './types.ts'
 
 // A line ending is CR, LF or CRLF.
 const LINE_ENDING_REGEX = /\r\n?|\n/

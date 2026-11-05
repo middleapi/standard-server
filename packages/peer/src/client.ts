@@ -9,15 +9,15 @@ import {
   throwIfAborted,
 } from '@standard-server/shared'
 
-import { encodeAtomicStandardBody, toStandardBody } from './body'
-import { EventStreamTransmitter } from './event-stream'
-import { OctetStreamTransmitter } from './octet-stream'
+import { encodeAtomicStandardBody, toStandardBody } from './body.ts'
+import { EventStreamTransmitter } from './event-stream.ts'
+import { OctetStreamTransmitter } from './octet-stream.ts'
 import type {
   ClientPeerSendMessage,
   PeerEventStreamMessage,
   PeerOctetStreamMessage,
   ServerPeerSendMessage,
-} from './types'
+} from './types.ts'
 
 interface ClientPeerRequestStateInternal {
   resolve?: ((response: StandardLazyResponse) => void) | undefined
@@ -75,7 +75,7 @@ export class ClientPeer {
     state: ClientPeerRequestStateInternal,
     request: StandardRequest,
   ): Promise<void> {
-    let untransmittedBody: StandardBody | undefined = request.body
+    let untransmittedBody: StandardBody = request.body
     let failure: unknown
 
     try {
@@ -162,10 +162,11 @@ export class ClientPeer {
 
     if (message.kind === 'stream/cancel') {
       state.streamCancelled = true
-      const promise = Promise.all([
-        state.eventStreamTransmitter?.cancel(),
-        state.octetStreamTransmitter?.cancel(),
-      ])
+      const promise = Promise.all(
+        [state.eventStreamTransmitter, state.octetStreamTransmitter]
+          .filter((transmitter) => transmitter !== undefined)
+          .map((transmitter) => transmitter.cancel()),
+      )
       state.eventStreamTransmitter = undefined
       state.octetStreamTransmitter = undefined
 
@@ -266,10 +267,9 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    const promises = [
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
-    ]
+    const promises = [state.eventStreamTransmitter, state.octetStreamTransmitter]
+      .filter((transmitter) => transmitter !== undefined)
+      .map((transmitter) => transmitter.cancel())
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
 
@@ -299,11 +299,15 @@ export class ClientPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    const promises = [
-      state.requestSent ? this.send({ id, kind: 'cancel' }) : undefined,
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
-    ]
+    const promises: Promise<void>[] = []
+    if (state.requestSent) {
+      promises.push(this.send({ id, kind: 'cancel' }))
+    }
+    for (const transmitter of [state.eventStreamTransmitter, state.octetStreamTransmitter]) {
+      if (transmitter) {
+        promises.push(transmitter.cancel())
+      }
+    }
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
 

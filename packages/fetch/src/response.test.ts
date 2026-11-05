@@ -1,9 +1,9 @@
 import type { StandardResponse } from '@standard-server/core'
 import { AsyncIteratorClass } from '@standard-server/shared'
 
-import * as Body from './body'
-import * as Headers from './headers'
-import { toFetchResponse, toStandardLazyResponse } from './response'
+import * as Body from './body.ts'
+import * as Headers from './headers.ts'
+import { toFetchResponse, toStandardLazyResponse } from './response.ts'
 
 const toFetchBodySpy = vi.spyOn(Body, 'toFetchBody')
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')

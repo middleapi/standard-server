@@ -4,7 +4,7 @@ import { Http2ServerRequest } from 'node:http2'
 import type { Readable } from 'node:stream'
 import type Stream from 'node:stream'
 
-import type { NodeHttpResponse } from './types'
+import type { NodeHttpResponse } from './types.ts'
 
 /**
  * A cancel-safe alternative to `Readable.toWeb`.

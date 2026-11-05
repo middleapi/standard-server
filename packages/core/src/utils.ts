@@ -5,7 +5,7 @@ import {
   toArray,
 } from '@standard-server/shared'
 
-import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types'
+import type { StandardBody, StandardBodyHint, StandardHeaders, StandardUrl } from './types.ts'
 
 const FALLBACK_FILENAME_UNSAFE_CHAR_REGEX = /[^\x20-\x7E]|[;=]/g
 const QUOTED_STRING_SPECIAL_CHAR_REGEX = /[\\"]/g

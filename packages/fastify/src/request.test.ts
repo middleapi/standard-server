@@ -3,7 +3,7 @@ import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
 
-import { toStandardLazyRequest } from './request'
+import { toStandardLazyRequest } from './request.ts'
 
 const toStandardBodySpy = vi.spyOn(StandardServerNode, 'toStandardBody')
 const toStandardMethodSpy = vi.spyOn(StandardServerNode, 'toStandardMethod')

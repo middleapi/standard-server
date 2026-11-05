@@ -2,8 +2,8 @@ import { Buffer } from 'node:buffer'
 
 import { Queue, sleep } from '@standard-server/shared'
 
-import { OctetStreamTransmitter, toOctetStream } from './octet-stream'
-import type { PeerOctetStreamMessage } from './types'
+import { OctetStreamTransmitter, toOctetStream } from './octet-stream.ts'
+import type { PeerOctetStreamMessage } from './types.ts'
 
 describe('toOctetStream', () => {
   it('enqueues binary chunks and closes', async () => {

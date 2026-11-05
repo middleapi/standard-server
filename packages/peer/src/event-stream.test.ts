@@ -1,8 +1,8 @@
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
 
-import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream'
-import type { PeerEventStreamMessage } from './types'
+import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream.ts'
+import type { PeerEventStreamMessage } from './types.ts'
 
 describe('toAsyncIteratorObject', () => {
   it('yields message events', async () => {

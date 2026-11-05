@@ -1,14 +1,14 @@
 import type { StandardResponse } from '@standard-server/core'
 
-import type { ToNodeHttpBodyOptions } from './body'
-import { toNodeHttpBody } from './body'
-import type { NodeHttpResponse } from './types'
+import type { ToNodeHttpBodyOptions } from './body.ts'
+import { toNodeHttpBody } from './body.ts'
+import type { NodeHttpResponse } from './types.ts'
 import {
   canWriteToNodeResponse,
   destroyNodeHttpBody,
   getNodeResponseError,
   isNodeResponseDisconnectError,
-} from './utils'
+} from './utils.ts'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 

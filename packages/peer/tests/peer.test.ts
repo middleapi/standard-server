@@ -4,14 +4,14 @@ import type { StandardLazyRequest, StandardResponse } from '@standard-server/cor
 import { cancelStandardBody, ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
 import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
-import type { ClientPeer, ServerPeer } from '../src'
+import type { ClientPeer, ServerPeer } from '../src/index.ts'
 import {
   ClientPeer as ClientPeerClass,
   decodePeerMessage,
   encodePeerMessage,
   ServerPeer as ServerPeerClass,
-} from '../src'
-import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
+} from '../src/index.ts'
+import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types.ts'
 
 /**
  * Wires a ClientPeer and a ServerPeer together through the real codec,

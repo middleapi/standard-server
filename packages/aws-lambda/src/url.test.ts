@@ -1,4 +1,4 @@
-import { toStandardUrl } from './url'
+import { toStandardUrl } from './url.ts'
 
 describe('toStandardUrl (v2)', () => {
   it('works without query string', () => {
@@ -98,7 +98,7 @@ describe('toStandardUrl (v1)', () => {
         path: '/example',
         multiValueQueryStringParameters: { 'a key': ['a value&=#'] },
       }),
-    ).toBe(`/example?${new URLSearchParams({ 'a key': 'a value&=#' })}`)
+    ).toBe(`/example?${new URLSearchParams({ 'a key': 'a value&=#' }).toString()}`)
   })
 
   it('ignores empty query containers', () => {

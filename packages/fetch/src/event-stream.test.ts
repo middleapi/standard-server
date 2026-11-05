@@ -6,7 +6,7 @@ import {
 } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { toAsyncIteratorObject, toEventStream } from './event-stream'
+import { toAsyncIteratorObject, toEventStream } from './event-stream.ts'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -431,7 +431,7 @@ describe('toEventStream', () => {
 
     await Promise.all([reader.read(), vi.advanceTimersByTimeAsync(10)])
 
-    reader.read()
+    void reader.read()
     // start waiting for the error
     await vi.advanceTimersByTimeAsync(5)
 
@@ -463,7 +463,7 @@ describe('toEventStream', () => {
 
     await Promise.all([reader.read(), vi.advanceTimersByTimeAsync(10)])
 
-    reader.read()
+    void reader.read()
     // start waiting for the error
     await vi.advanceTimersByTimeAsync(5)
 

@@ -1,5 +1,5 @@
-import { EventStreamEncoderError } from './error'
-import type { EventStreamMessage } from './types'
+import { EventStreamEncoderError } from './error.ts'
+import type { EventStreamMessage } from './types.ts'
 
 const EVENT_STREAM_LINE_ENDING_REGEX = /\r\n|[\n\r]/
 const EVENT_STREAM_LINE_ENDING_GLOBAL_REGEX = /\r\n|[\n\r]/g

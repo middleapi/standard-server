@@ -2,7 +2,7 @@ import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 import { AsyncIteratorClass, isTypescriptObject } from '@standard-server/shared'
 
-import type { PeerEventStreamMessage } from './types'
+import type { PeerEventStreamMessage } from './types.ts'
 
 export function toAsyncIteratorObject(
   queue: Queue<PeerEventStreamMessage>,

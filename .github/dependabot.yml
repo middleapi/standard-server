@@ -10,17 +10,8 @@ updates:
       default-days: 1
     versioning-strategy: increase
     groups:
-      uncheck:
-        patterns:
-          - uncheck
-          - oxlint
-          - oxfmt
       dev-dependencies-minor-patch:
         dependency-type: development
-        exclude-patterns:
-          - uncheck
-          - oxlint
-          - oxfmt
         update-types:
           - minor
           - patch

@@ -5,13 +5,14 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "prepare": "uncheck prepare --pre-commit",
-    "check": "uncheck",
-    "fix": "uncheck --fix",
+    "check": "oxlint",
+    "fix": "oxlint --fix",
+    "format": "oxfmt",
+    "repo:fix": "sherif --fix",
     "test": "pnpm run -r test && vitest run",
     "test:coverage": "pnpm run -r test && vitest run --coverage",
     "bench": "vitest bench --run",
-    "sponsors:sync": "node scripts/sync-sponsors.ts && pnpm run fix '**/README.md'"
+    "sponsors:sync": "node scripts/sync-sponsors.ts && oxfmt '**/README.md'"
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^5.7.1",
@@ -34,23 +35,16 @@
     "express4": "npm:express@^4.22.3",
     "fastify": "^5.12.5",
     "h3": "2.0.2",
-    "oxfmt": "^0.72.0",
-    "oxlint": "^1.87.0",
+    "oxfmt": "^0.76.0",
+    "oxlint": "^1.91.0",
+    "oxlint-tsgolint": "^7.0.2005",
     "pkg-pr-new": "^0.0.91",
     "selfsigned": "^5.5.0",
     "sherif": "^1.13.0",
     "srvx": "^1.0.5",
-    "typescript": "^6.0.3",
-    "unbuild": "^3.6.1",
-    "uncheck": "^0.1.1",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "ws": "^8.22.0"
   },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^12.4.1",
-      "onFail": "download"
-    }
-  }
+  "packageManager": "pnpm@12.16.1"
 }
