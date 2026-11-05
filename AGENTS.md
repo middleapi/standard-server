@@ -24,7 +24,7 @@ pnpm --filter @standard-server/core prepack  # build one package; tests don't ne
 ```
 
 Before finishing, run `pnpm format`, `pnpm check` and `pnpm test`. CI doesn't check formatting.
-After changing a `package.json`, also run `pnpm repo:fix`.
+After changing a `package.json`, also run `pnpm repo:fix`. In CI, where sherif refuses to fix, run `pnpm exec sherif` to check instead.
 
 ## Pull requests
 
