@@ -7,8 +7,8 @@ import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-s
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { throwIfAborted } from '@standard-server/shared'
 
-import type { ClientServerTest } from './client-server'
-import { generateTlsCert } from './tls'
+import type { ClientServerTest } from './client-server.ts'
+import { generateTlsCert } from './tls.ts'
 
 export function createNodeHttpsClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -65,7 +65,7 @@ export function createNodeHttpsClientServerTest(): ClientServerTest {
     const req = https.request({
       host: 'localhost',
       port,
-      path: `${standardRequest.url}`,
+      path: standardRequest.url,
       method: standardRequest.method,
       headers: requestHeaders,
       agent,

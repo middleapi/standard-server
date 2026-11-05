@@ -6,7 +6,7 @@ export default defineConfig(() => ({
   test: {
     globals: true,
     include: ['**/*.test.ts'],
-    exclude: [...defaultExclude, '**/.claude/**', './tests/bun/**'],
+    exclude: [...defaultExclude, '**/.claude/worktrees/**', './tests/bun/**'],
     // exposes Node's EventSource global, which is still behind a flag (Node 20 - 26)
     execArgv: ['--experimental-eventsource'],
     coverage: {
@@ -15,7 +15,7 @@ export default defineConfig(() => ({
     },
     benchmark: {
       include: ['**/*.bench.ts'],
-      exclude: [...defaultExclude, '**/.claude/**'],
+      exclude: [...defaultExclude, '**/.claude/worktrees/**'],
     },
   },
 }))

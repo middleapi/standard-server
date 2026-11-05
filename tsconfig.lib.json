@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "declaration": true,
+    "noEmit": false,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist"
+  },
+  "include": ["${configDir}/package.json", "${configDir}/src"],
+  "exclude": ["${configDir}/src/**/*.test.ts", "${configDir}/src/**/*.test-d.ts"]
+}

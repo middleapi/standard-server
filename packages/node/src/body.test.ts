@@ -10,10 +10,10 @@ import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import request from 'supertest'
 
-import { toNodeHttpBody, toStandardBody } from './body'
-import * as EventStreamModule from './event-stream'
-import type { NodeHttpRequest } from './types'
-import * as UtilsModule from './utils'
+import { toNodeHttpBody, toStandardBody } from './body.ts'
+import * as EventStreamModule from './event-stream.ts'
+import type { NodeHttpRequest } from './types.ts'
+import * as UtilsModule from './utils.ts'
 
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
 const toWebReadableStreamSpy = vi.spyOn(UtilsModule, 'toWebReadableStream')
@@ -29,7 +29,7 @@ beforeEach(() => {
 
 describe('toStandardBody', () => {
   it('json but empty body', async () => {
-    let standardBody: StandardBody = {} as any
+    let standardBody: StandardBody = {}
 
     await request(async (req: IncomingMessage, res: ServerResponse) => {
       standardBody = await toStandardBody(req)
@@ -83,7 +83,7 @@ describe('toStandardBody', () => {
     })
 
     it('json', async () => {
-      let standardBody: StandardBody = {} as any
+      let standardBody: StandardBody = {}
 
       await request(async (req: IncomingMessage, res: ServerResponse) => {
         standardBody = await toStandardBody(req)
@@ -97,7 +97,7 @@ describe('toStandardBody', () => {
     })
 
     it('json strips a leading BOM', async () => {
-      let standardBody: StandardBody = {} as any
+      let standardBody: StandardBody = {}
 
       await request(async (req: IncomingMessage, res: ServerResponse) => {
         standardBody = await toStandardBody(req)
@@ -187,7 +187,7 @@ describe('toStandardBody', () => {
     })
 
     it('prefer parsed body', async () => {
-      let standardBody: StandardBody = {} as any
+      let standardBody: StandardBody = {}
 
       await request(async (req: IncomingMessage, res: ServerResponse) => {
         // fake an upstream parser: consume the stream, then assign the parsed body
@@ -525,7 +525,7 @@ describe('toStandardBody', () => {
     })
 
     it('hint=none neither reads nor marks the body', async () => {
-      let none: StandardBody = {} as any
+      let none: StandardBody = {}
       let standardBody: StandardBody
 
       await request(async (req: IncomingMessage, res: ServerResponse) => {

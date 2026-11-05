@@ -1,4 +1,4 @@
-import { hasAnyDefinedValue, isTypescriptObject } from './object'
+import { hasAnyDefinedValue, isTypescriptObject } from './object.ts'
 
 it('hasAnyDefinedValue', () => {
   expect(hasAnyDefinedValue({})).toBe(false)

@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 
 import Fastify from 'fastify'
 
-import { sendStandardResponse, toStandardLazyRequest } from '../src'
+import { sendStandardResponse, toStandardLazyRequest } from '../src/index.ts'
 
 /**
  * `@standard-server/node` supports both node http and http2, so the fastify adapter

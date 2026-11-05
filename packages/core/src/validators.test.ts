@@ -5,7 +5,7 @@ import {
   isStandardResponse,
   isStandardStatus,
   isStandardUrl,
-} from './validators'
+} from './validators.ts'
 
 describe('isStandardMethod', () => {
   it('accepts standard & custom HTTP verbs', () => {

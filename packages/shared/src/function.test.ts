@@ -1,4 +1,4 @@
-import { sequential } from './function'
+import { sequential } from './function.ts'
 
 describe('sequential', () => {
   it('should call the function sequentially', async () => {
@@ -11,10 +11,12 @@ describe('sequential', () => {
 
     const sequentialFn = sequential(fn)
 
-    expect(sequentialFn()).resolves.toBe(0)
-    expect(sequentialFn()).resolves.toBe(1)
-    expect(sequentialFn()).resolves.toBe(2)
-    expect(sequentialFn()).resolves.toBe(3)
+    await Promise.all([
+      expect(sequentialFn()).resolves.toBe(0),
+      expect(sequentialFn()).resolves.toBe(1),
+      expect(sequentialFn()).resolves.toBe(2),
+      expect(sequentialFn()).resolves.toBe(3),
+    ])
   })
 
   it('should call the function sequentially even with errors', async () => {
@@ -32,9 +34,11 @@ describe('sequential', () => {
 
     const sequentialFn = sequential(fn)
 
-    expect(sequentialFn()).resolves.toBe(0)
-    expect(sequentialFn()).rejects.toThrow('Forced error')
-    expect(sequentialFn()).resolves.toBe(2)
-    expect(sequentialFn()).resolves.toBe(3)
+    await Promise.all([
+      expect(sequentialFn()).resolves.toBe(0),
+      expect(sequentialFn()).rejects.toThrow('Forced error'),
+      expect(sequentialFn()).resolves.toBe(2),
+      expect(sequentialFn()).resolves.toBe(3),
+    ])
   })
 })

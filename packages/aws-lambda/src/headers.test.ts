@@ -1,4 +1,4 @@
-import { toLambdaHeaders, toStandardHeaders } from './headers'
+import { toLambdaHeaders, toStandardHeaders } from './headers.ts'
 
 describe('toStandardHeaders (v2)', () => {
   it('lowercases keys and restores the cookie header', () => {

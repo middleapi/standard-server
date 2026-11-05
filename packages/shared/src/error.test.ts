@@ -1,4 +1,4 @@
-import { AbortError } from './error'
+import { AbortError } from './error.ts'
 
 it('abortError', () => {
   const error = new AbortError('Operation aborted', {

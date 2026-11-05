@@ -7,8 +7,8 @@ import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-s
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { throwIfAborted } from '@standard-server/shared'
 
-import type { ClientServerTest } from './client-server'
-import { generateTlsCert } from './tls'
+import type { ClientServerTest } from './client-server.ts'
+import { generateTlsCert } from './tls.ts'
 
 export interface NodeHttp2ClientServerTestOptions {
   /** Serve over TLS (https) with a self-signed localhost certificate. */
@@ -79,7 +79,7 @@ export function createNodeHttp2ClientServerTest(
 
     const requestHeaders: http2.OutgoingHttpHeaders = {
       ':method': standardRequest.method,
-      ':path': `${standardRequest.url}`,
+      ':path': standardRequest.url,
     }
     fetchRequest.headers.forEach((value, key) => {
       requestHeaders[key] = value

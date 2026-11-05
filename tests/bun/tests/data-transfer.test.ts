@@ -4,9 +4,9 @@ import type { StandardHeaders } from '@standard-server/core'
 import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { NOT_FOUND_HANDLER } from './client-server'
-import { createBunFetchClientServerTest } from './client-server.bun-fetch'
-import { createBunWsClientServerTest } from './client-server.bun-ws'
+import { createBunFetchClientServerTest } from './client-server.bun-fetch.ts'
+import { createBunWsClientServerTest } from './client-server.bun-ws.ts'
+import { NOT_FOUND_HANDLER } from './client-server.ts'
 
 /**
  * Streaming tests produce a chunk every `CHUNK_DELAY` ms and assert each chunk
@@ -63,7 +63,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
             'x-from': 'client',
           },
           method,
-          url: url as any,
+          url: url,
         })
 
         expect(response.headers).toMatchObject({

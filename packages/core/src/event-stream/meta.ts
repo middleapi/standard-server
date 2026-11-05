@@ -4,8 +4,8 @@ import {
   assertEventStreamMessageComment,
   assertEventStreamMessageId,
   assertEventStreamMessageRetry,
-} from './encoder'
-import type { EventMeta } from './types'
+} from './encoder.ts'
+import type { EventMeta } from './types.ts'
 
 const EVENT_META_SYMBOL = Symbol.for('STANDARD_SERVER_EVENT_META')
 const EVENT_SOURCE_SYMBOL = Symbol.for('STANDARD_SERVER_EVENT_SOURCE')

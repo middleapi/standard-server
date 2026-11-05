@@ -1,4 +1,4 @@
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export function createInprogressClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

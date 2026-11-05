@@ -8,8 +8,8 @@ import {
   toNodeHttpBody,
 } from '@standard-server/node'
 
-import { toLambdaHeaders } from './headers'
-import type { AwsLambdaGlobal, HttpResponseStream } from './types'
+import { toLambdaHeaders } from './headers.ts'
+import type { AwsLambdaGlobal, HttpResponseStream } from './types.ts'
 
 /**
  * Injected by the Lambda runtime when response streaming is enabled.

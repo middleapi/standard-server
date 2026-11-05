@@ -7,7 +7,7 @@ import {
 } from '@standard-server/fetch'
 import { fromWebHandler, H3, serve } from 'h3'
 
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export function createH3WebHandlerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {
@@ -30,7 +30,7 @@ export function createH3WebHandlerClientServerTest(): ClientServerTest {
   const server = serve(app, { port: 0 })
 
   afterAll(() => {
-    server.close()
+    void server.close()
   })
 
   const port = server.url!.split(':').pop()!.split('/').shift()!

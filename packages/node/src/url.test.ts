@@ -2,7 +2,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import net from 'node:net'
 
-import { toStandardUrl } from './url'
+import { toStandardUrl } from './url.ts'
 
 describe('toStandardUrl', () => {
   it('origin-form', () => {

@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-server/fetch'
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export function createNodeHttpClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

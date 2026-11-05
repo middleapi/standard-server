@@ -1,7 +1,7 @@
 import type { StandardUrl } from '@standard-server/core'
 import { toStandardUrl as toStandardUrlFetch } from '@standard-server/fetch'
 
-import type { NodeHttpRequest } from './types'
+import type { NodeHttpRequest } from './types.ts'
 
 export function toStandardUrl(req: Pick<NodeHttpRequest, 'originalUrl' | 'url'>): StandardUrl {
   // prefer originalUrl over url, especially useful in express.js middleware

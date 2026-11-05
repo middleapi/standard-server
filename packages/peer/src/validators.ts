@@ -19,7 +19,7 @@ import type {
   PeerResponseMessage,
   PeerStreamCancelMessage,
   ServerPeerSendMessage,
-} from './types'
+} from './types.ts'
 
 export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
   if (!isTypescriptObject(maybe)) {

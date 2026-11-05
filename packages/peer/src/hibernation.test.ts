@@ -1,6 +1,6 @@
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
-import { HibernationAsyncIteratorClass } from './hibernation'
+import { HibernationAsyncIteratorClass } from './hibernation.ts'
 
 describe('hibernationAsyncIteratorClass', () => {
   it('is async iterator object', () => {
@@ -22,7 +22,7 @@ describe('hibernationAsyncIteratorClass', () => {
     const callback = vi.fn()
     const iterator = new HibernationAsyncIteratorClass(callback)
 
-    iterator['~callback']?.('12344')
+    void iterator['~callback']?.('12344')
 
     expect(callback).toHaveBeenCalledWith('12344')
     expect(callback).toHaveBeenCalledTimes(1)

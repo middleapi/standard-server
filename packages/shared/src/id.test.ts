@@ -1,4 +1,4 @@
-import { SequentialIdGenerator } from './id'
+import { SequentialIdGenerator } from './id.ts'
 
 describe('sequentialIdGenerator', () => {
   it('unique and increase', () => {

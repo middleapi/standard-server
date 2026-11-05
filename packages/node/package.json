@@ -39,14 +39,14 @@
     "exports": {
       "./package.json": "./package.json",
       ".": {
-        "types": "./dist/index.d.mts",
-        "import": "./dist/index.mjs",
-        "default": "./dist/index.mjs"
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
       }
     }
   },
   "scripts": {
-    "prepack": "unbuild"
+    "prepack": "tsc"
   },
   "dependencies": {
     "@standard-server/core": "workspace:*",

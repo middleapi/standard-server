@@ -1,4 +1,4 @@
-import { sleep } from './time'
+import { sleep } from './time.ts'
 
 describe('sleep', () => {
   it('sleep resolves after the given duration', async () => {

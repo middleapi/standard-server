@@ -118,7 +118,7 @@ function buildSponsorsSection(sponsors: Sponsor[]): string {
   // everyone else so nobody appears twice.
   const slotSponsors = activeSponsors
     .filter((sponsor) => sponsor.slot !== undefined)
-    .sort((a, b) => a.slot! - b.slot!)
+    .toSorted((a, b) => a.slot! - b.slot!)
   const tieredSponsors = activeSponsors.filter((sponsor) => sponsor.slot === undefined)
 
   const groupedSponsors = new Map<number, Sponsor[]>()
@@ -147,10 +147,10 @@ function buildSponsorsSection(sponsors: Sponsor[]): string {
 
   // Sizes rank against every active tier, slot sponsors' tiers included, so
   // featuring the top tiers as cards does not inflate the tables below them.
-  const sizeTierLevels = [...new Set(activeSponsors.map((sponsor) => sponsor.tierLevel))].sort(
+  const sizeTierLevels = [...new Set(activeSponsors.map((sponsor) => sponsor.tierLevel))].toSorted(
     (a, b) => b - a,
   )
-  const tierLevels = [...groupedSponsors.keys()].sort((a, b) => b - a)
+  const tierLevels = [...groupedSponsors.keys()].toSorted((a, b) => b - a)
 
   for (const tierLevel of tierLevels) {
     const tierSponsors = groupedSponsors.get(tierLevel)

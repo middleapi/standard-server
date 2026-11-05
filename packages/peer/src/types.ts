@@ -61,7 +61,7 @@ export interface PeerRequestMessage extends PeerMessage {
     /**
      * The JSON-parsed body of the request.
      */
-    body?: undefined | StandardBody
+    body?: StandardBody
   }
 }
 
@@ -92,7 +92,7 @@ export interface PeerResponseMessage extends PeerMessage {
     /**
      * The JSON-parsed body of the response.
      */
-    body?: undefined | StandardBody
+    body?: StandardBody
   }
 }
 

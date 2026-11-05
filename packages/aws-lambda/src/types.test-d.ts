@@ -5,7 +5,7 @@ import type {
   APIGatewayProxyEvent,
   APIGatewayProxyEventV2,
   HttpResponseStream,
-} from './types'
+} from './types.ts'
 
 it('APIGatewayProxyEvent', () => {
   expectTypeOf<awsLambda.APIGatewayProxyEvent>().toExtend<APIGatewayProxyEvent>()

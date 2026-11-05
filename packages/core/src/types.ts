@@ -28,14 +28,18 @@ export type StandardBodyHint =
   | 'file' // binary - file is also a blob (any content-type)
   | 'none' // undefined (any content-type)
 
-export type StandardBody =
-  | unknown // application/json
-  | URLSearchParams // x-www-form-urlencoded
-  | FormData // multipart/form-data
-  | AsyncIterator<unknown | void, unknown | void, undefined> // text/event-stream
-  | ReadableStream<Uint8Array<ArrayBuffer>> // generic binary stream (any content-type)
-  | Blob // binary - file is also a blob (any content-type)
-  | undefined // empty (any content-type)
+/**
+ * A parsed body. Its shape depends on the content type:
+ *
+ * - JSON value: `application/json`
+ * - `URLSearchParams`: `application/x-www-form-urlencoded`
+ * - `FormData`: `multipart/form-data`
+ * - `AsyncIterator<unknown, unknown, undefined>`: `text/event-stream`
+ * - `ReadableStream<Uint8Array<ArrayBuffer>>`: generic binary stream (any content-type)
+ * - `Blob`: binary, a file is also a blob (any content-type)
+ * - `undefined`: empty (any content-type)
+ */
+export type StandardBody = unknown
 
 export interface StandardRequest {
   /**
@@ -53,7 +57,7 @@ export interface StandardRequest {
   /**
    * The body has been parsed based on the content headers.
    */
-  body?: StandardBody | undefined
+  body?: StandardBody
   /**
    * An AbortSignal to communicate aborting of request.
    */
@@ -69,7 +73,7 @@ export interface StandardLazyRequest extends Omit<StandardRequest, 'body'> {
    *
    * Calling this method may consume the underlying stream.
    */
-  resolveBody: (hint?: StandardBodyHint | undefined) => Promise<StandardBody>
+  resolveBody: (hint?: StandardBodyHint) => Promise<StandardBody>
 }
 
 export interface StandardResponse {
@@ -84,7 +88,7 @@ export interface StandardResponse {
   /**
    * The body has been parsed based on the content headers.
    */
-  body?: StandardBody | undefined
+  body?: StandardBody
 }
 
 export interface StandardLazyResponse extends Omit<StandardResponse, 'body'> {
@@ -96,5 +100,5 @@ export interface StandardLazyResponse extends Omit<StandardResponse, 'body'> {
    *
    * Calling this method may consume the underlying stream.
    */
-  resolveBody: (hint?: StandardBodyHint | undefined) => Promise<StandardBody>
+  resolveBody: (hint?: StandardBodyHint) => Promise<StandardBody>
 }

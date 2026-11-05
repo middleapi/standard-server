@@ -3,17 +3,17 @@ import { cancelStandardBody } from '@standard-server/core'
 import type { Queue } from '@standard-server/shared'
 import { AbortError, hasAnyDefinedValue, isAsyncIteratorObject } from '@standard-server/shared'
 
-import { encodeAtomicStandardBody, toStandardBody } from './body'
-import { EventStreamTransmitter } from './event-stream'
-import { HibernationAsyncIteratorClass } from './hibernation'
-import { OctetStreamTransmitter } from './octet-stream'
+import { encodeAtomicStandardBody, toStandardBody } from './body.ts'
+import { EventStreamTransmitter } from './event-stream.ts'
+import { HibernationAsyncIteratorClass } from './hibernation.ts'
+import { OctetStreamTransmitter } from './octet-stream.ts'
 import type {
   ClientPeerSendMessage,
   PeerEventStreamMessage,
   PeerOctetStreamMessage,
   PeerResponseMessage,
   ServerPeerSendMessage,
-} from './types'
+} from './types.ts'
 
 interface ServerPeerRequestStateInternal {
   controller?: AbortController | undefined
@@ -62,7 +62,7 @@ export class ServerPeer {
     this.requests.set(id, state)
     const signal = controller.signal
 
-    let untransmittedBody: StandardBody | undefined
+    let untransmittedBody: StandardBody
 
     try {
       const decoded = toStandardBody(message, async ({ kind, error }) => {
@@ -204,10 +204,9 @@ export class ServerPeer {
     state.eventStreamMessageQueue = undefined
     state.octetStreamMessageQueue = undefined
 
-    const promises = [
-      state.eventStreamTransmitter?.cancel(),
-      state.octetStreamTransmitter?.cancel(),
-    ]
+    const promises = [state.eventStreamTransmitter, state.octetStreamTransmitter]
+      .filter((transmitter) => transmitter !== undefined)
+      .map((transmitter) => transmitter.cancel())
     state.eventStreamTransmitter = undefined
     state.octetStreamTransmitter = undefined
 

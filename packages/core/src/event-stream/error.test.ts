@@ -1,4 +1,4 @@
-import { ErrorEvent } from './error'
+import { ErrorEvent } from './error.ts'
 
 it('errorEvent', () => {
   const errorEvent = new ErrorEvent('data', { cause: 'cause' })

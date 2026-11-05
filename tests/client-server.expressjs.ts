@@ -5,7 +5,7 @@ import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/no
 import express from 'express'
 import express4 from 'express4'
 
-import type { ClientServerTest } from './client-server'
+import type { ClientServerTest } from './client-server.ts'
 
 export interface ExpressjsClientServerTestOptions {
   /**
@@ -43,11 +43,12 @@ export function createExpressjsClientServerTest(
     app.use(expressjs.json({ strict: false }))
   }
 
-  app.use(async (req, res) => {
+  app.use((req, res, next) => {
     const standardRequest = toStandardLazyRequest(req, res)
-    const standardResponse = await handler(standardRequest)
 
-    await sendStandardResponse(res, standardResponse)
+    handler(standardRequest)
+      .then((standardResponse) => sendStandardResponse(res, standardResponse))
+      .catch(next)
   })
 
   const server = app.listen(0)

@@ -3,9 +3,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { StandardLazyRequest } from '@standard-server/core'
 import request from 'supertest'
 
-import * as Body from './body'
-import { toStandardLazyRequest } from './request'
-import * as Signal from './signal'
+import * as Body from './body.ts'
+import { toStandardLazyRequest } from './request.ts'
+import * as Signal from './signal.ts'
 
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')
 const toAbortSignalSpy = vi.spyOn(Signal, 'toAbortSignal')

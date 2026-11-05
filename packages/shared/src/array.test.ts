@@ -1,4 +1,4 @@
-import { toArray } from './array'
+import { toArray } from './array.ts'
 
 it('toArray', () => {
   expect(toArray(undefined)).toEqual([])

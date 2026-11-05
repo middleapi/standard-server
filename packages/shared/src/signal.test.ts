@@ -1,18 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { anyAbortSignal, throwIfAborted } from './signal'
+import { anyAbortSignal, throwIfAborted } from './signal.ts'
 
 /**
  * Helper to temporarily disable AbortSignal.any to force fallback implementation.
  */
 function withFallback<T>(fn: () => T): T {
-  const originalAny = AbortSignal.any
-  // @ts-expect-error - allow setting to undefined for testing fallback
-  AbortSignal.any = undefined
+  const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')!
+  Object.defineProperty(AbortSignal, 'any', { ...descriptor, value: undefined })
   try {
     return fn()
   } finally {
-    AbortSignal.any = originalAny
+    Object.defineProperty(AbortSignal, 'any', descriptor)
   }
 }
 
