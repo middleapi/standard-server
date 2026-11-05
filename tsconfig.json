@@ -5,9 +5,7 @@
     "lib": ["ES2023"],
     "module": "nodenext",
 
-    "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
-    "resolveJsonModule": true,
     "types": ["node", "vitest/globals"],
 
     "noImplicitOverride": true,
