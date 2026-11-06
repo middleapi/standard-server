@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import type { StandardHeaders } from '@standard-server/core'
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { EventStreamErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
 import { createBunFetchClientServerTest } from './client-server.bun-fetch.ts'
@@ -309,7 +309,7 @@ for (const [adapter, createClientServer] of ADAPTERS) {
           yield 'order1'
           await sleep(CHUNK_DELAY)
           yield withEventMeta({ order: 2 }, { id: 'id-2' })
-          throw withEventMeta(new ErrorEvent({ order: 3 }), { comments: ['order3'] })
+          throw withEventMeta(new EventStreamErrorEvent({ order: 3 }), { comments: ['order3'] })
         })(),
       })
 
@@ -340,8 +340,8 @@ for (const [adapter, createClientServer] of ADAPTERS) {
         error = e
       }
 
-      expect(error).toBeInstanceOf(ErrorEvent)
-      const [err, errMeta] = unwrapEvent(error as ErrorEvent)
+      expect(error).toBeInstanceOf(EventStreamErrorEvent)
+      const [err, errMeta] = unwrapEvent(error as EventStreamErrorEvent)
       expect(err.data).toEqual({ order: 3 })
       expect(errMeta).toEqual({ comments: ['order3'] })
       expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)

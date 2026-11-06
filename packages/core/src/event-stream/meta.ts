@@ -1,4 +1,4 @@
-import { getOrBind, isTypescriptObject } from '@standard-server/shared'
+import { getOrBind, isNonPrimitive } from '@standard-server/shared'
 
 import {
   assertEventStreamMessageComment,
@@ -59,7 +59,7 @@ export function withEventMeta<T extends object>(container: T, meta: EventMeta): 
  * Unwraps an iterator event value and extracts its associated metadata.
  */
 export function unwrapEvent<T>(container: T): [data: T, meta: EventMeta | undefined] {
-  if (!isTypescriptObject(container)) {
+  if (!isNonPrimitive(container)) {
     return [container, undefined]
   }
 
@@ -74,7 +74,7 @@ export function unwrapEvent<T>(container: T): [data: T, meta: EventMeta | undefi
  * Retrieves metadata attached to a single iterator event value.
  */
 export function getEventMeta(container: unknown): EventMeta | undefined {
-  if (!isTypescriptObject(container)) {
+  if (!isNonPrimitive(container)) {
     return undefined
   }
 

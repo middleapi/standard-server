@@ -1,4 +1,4 @@
-import { hasAnyDefinedValue, isTypescriptObject } from './object.ts'
+import { hasAnyDefinedValue, isNonPrimitive } from './object.ts'
 
 it('hasAnyDefinedValue', () => {
   expect(hasAnyDefinedValue({})).toBe(false)
@@ -10,13 +10,13 @@ it('hasAnyDefinedValue', () => {
   expect(hasAnyDefinedValue({ 'set-cookie': ['a=1'] })).toBe(true)
 })
 
-it('isTypescriptObject', () => {
-  expect(isTypescriptObject(null)).toBe(false)
-  expect(isTypescriptObject(undefined)).toBe(false)
-  expect(isTypescriptObject(123)).toBe(false)
-  expect(isTypescriptObject('string')).toBe(false)
+it('isNonPrimitive', () => {
+  expect(isNonPrimitive(null)).toBe(false)
+  expect(isNonPrimitive(undefined)).toBe(false)
+  expect(isNonPrimitive(123)).toBe(false)
+  expect(isNonPrimitive('string')).toBe(false)
 
-  expect(isTypescriptObject({})).toBe(true)
-  expect(isTypescriptObject(new Date())).toBe(true)
-  expect(isTypescriptObject(() => {})).toBe(true)
+  expect(isNonPrimitive({})).toBe(true)
+  expect(isNonPrimitive(new Date())).toBe(true)
+  expect(isNonPrimitive(() => {})).toBe(true)
 })

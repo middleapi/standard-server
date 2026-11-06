@@ -1,4 +1,4 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { EventStreamErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { AsyncIteratorClass, Queue, sleep } from '@standard-server/shared'
 
 import { EventStreamTransmitter, toAsyncIteratorObject } from './event-stream.ts'
@@ -57,7 +57,7 @@ describe('toAsyncIteratorObject', () => {
     expect(r1.value).toBe('primitive')
   })
 
-  it('throws ErrorEvent on error events', async () => {
+  it('throws EventStreamErrorEvent on error events', async () => {
     const queue = new Queue<PeerEventStreamMessage>()
     const cleanup = vi.fn()
     const iter = toAsyncIteratorObject(queue, cleanup)
@@ -68,8 +68,8 @@ describe('toAsyncIteratorObject', () => {
       json: { event: 'error', data: { code: 500 }, comments: ['oops'] },
     })
 
-    const assertError = (err: ErrorEvent) => {
-      expect(err).toBeInstanceOf(ErrorEvent)
+    const assertError = (err: EventStreamErrorEvent) => {
+      expect(err).toBeInstanceOf(EventStreamErrorEvent)
       expect(err.data).toEqual({ code: 500 })
       const [, meta] = unwrapEvent(err)
       expect(meta).toEqual({ comments: ['oops'] })
@@ -191,11 +191,11 @@ describe('eventStreamTransmitter', () => {
     })
   })
 
-  it('sends error event for ErrorEvent', async () => {
+  it('sends error event for EventStreamErrorEvent', async () => {
     const send = vi.fn(async () => {})
     const iter = new AsyncIteratorClass(
       async () => {
-        throw new ErrorEvent({ reason: 'fail' })
+        throw new EventStreamErrorEvent({ reason: 'fail' })
       },
       async () => {},
     )
@@ -261,14 +261,17 @@ describe('eventStreamTransmitter', () => {
 
     const cleanup = vi.fn()
     const iter = new AsyncIteratorClass(async () => {
-      throw new ErrorEvent({ hi: true })
+      throw new EventStreamErrorEvent({ hi: true })
     }, cleanup)
 
     const transmitter = new EventStreamTransmitter(iter, 'msg-1', send)
     await expect(transmitter.transmit()).rejects.toThrow('send failed')
 
     expect(cleanup).toHaveBeenCalledTimes(1)
-    expect(cleanup).toHaveBeenCalledWith({ kind: 'error', error: expect.any(ErrorEvent) })
+    expect(cleanup).toHaveBeenCalledWith({
+      kind: 'error',
+      error: expect.any(EventStreamErrorEvent),
+    })
   })
 
   it('does not send success-event after cancel', async () => {
@@ -300,7 +303,7 @@ describe('eventStreamTransmitter', () => {
       async () => {
         // simulate slow iterator so cancel happens mid-stream
         await sleep(50)
-        throw new ErrorEvent({ reason: 'fail' })
+        throw new EventStreamErrorEvent({ reason: 'fail' })
       },
       async () => {},
     )

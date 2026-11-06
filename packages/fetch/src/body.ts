@@ -22,10 +22,10 @@ export interface ToStandardBodyOptions {
  */
 export async function toStandardBody(
   re: Request | Response,
-  options?: ToStandardBodyOptions,
+  options: ToStandardBodyOptions = {},
 ): Promise<StandardBody> {
   const hint =
-    options?.hint ??
+    options.hint ??
     resolveStandardBodyHint({
       'standard-server': re.headers.get('standard-server') ?? undefined,
       'content-type': re.headers.get('content-type') ?? undefined,
@@ -87,7 +87,7 @@ export interface ToFetchBodyOptions {
   /**
    * Options for the event stream, like keep-alive settings, initial comment, etc.
    */
-  eventStream?: ToEventStreamOptions
+  eventStream?: ToEventStreamOptions | undefined
 }
 
 /**

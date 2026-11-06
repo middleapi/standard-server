@@ -31,7 +31,7 @@ export function assertEventStreamMessageId(id: string): void {
   }
 }
 
-export function assertEventStreamMessageName(event: string): void {
+export function assertEventStreamMessageEvent(event: string): void {
   if (containsEventStreamLineBreak(event)) {
     throw new EventStreamEncoderError(
       "Event's event must not contain a carriage return or newline character",
@@ -81,7 +81,7 @@ export function encodeEventStreamMessage(message: EventStreamMessage): string {
   // 'message' is the default for a message with data. Without data, keep it
   // so the message is not mistaken for a comment.
   if (message.event !== undefined && (message.event !== 'message' || message.data === undefined)) {
-    assertEventStreamMessageName(message.event)
+    assertEventStreamMessageEvent(message.event)
 
     output += `event: ${message.event}\n`
   }

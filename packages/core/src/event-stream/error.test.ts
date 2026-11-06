@@ -1,12 +1,14 @@
-import { ErrorEvent } from './error.ts'
+import { EventStreamErrorEvent } from './error.ts'
 
 it('errorEvent', () => {
-  const errorEvent = new ErrorEvent('data', { cause: 'cause' })
+  const errorEvent = new EventStreamErrorEvent('data', { cause: 'cause' })
 
   expect(errorEvent.message).toBe('Error Event')
   expect(errorEvent.cause).toBe('cause')
   expect(errorEvent.data).toBe('data')
 
-  const errorEventWithCustomMessage = new ErrorEvent('data', { message: 'custom message' })
+  const errorEventWithCustomMessage = new EventStreamErrorEvent('data', {
+    message: 'custom message',
+  })
   expect(errorEventWithCustomMessage.message).toBe('custom message')
 })

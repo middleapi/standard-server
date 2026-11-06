@@ -1,15 +1,15 @@
 export class EventStreamEncoderError extends TypeError {}
 export class EventStreamDecoderError extends TypeError {}
 
-export interface ErrorEventOptions extends ErrorOptions {
-  message?: string
+export interface EventStreamErrorEventOptions extends ErrorOptions {
+  message?: string | undefined
 }
 
-export class ErrorEvent extends Error {
+export class EventStreamErrorEvent extends Error {
   constructor(
     public data: unknown,
-    options: ErrorEventOptions = {},
+    options: EventStreamErrorEventOptions = {},
   ) {
-    super(options?.message ?? 'Error Event', options)
+    super(options.message ?? 'Error Event', options)
   }
 }

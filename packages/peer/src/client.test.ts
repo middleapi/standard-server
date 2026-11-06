@@ -1,5 +1,5 @@
 import type { StandardLazyResponse, StandardRequest } from '@standard-server/core'
-import { ErrorEvent } from '@standard-server/core'
+import { EventStreamErrorEvent } from '@standard-server/core'
 import {
   AbortError,
   AsyncIteratorClass,
@@ -855,8 +855,8 @@ describe('clientPeer', () => {
 
         const iter = (await response.resolveBody()) as AsyncIterator<unknown>
         await expect(iter.next()).resolves.toEqual({ done: false, value: 'evt1' })
-        await expect(iter.next()).rejects.toSatisfy((error: ErrorEvent) => {
-          expect(error).toBeInstanceOf(ErrorEvent)
+        await expect(iter.next()).rejects.toSatisfy((error: EventStreamErrorEvent) => {
+          expect(error).toBeInstanceOf(EventStreamErrorEvent)
           expect(error.data).toEqual({ code: 'BOOM' })
           return true
         })

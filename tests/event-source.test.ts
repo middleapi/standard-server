@@ -1,7 +1,7 @@
 import * as http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-import { ErrorEvent } from '@standard-server/core'
+import { EventStreamErrorEvent } from '@standard-server/core'
 import { sendStandardResponse } from '@standard-server/node'
 
 let createBody: () => AsyncGenerator
@@ -60,7 +60,7 @@ describe.skipIf(typeof EventSource === 'undefined')('eventSource', () => {
   it('receives message and error events', async () => {
     createBody = async function* () {
       yield 'hello'
-      throw new ErrorEvent({ code: 'BOOM' })
+      throw new EventStreamErrorEvent({ code: 'BOOM' })
     }
 
     expect(await receive()).toEqual([

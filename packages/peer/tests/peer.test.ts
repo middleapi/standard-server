@@ -1,7 +1,12 @@
 import { getEventListeners } from 'node:events'
 
 import type { StandardLazyRequest, StandardResponse } from '@standard-server/core'
-import { cancelStandardBody, ErrorEvent, getEventMeta, withEventMeta } from '@standard-server/core'
+import {
+  cancelStandardBody,
+  EventStreamErrorEvent,
+  getEventMeta,
+  withEventMeta,
+} from '@standard-server/core'
 import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
 import type { ClientPeer, ServerPeer } from '../src/index.ts'
@@ -206,13 +211,13 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     expect(last.value).toEqual({ total: 2 })
   })
 
-  it('propagates ErrorEvent from server stream to client iterator', async () => {
+  it('propagates EventStreamErrorEvent from server stream to client iterator', async () => {
     const { client } = connect(async () => ({
       status: 200,
       headers: {},
       body: (async function* () {
         yield 'ok'
-        throw new ErrorEvent({ code: 'BOOM' })
+        throw new EventStreamErrorEvent({ code: 'BOOM' })
       })(),
     }))
 
@@ -220,8 +225,8 @@ describe('peer integration (client <-> server over encoded wire)', () => {
     const iterator = (await response.resolveBody()) as AsyncIterator<unknown>
 
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ok' })
-    await expect(iterator.next()).rejects.toSatisfy((error: ErrorEvent) => {
-      expect(error).toBeInstanceOf(ErrorEvent)
+    await expect(iterator.next()).rejects.toSatisfy((error: EventStreamErrorEvent) => {
+      expect(error).toBeInstanceOf(EventStreamErrorEvent)
       expect(error.data).toEqual({ code: 'BOOM' })
       return true
     })

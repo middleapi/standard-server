@@ -22,7 +22,7 @@ describe('sendStandardResponse', () => {
     const fastify = Fastify()
     onTestFinished(() => fastify.close())
 
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
@@ -67,7 +67,7 @@ describe('sendStandardResponse', () => {
     const fastify = Fastify()
     onTestFinished(() => fastify.close())
 
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
@@ -140,7 +140,7 @@ describe('sendStandardResponse', () => {
     const fastify = Fastify()
     onTestFinished(() => fastify.close())
 
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 
@@ -198,7 +198,7 @@ describe('sendStandardResponse', () => {
     const fastify = Fastify()
     onTestFinished(() => fastify.close())
 
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     fastify.get('/', async (req, reply) => {
       sendSpy = vi.spyOn(reply, 'send')
 

@@ -7,7 +7,7 @@ import {
   isStandardStatus,
   isStandardUrl,
 } from '@standard-server/core'
-import { isTypescriptObject } from '@standard-server/shared'
+import { isNonPrimitive } from '@standard-server/shared'
 
 import type {
   ClientPeerSendMessage,
@@ -22,7 +22,7 @@ import type {
 } from './types.ts'
 
 export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
-  if (!isTypescriptObject(maybe)) {
+  if (!isNonPrimitive(maybe)) {
     return false
   }
 
@@ -50,7 +50,7 @@ export function isPeerRequestMessage(maybe: PeerMessage): maybe is PeerRequestMe
     return false
   }
 
-  if (!isTypescriptObject(maybe.json)) {
+  if (!isNonPrimitive(maybe.json)) {
     return false
   }
 
@@ -70,7 +70,7 @@ export function isPeerResponseMessage(maybe: PeerMessage): maybe is PeerResponse
     return false
   }
 
-  if (!isTypescriptObject(maybe.json)) {
+  if (!isNonPrimitive(maybe.json)) {
     return false
   }
 
@@ -94,7 +94,7 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
     return false
   }
 
-  if (!isTypescriptObject(maybe.json)) {
+  if (!isNonPrimitive(maybe.json)) {
     return false
   }
 
@@ -128,7 +128,7 @@ export function isPeerEventStreamMessage(maybe: PeerMessage): maybe is PeerEvent
 export function isPeerOctetStreamMessage(maybe: PeerMessage): maybe is PeerOctetStreamMessage {
   return (
     maybe.kind === 'octet-stream' &&
-    isTypescriptObject(maybe.json) &&
+    isNonPrimitive(maybe.json) &&
     (typeof maybe.json.close === 'undefined' || typeof maybe.json.close === 'boolean')
   )
 }

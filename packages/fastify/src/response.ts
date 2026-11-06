@@ -1,10 +1,10 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
-  canWriteToNodeResponse,
+  canWriteNodeHttpResponse,
   destroyNodeHttpBody,
-  getNodeResponseError,
-  isNodeResponseDisconnectError,
+  getNodeHttpResponseError,
+  isNodeHttpResponseDisconnectError,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -24,12 +24,12 @@ export async function sendStandardResponse(
   )
 
   return new Promise((resolve, reject) => {
-    if (!canWriteToNodeResponse(reply.raw)) {
-      const error = getNodeResponseError(reply.raw)
+    if (!canWriteNodeHttpResponse(reply.raw)) {
+      const error = getNodeHttpResponseError(reply.raw)
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error && !isNodeResponseDisconnectError(error)) {
+      if (error && !isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -41,7 +41,7 @@ export async function sendStandardResponse(
     const connection = 'stream' in reply.raw ? reply.raw.stream : reply.raw
 
     connection.once('error', (error) => {
-      if (!isNodeResponseDisconnectError(error)) {
+      if (!isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       }
     })

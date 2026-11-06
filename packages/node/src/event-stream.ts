@@ -13,6 +13,11 @@ export function toAsyncIteratorObject(stream: Readable): AsyncIteratorClass<unkn
   return toAsyncIteratorObjectFetch(toWebReadableStream(stream))
 }
 
+export type {
+  ToEventStreamInitialCommentOptions,
+  ToEventStreamKeepAliveOptions,
+} from '@standard-server/fetch'
+
 export interface ToEventStreamOptions extends ToEventStreamOptionsFetch {}
 
 export function toEventStream(

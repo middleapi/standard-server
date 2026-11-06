@@ -1,5 +1,5 @@
 import {
-  ErrorEvent,
+  EventStreamErrorEvent,
   EventStreamDecoderError,
   getEventMeta,
   withEventMeta,
@@ -209,7 +209,7 @@ describe('toAsyncIteratorObject', () => {
     })
 
     await expect(generator.next()).rejects.toSatisfy((error: any) => {
-      expect(error).toBeInstanceOf(ErrorEvent)
+      expect(error).toBeInstanceOf(EventStreamErrorEvent)
       expect(error.data).toEqual({ order: 3 })
       expect(getEventMeta(error)).toEqual({ id: 'id-3', retry: 30000 })
 
@@ -320,7 +320,7 @@ describe('toEventStream', () => {
     expect(await reader.read()).toEqual({ done: true })
   })
 
-  it('with non-ErrorEvent error', async () => {
+  it('with non-EventStreamErrorEvent error', async () => {
     async function* gen() {
       yield withEventMeta({ order: 1 }, { id: 'id-1' })
       yield withEventMeta({ order: 2 }, { retry: 20000 })
@@ -337,12 +337,12 @@ describe('toEventStream', () => {
     await expect(reader.read()).rejects.toThrow('order-4')
   })
 
-  it('with ErrorEvent error', async () => {
+  it('with EventStreamErrorEvent error', async () => {
     async function* gen() {
       yield withEventMeta({ order: 1 }, { id: 'id-1' })
       yield withEventMeta({ order: 2 }, { retry: 20000 })
       yield undefined
-      throw withEventMeta(new ErrorEvent({ order: 4 }), { id: 'id-4', retry: 40000 })
+      throw withEventMeta(new EventStreamErrorEvent({ order: 4 }), { id: 'id-4', retry: 40000 })
     }
 
     const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
@@ -515,8 +515,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: true, interval: 40, comment: 'ping' },
+        initialComment: false,
+        keepAlive: { interval: 40, comment: 'ping' },
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -564,8 +564,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false, interval: 40, comment: 'ping' },
+        initialComment: false,
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -585,6 +585,24 @@ describe('toEventStream', () => {
     })
   })
 
+  it('true uses default initial comment and keep-alive', async () => {
+    async function* gen() {
+      await sleep(15000)
+      yield 'hello'
+    }
+
+    const stream = toEventStream(gen(), { initialComment: true, keepAlive: true })
+
+    const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
+
+    await expect(reader.read()).resolves.toEqual({ done: false, value: ': \n\n' })
+
+    await Promise.all([
+      expect(reader.read()).resolves.toEqual({ done: false, value: ': \n\n' }),
+      vi.advanceTimersByTimeAsync(15000),
+    ])
+  })
+
   describe('initial comment', () => {
     it('enabled', async () => {
       async function* gen() {
@@ -593,8 +611,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: true, comment: 'stream-started' },
-        keepAlive: { enabled: false },
+        initialComment: { comment: 'stream-started' },
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -618,8 +636,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
+        initialComment: false,
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -646,7 +664,7 @@ it.each([[[1, 2, 3, 4, 5, 6]], [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 
             yield value
           }
         })(),
-        { keepAlive: { enabled: true, interval: 10 } },
+        { keepAlive: { interval: 10 } },
       ),
     )
 

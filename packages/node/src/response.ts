@@ -4,10 +4,10 @@ import type { ToNodeHttpBodyOptions } from './body.ts'
 import { toNodeHttpBody } from './body.ts'
 import type { NodeHttpResponse } from './types.ts'
 import {
-  canWriteToNodeResponse,
+  canWriteNodeHttpResponse,
   destroyNodeHttpBody,
-  getNodeResponseError,
-  isNodeResponseDisconnectError,
+  getNodeHttpResponseError,
+  isNodeHttpResponseDisconnectError,
 } from './utils.ts'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
@@ -24,12 +24,12 @@ export async function sendStandardResponse(
   )
 
   return new Promise((resolve, reject) => {
-    if (!canWriteToNodeResponse(res)) {
-      const error = getNodeResponseError(res)
+    if (!canWriteNodeHttpResponse(res)) {
+      const error = getNodeHttpResponseError(res)
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error && !isNodeResponseDisconnectError(error)) {
+      if (error && !isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -41,7 +41,7 @@ export async function sendStandardResponse(
     const connection = 'stream' in res ? res.stream : res
 
     connection.once('error', (error) => {
-      if (!isNodeResponseDisconnectError(error)) {
+      if (!isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       }
     })
@@ -66,7 +66,7 @@ export async function sendStandardResponse(
       } else {
         connection.once('close', () => {
           if (!resBody.closed) {
-            resBody.destroy(getNodeResponseError(res) ?? undefined)
+            resBody.destroy(getNodeHttpResponseError(res) ?? undefined)
           }
         })
 

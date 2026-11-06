@@ -1,6 +1,6 @@
 import {
   encodeEventStreamMessage,
-  ErrorEvent,
+  EventStreamErrorEvent,
   EventStreamDecoderError,
   EventStreamDecoderStream,
   getEventMeta,
@@ -9,7 +9,7 @@ import {
 } from '@standard-server/core'
 import {
   AsyncIteratorClass,
-  isTypescriptObject,
+  isNonPrimitive,
   parseEmptyableJSON,
   stringifyJSON,
 } from '@standard-server/shared'
@@ -44,7 +44,7 @@ export function toAsyncIteratorObject(
           case 'message': {
             let message = parseEmptyableJSON(value.data)
 
-            if (isTypescriptObject(message)) {
+            if (isNonPrimitive(message)) {
               message = withEventMeta(message, value)
             }
 
@@ -52,7 +52,7 @@ export function toAsyncIteratorObject(
           }
 
           case 'error': {
-            let error = new ErrorEvent(parseEmptyableJSON(value.data))
+            let error = new EventStreamErrorEvent(parseEmptyableJSON(value.data))
 
             error = withEventMeta(error, value)
 
@@ -62,7 +62,7 @@ export function toAsyncIteratorObject(
           case 'close': {
             let close = parseEmptyableJSON(value.data)
 
-            if (isTypescriptObject(close)) {
+            if (isNonPrimitive(close)) {
               close = withEventMeta(close, value)
             }
 
@@ -79,70 +79,62 @@ export function toAsyncIteratorObject(
 
 export interface ToEventStreamOptions {
   /**
-   * If enabled, an initial comment is sent immediately upon stream start to flush headers.
-   * This allows the receiving side to establish the connection without waiting for the first event.
+   * Initial comment sent immediately upon stream start to flush headers. This allows the
+   * receiving side to establish the connection without waiting for the first event.
    *
-   * @default { enabled: true }
+   * `false` disables it, {@link ToEventStreamInitialCommentOptions} customizes it.
+   *
+   * @default true
    */
-  initialComment?:
-    | undefined
-    | {
-        /**
-         * If true, an initial comment is sent immediately upon stream start to flush headers.
-         * This allows the receiving side to establish the connection without waiting for the first event.
-         *
-         * @default true
-         */
-        enabled?: boolean
-
-        /**
-         * The content of the initial comment sent upon stream start. Must not include newline characters.
-         *
-         * @default ''
-         */
-        comment?: string
-      }
+  initialComment?: boolean | ToEventStreamInitialCommentOptions | undefined
 
   /**
-   * If enabled, a ping comment is sent periodically to keep the connection alive.
+   * Ping comment sent periodically to keep the connection alive.
    *
-   * @default { enabled: true }
+   * `false` disables it, {@link ToEventStreamKeepAliveOptions} customizes it.
+   *
+   * @default true
    */
-  keepAlive?:
-    | undefined
-    | {
-        /**
-         * If true, a ping comment is sent periodically to keep the connection alive.
-         *
-         * @default true
-         */
-        enabled: boolean
+  keepAlive?: boolean | ToEventStreamKeepAliveOptions | undefined
+}
 
-        /**
-         * Interval (in milliseconds) between ping comments sent after the last event.
-         *
-         * @default 15000
-         */
-        interval?: number
+export interface ToEventStreamInitialCommentOptions {
+  /**
+   * The content of the initial comment sent upon stream start. Must not include newline characters.
+   *
+   * @default ''
+   */
+  comment?: string | undefined
+}
 
-        /**
-         * The content of the ping comment. Must not include newline characters.
-         *
-         * @default ''
-         */
-        comment?: string
-      }
+export interface ToEventStreamKeepAliveOptions {
+  /**
+   * Interval (in milliseconds) between ping comments sent after the last event.
+   *
+   * @default 15000
+   */
+  interval?: number | undefined
+
+  /**
+   * The content of the ping comment. Must not include newline characters.
+   *
+   * @default ''
+   */
+  comment?: string | undefined
 }
 
 export function toEventStream(
   iterator: AsyncIterator<unknown, unknown, void>,
   options: ToEventStreamOptions = {},
 ): ReadableStream<Uint8Array<ArrayBuffer>> {
-  const keepAliveEnabled = options.keepAlive?.enabled ?? true
-  const keepAliveInterval = options.keepAlive?.interval ?? 15000
-  const keepAliveComment = options.keepAlive?.comment ?? ''
-  const initialCommentEnabled = options.initialComment?.enabled ?? true
-  const initialComment = options.initialComment?.comment ?? ''
+  const keepAlive = typeof options.keepAlive === 'object' ? options.keepAlive : {}
+  const initialComment = typeof options.initialComment === 'object' ? options.initialComment : {}
+
+  const keepAliveEnabled = options.keepAlive !== false
+  const keepAliveInterval = keepAlive.interval ?? 15000
+  const keepAliveComment = keepAlive.comment ?? ''
+  const initialCommentEnabled = options.initialComment !== false
+  const initialCommentContent = initialComment.comment ?? ''
 
   let cancelled = false
   let timeout: ReturnType<typeof setInterval> | undefined
@@ -152,7 +144,7 @@ export function toEventStream(
       if (initialCommentEnabled) {
         controller.enqueue(
           encodeEventStreamMessage({
-            comments: [initialComment],
+            comments: [initialCommentContent],
           }),
         )
       }
@@ -179,7 +171,7 @@ export function toEventStream(
           return
         }
 
-        if (err instanceof ErrorEvent) {
+        if (err instanceof EventStreamErrorEvent) {
           controller.enqueue(
             encodeEventStreamMessage({
               ...getEventMeta(err),
@@ -190,7 +182,7 @@ export function toEventStream(
           controller.close()
         } else {
           /**
-           * Should treat a non-ErrorEvent as an error.
+           * Should treat a non-EventStreamErrorEvent as an error.
            */
           controller.error(err)
         }
