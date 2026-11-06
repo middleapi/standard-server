@@ -64,7 +64,7 @@ describe('sendStandardResponse', () => {
   it('buffered (empty)', async () => {
     const responseStream = createResponseStream()
 
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     await sendStandardResponse(
       responseStream,
       {

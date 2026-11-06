@@ -515,8 +515,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: true, interval: 40, comment: 'ping' },
+        initialComment: false,
+        keepAlive: { interval: 40, comment: 'ping' },
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -564,8 +564,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false, interval: 40, comment: 'ping' },
+        initialComment: false,
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -585,6 +585,24 @@ describe('toEventStream', () => {
     })
   })
 
+  it('true uses default initial comment and keep-alive', async () => {
+    async function* gen() {
+      await sleep(15000)
+      yield 'hello'
+    }
+
+    const stream = toEventStream(gen(), { initialComment: true, keepAlive: true })
+
+    const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
+
+    await expect(reader.read()).resolves.toEqual({ done: false, value: ': \n\n' })
+
+    await Promise.all([
+      expect(reader.read()).resolves.toEqual({ done: false, value: ': \n\n' }),
+      vi.advanceTimersByTimeAsync(15000),
+    ])
+  })
+
   describe('initial comment', () => {
     it('enabled', async () => {
       async function* gen() {
@@ -593,8 +611,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: true, comment: 'stream-started' },
-        keepAlive: { enabled: false },
+        initialComment: { comment: 'stream-started' },
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -618,8 +636,8 @@ describe('toEventStream', () => {
       }
 
       const stream = toEventStream(gen(), {
-        initialComment: { enabled: false },
-        keepAlive: { enabled: false },
+        initialComment: false,
+        keepAlive: false,
       })
 
       const reader = stream.pipeThrough(new TextDecoderStream()).getReader()
@@ -646,7 +664,7 @@ it.each([[[1, 2, 3, 4, 5, 6]], [[{ a: 1 }, { b: 2 }, { c: 3 }, { d: 4 }, { e: 5 
             yield value
           }
         })(),
-        { keepAlive: { enabled: true, interval: 10 } },
+        { keepAlive: { interval: 10 } },
       ),
     )
 

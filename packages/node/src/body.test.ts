@@ -821,7 +821,7 @@ describe('toNodeHttpBody', () => {
       yield 123
       return 456
     }
-    const options = { eventStream: { keepAlive: { enabled: true } } }
+    const options = { eventStream: { keepAlive: true } }
     const iterator = gen()
     const [body, headers] = toNodeHttpBody(iterator, baseHeaders, options)
 
