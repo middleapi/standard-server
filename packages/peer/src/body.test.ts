@@ -382,6 +382,48 @@ describe('encodeAtomicStandardBody', () => {
     expect(binary).toBeInstanceOf(Blob)
   })
 
+  it('keeps the case of a mixed-case FormData boundary', async () => {
+    const boundary = '----WebKitFormBoundaryQLr0YLsTkVq7MA89'
+    const OriginalResponse = Response
+    vi.stubGlobal(
+      'Response',
+      class extends OriginalResponse {
+        constructor(...args: ConstructorParameters<typeof Response>) {
+          if (args[0] instanceof FormData) {
+            super(
+              `--${boundary}\r\nContent-Disposition: form-data; name="key"\r\n\r\nvalue\r\n--${boundary}--\r\n`,
+              { headers: { 'content-type': `multipart/form-data; boundary=${boundary}` } },
+            )
+          } else {
+            super(...args)
+          }
+        }
+      },
+    )
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+    })
+
+    const form = new FormData()
+    form.append('key', 'value')
+    const encoded = await encodeAtomicStandardBody(form, {})
+
+    expect(encoded.headers['content-type']).toBe(`multipart/form-data; boundary=${boundary}`)
+
+    const { resolveBody } = toStandardBody(
+      {
+        id: '1',
+        kind: 'request',
+        json: { url: '/upload', headers: encoded.headers, body: encoded.jsonBody },
+        binary: encoded.binary,
+      },
+      vi.fn(),
+    )
+
+    const received = (await resolveBody()) as FormData
+    expect(received.get('key')).toBe('value')
+  })
+
   it('encodes Blob body', async () => {
     const blob = new Blob(['data'], { type: 'text/plain' })
     const { jsonBody, headers, binary } = await encodeAtomicStandardBody(blob, {})

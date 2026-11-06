@@ -153,6 +153,7 @@ export function toNodeHttpBody(
 
   if (body instanceof FormData) {
     const response = new Response(body)
+    // Read before the body: Bun drops the header once a body containing a File is consumed
     headers['content-type'] = response.headers.get('content-type')!
     return [Readable.fromWeb(response.body!), headers]
   }
