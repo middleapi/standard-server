@@ -19,7 +19,7 @@ export interface EncodePeerMessageOptions {
    * Optional string prepended to the encoded message.
    * Used to distinguish messages when multiple protocols share the same peer.
    */
-  prefix?: string
+  prefix?: string | undefined
 }
 
 /**
@@ -66,7 +66,7 @@ export interface DecodePeerMessageOptions {
    * If present and the message does not start with this prefix,
    * the decoder returns `matched: false`.
    */
-  prefix?: string
+  prefix?: string | undefined
 }
 
 /**

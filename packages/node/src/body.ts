@@ -39,7 +39,7 @@ export async function toStandardBody(
   }
 
   const hint =
-    options?.hint ??
+    options.hint ??
     resolveStandardBodyHint({
       'standard-server': req.headers['standard-server'],
       'content-type': req.headers['content-type'],
@@ -97,7 +97,7 @@ export interface ToNodeHttpBodyOptions {
   /**
    * Options for the event stream, like keep-alive settings, initial comment, etc.
    */
-  eventStream?: ToEventStreamOptions
+  eventStream?: ToEventStreamOptions | undefined
 }
 
 /**

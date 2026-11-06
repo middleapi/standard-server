@@ -6,7 +6,7 @@ export interface GetOrBindOptions {
    *
    * @default true
    */
-  bind?: boolean
+  bind?: boolean | undefined
 }
 
 export function getOrBind<T extends object, K extends PropertyKey>(
