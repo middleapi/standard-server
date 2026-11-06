@@ -14,9 +14,9 @@ export function hasAnyDefinedValue(object: Record<string, unknown>): boolean {
 }
 
 /**
- * Checks whether the provided container is a typescript object (object or function).
+ * Checks whether the value is non-primitive: a non-null object or a function.
  */
-export function isTypescriptObject(
+export function isNonPrimitive(
   maybeObject: unknown,
 ): maybeObject is object & Record<PropertyKey, unknown> {
   if (!maybeObject) {
@@ -26,3 +26,8 @@ export function isTypescriptObject(
   const type = typeof maybeObject
   return type === 'object' || type === 'function'
 }
+
+/**
+ * @deprecated Use {@link isNonPrimitive} instead.
+ */
+export const isTypescriptObject: typeof isNonPrimitive = isNonPrimitive

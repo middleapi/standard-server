@@ -1,10 +1,10 @@
 import type { StandardResponse } from '@standard-server/core'
 import type { ToNodeHttpBodyOptions } from '@standard-server/node'
 import {
-  canWriteToNodeResponse,
+  canWriteNodeHttpResponse,
   destroyNodeHttpBody,
-  getNodeResponseError,
-  isNodeResponseDisconnectError,
+  getNodeHttpResponseError,
+  isNodeHttpResponseDisconnectError,
   toNodeHttpBody,
 } from '@standard-server/node'
 
@@ -36,12 +36,12 @@ export async function sendStandardResponse(
   )
 
   return new Promise((resolve, reject) => {
-    if (!canWriteToNodeResponse(responseStream)) {
-      const error = getNodeResponseError(responseStream)
+    if (!canWriteNodeHttpResponse(responseStream)) {
+      const error = getNodeHttpResponseError(responseStream)
 
       destroyNodeHttpBody(resBody, error, reject)
 
-      if (error && !isNodeResponseDisconnectError(error)) {
+      if (error && !isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       } else {
         resolve()
@@ -51,7 +51,7 @@ export async function sendStandardResponse(
     }
 
     responseStream.once('error', (error) => {
-      if (!isNodeResponseDisconnectError(error)) {
+      if (!isNodeHttpResponseDisconnectError(error)) {
         reject(error)
       }
     })
@@ -80,7 +80,7 @@ export async function sendStandardResponse(
       } else {
         res.once('close', () => {
           if (!resBody.closed) {
-            resBody.destroy(getNodeResponseError(res) ?? undefined)
+            resBody.destroy(getNodeHttpResponseError(res) ?? undefined)
           }
         })
 

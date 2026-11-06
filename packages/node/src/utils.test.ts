@@ -10,14 +10,14 @@ import { Readable } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import {
-  canWriteToNodeResponse,
+  canWriteNodeHttpResponse,
   destroyNodeHttpBody,
-  getNodeResponseError,
-  isNodeResponseDisconnectError,
+  getNodeHttpResponseError,
+  isNodeHttpResponseDisconnectError,
   toWebReadableStream,
 } from './utils.ts'
 
-describe('canWriteToNodeResponse', () => {
+describe('canWriteNodeHttpResponse', () => {
   it('on http1 response aborted by client', async ({ onTestFinished }) => {
     const server = http.createServer()
     onTestFinished(() => new Promise<any>((r) => server.close(r)))
@@ -25,11 +25,11 @@ describe('canWriteToNodeResponse', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           await new Promise<void>((r) => res.once('close', () => r()))
 
-          expect(canWriteToNodeResponse(res)).toBe(false)
+          expect(canWriteNodeHttpResponse(res)).toBe(false)
 
           resolve()
         } catch (error) {
@@ -59,12 +59,12 @@ describe('canWriteToNodeResponse', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           res.end('ok')
 
           await vi.waitFor(() => {
-            expect(canWriteToNodeResponse(res)).toBe(false)
+            expect(canWriteNodeHttpResponse(res)).toBe(false)
           })
 
           resolve()
@@ -89,12 +89,12 @@ describe('canWriteToNodeResponse', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           res.flushHeaders()
 
           expect(res.headersSent).toBe(true)
-          expect(canWriteToNodeResponse(res)).toBe(false)
+          expect(canWriteNodeHttpResponse(res)).toBe(false)
 
           res.end()
 
@@ -120,11 +120,11 @@ describe('canWriteToNodeResponse', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           await new Promise<void>((r) => res.stream.once('close', () => r()))
 
-          expect(canWriteToNodeResponse(res)).toBe(false)
+          expect(canWriteNodeHttpResponse(res)).toBe(false)
 
           resolve()
         } catch (error) {
@@ -155,12 +155,12 @@ describe('canWriteToNodeResponse', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           res.end('ok')
 
           await vi.waitFor(() => {
-            expect(canWriteToNodeResponse(res)).toBe(false)
+            expect(canWriteNodeHttpResponse(res)).toBe(false)
           })
 
           resolve()
@@ -189,11 +189,11 @@ describe('canWriteToNodeResponse', () => {
       server.on('request', async (req, res) => {
         try {
           expect(res.stream.writableEnded).toBe(true)
-          expect(canWriteToNodeResponse(res)).toBe(true)
+          expect(canWriteNodeHttpResponse(res)).toBe(true)
 
           res.end()
 
-          expect(canWriteToNodeResponse(res)).toBe(false)
+          expect(canWriteNodeHttpResponse(res)).toBe(false)
 
           resolve()
         } catch (error) {
@@ -214,7 +214,7 @@ describe('canWriteToNodeResponse', () => {
   })
 })
 
-describe('getNodeResponseError', () => {
+describe('getNodeHttpResponseError', () => {
   it('on http1 response destroyed with an error', async ({ onTestFinished }) => {
     const server = http.createServer()
     onTestFinished(() => new Promise<any>((r) => server.close(r)))
@@ -224,7 +224,7 @@ describe('getNodeResponseError', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(getNodeResponseError(res)).toBe(null)
+          expect(getNodeHttpResponseError(res)).toBe(null)
 
           // catch error
           res.once('error', () => {})
@@ -232,7 +232,7 @@ describe('getNodeResponseError', () => {
 
           await new Promise<void>((r) => res.once('close', () => r()))
 
-          expect(getNodeResponseError(res)).toBe(error)
+          expect(getNodeHttpResponseError(res)).toBe(error)
 
           resolve()
         } catch (error) {
@@ -260,7 +260,7 @@ describe('getNodeResponseError', () => {
 
           await new Promise<void>((r) => res.once('close', () => r()))
 
-          expect(getNodeResponseError(res)).toBe(null)
+          expect(getNodeHttpResponseError(res)).toBe(null)
 
           resolve()
         } catch (error) {
@@ -286,7 +286,7 @@ describe('getNodeResponseError', () => {
     const handled = new Promise<void>((resolve, reject) => {
       server.on('request', async (req, res) => {
         try {
-          expect(getNodeResponseError(res)).toBe(null)
+          expect(getNodeHttpResponseError(res)).toBe(null)
 
           // catch error
           res.stream.once('error', () => {})
@@ -294,7 +294,7 @@ describe('getNodeResponseError', () => {
 
           await new Promise<void>((r) => res.stream.once('close', () => r()))
 
-          expect(getNodeResponseError(res)).toBe(error)
+          expect(getNodeHttpResponseError(res)).toBe(error)
 
           // `Http2ServerResponse` extends `Stream`, not `Writable`, so the error is only
           // reachable through the underlying `Http2Stream` - reading it off the response
@@ -329,7 +329,7 @@ describe('getNodeResponseError', () => {
 
           await new Promise<void>((r) => res.stream.once('close', () => r()))
 
-          expect(getNodeResponseError(res)).toBe(null)
+          expect(getNodeHttpResponseError(res)).toBe(null)
 
           resolve()
         } catch (error) {
@@ -350,11 +350,13 @@ describe('getNodeResponseError', () => {
   })
 })
 
-describe('isNodeResponseDisconnectError', () => {
+describe('isNodeHttpResponseDisconnectError', () => {
   it.each(['ERR_HTTP2_STREAM_ERROR', 'ERR_HTTP2_SESSION_ERROR', 'ECONNRESET', 'EPIPE'])(
     'on an error with code %s',
     (code) => {
-      expect(isNodeResponseDisconnectError(Object.assign(new Error('test'), { code }))).toBe(true)
+      expect(isNodeHttpResponseDisconnectError(Object.assign(new Error('test'), { code }))).toBe(
+        true,
+      )
     },
   )
 
@@ -365,7 +367,7 @@ describe('isNodeResponseDisconnectError', () => {
       Object.assign(new Error('test'), { code: 'ERR_STREAM_WRITE_AFTER_END' }),
     ],
   ])('on %s', (_, error) => {
-    expect(isNodeResponseDisconnectError(error)).toBe(false)
+    expect(isNodeHttpResponseDisconnectError(error)).toBe(false)
   })
 })
 
@@ -813,4 +815,11 @@ describe('toWebReadableStream', () => {
 
     expect(crashes).toEqual([])
   })
+})
+
+it('deprecated node response helper aliases', async () => {
+  const utils = await import('./utils.ts')
+  expect(utils.canWriteToNodeResponse).toBe(utils.canWriteNodeHttpResponse)
+  expect(utils.getNodeResponseError).toBe(utils.getNodeHttpResponseError)
+  expect(utils.isNodeResponseDisconnectError).toBe(utils.isNodeHttpResponseDisconnectError)
 })

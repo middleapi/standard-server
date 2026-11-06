@@ -78,7 +78,7 @@ async function _drainIterator(iterator: AsyncIterator<unknown>): Promise<void> {
 /**
  * Check the response can still be sent.
  */
-export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse): boolean {
+export function canWriteNodeHttpResponse(res: Stream.Writable | NodeHttpResponse): boolean {
   return (
     !('headersSent' in res && res.headersSent) &&
     !res.writableEnded &&
@@ -89,7 +89,7 @@ export function canWriteToNodeResponse(res: Stream.Writable | NodeHttpResponse):
 /**
  * Get the error of the response, preferring its underlying stream's (http2).
  */
-export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): Error | null {
+export function getNodeHttpResponseError(res: Stream.Writable | NodeHttpResponse): Error | null {
   if ('stream' in res) {
     return res.stream.errored ?? res.errored ?? null
   }
@@ -97,7 +97,7 @@ export function getNodeResponseError(res: Stream.Writable | NodeHttpResponse): E
   return res.errored
 }
 
-const NODE_RESPONSE_DISCONNECT_ERROR_CODES = new Set<unknown>([
+const NODE_HTTP_RESPONSE_DISCONNECT_ERROR_CODES = new Set<unknown>([
   'ERR_HTTP2_STREAM_ERROR',
   'ERR_HTTP2_SESSION_ERROR',
   'ECONNRESET',
@@ -110,8 +110,8 @@ const NODE_RESPONSE_DISCONNECT_ERROR_CODES = new Set<unknown>([
  * A client disconnect only closes an http1 response, while on http2 it usually errors
  * the response too, so these errors should be handled like a plain close.
  */
-export function isNodeResponseDisconnectError(error: Error): boolean {
-  return NODE_RESPONSE_DISCONNECT_ERROR_CODES.has((error as { code?: unknown }).code)
+export function isNodeHttpResponseDisconnectError(error: Error): boolean {
+  return NODE_HTTP_RESPONSE_DISCONNECT_ERROR_CODES.has((error as { code?: unknown }).code)
 }
 
 /**
@@ -128,3 +128,19 @@ export function destroyNodeHttpBody(
     body.destroy((error ?? undefined) as Error | undefined)
   }
 }
+
+/**
+ * @deprecated Use {@link canWriteNodeHttpResponse} instead.
+ */
+export const canWriteToNodeResponse: typeof canWriteNodeHttpResponse = canWriteNodeHttpResponse
+
+/**
+ * @deprecated Use {@link getNodeHttpResponseError} instead.
+ */
+export const getNodeResponseError: typeof getNodeHttpResponseError = getNodeHttpResponseError
+
+/**
+ * @deprecated Use {@link isNodeHttpResponseDisconnectError} instead.
+ */
+export const isNodeResponseDisconnectError: typeof isNodeHttpResponseDisconnectError =
+  isNodeHttpResponseDisconnectError

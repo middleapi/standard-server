@@ -1,4 +1,4 @@
-import { isTypescriptObject } from '@standard-server/shared'
+import { isNonPrimitive } from '@standard-server/shared'
 
 import type {
   StandardHeaders,
@@ -17,7 +17,7 @@ export function isStandardUrl(maybe: unknown): maybe is StandardUrl {
 }
 
 export function isStandardHeaders(maybe: unknown): maybe is StandardHeaders {
-  if (!isTypescriptObject(maybe)) {
+  if (!isNonPrimitive(maybe)) {
     return false
   }
 
@@ -34,7 +34,7 @@ export function isStandardStatus(maybe: unknown): maybe is number {
 }
 
 export function isStandardRequest(maybe: unknown): maybe is StandardRequest {
-  if (!isTypescriptObject(maybe)) {
+  if (!isNonPrimitive(maybe)) {
     return false
   }
 
@@ -48,7 +48,7 @@ export function isStandardRequest(maybe: unknown): maybe is StandardRequest {
 }
 
 export function isStandardResponse(maybe: unknown): maybe is StandardResponse {
-  if (!isTypescriptObject(maybe)) {
+  if (!isNonPrimitive(maybe)) {
     return false
   }
 

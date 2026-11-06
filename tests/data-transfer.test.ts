@@ -1,4 +1,4 @@
-import { ErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
+import { EventStreamErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
@@ -366,7 +366,7 @@ describe.each([
         yield 'order1'
         await sleep(CHUNK_DELAY)
         yield withEventMeta({ order: 2 }, { id: 'id-2' })
-        throw withEventMeta(new ErrorEvent({ order: 3 }), { comments: ['order3'] })
+        throw withEventMeta(new EventStreamErrorEvent({ order: 3 }), { comments: ['order3'] })
       })(),
     })
 
@@ -394,8 +394,8 @@ describe.each([
     expect(Date.now() - start).toBeLessThan(PARALLEL_THRESHOLD)
     start = Date.now()
 
-    await expect(body.next()).rejects.toSatisfy((error: ErrorEvent) => {
-      expect(error).toBeInstanceOf(ErrorEvent)
+    await expect(body.next()).rejects.toSatisfy((error: EventStreamErrorEvent) => {
+      expect(error).toBeInstanceOf(EventStreamErrorEvent)
       const [err, errMeta] = unwrapEvent(error)
       expect(err.data).toEqual({ order: 3 })
       expect(errMeta).toEqual({ comments: ['order3'] })

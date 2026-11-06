@@ -3,7 +3,7 @@ import type Stream from 'node:stream'
 import { AbortError } from '@standard-server/shared'
 
 import type { NodeHttpResponse } from './types.ts'
-import { getNodeResponseError } from './utils.ts'
+import { getNodeHttpResponseError } from './utils.ts'
 
 export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSignal {
   const controller = new AbortController()
@@ -13,7 +13,7 @@ export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSig
   const onClose = () => {
     if (!res.writableEnded) {
       controller.abort(
-        getNodeResponseError(res) ??
+        getNodeHttpResponseError(res) ??
           new AbortError('Writable stream closed before it finished writing'),
       )
     }

@@ -1,6 +1,6 @@
 import {
   encodeEventStreamMessage,
-  ErrorEvent,
+  EventStreamErrorEvent,
   EventStreamDecoderError,
   EventStreamDecoderStream,
   getEventMeta,
@@ -9,7 +9,7 @@ import {
 } from '@standard-server/core'
 import {
   AsyncIteratorClass,
-  isTypescriptObject,
+  isNonPrimitive,
   parseEmptyableJSON,
   stringifyJSON,
 } from '@standard-server/shared'
@@ -44,7 +44,7 @@ export function toAsyncIteratorObject(
           case 'message': {
             let message = parseEmptyableJSON(value.data)
 
-            if (isTypescriptObject(message)) {
+            if (isNonPrimitive(message)) {
               message = withEventMeta(message, value)
             }
 
@@ -52,7 +52,7 @@ export function toAsyncIteratorObject(
           }
 
           case 'error': {
-            let error = new ErrorEvent(parseEmptyableJSON(value.data))
+            let error = new EventStreamErrorEvent(parseEmptyableJSON(value.data))
 
             error = withEventMeta(error, value)
 
@@ -62,7 +62,7 @@ export function toAsyncIteratorObject(
           case 'close': {
             let close = parseEmptyableJSON(value.data)
 
-            if (isTypescriptObject(close)) {
+            if (isNonPrimitive(close)) {
               close = withEventMeta(close, value)
             }
 
@@ -171,7 +171,7 @@ export function toEventStream(
           return
         }
 
-        if (err instanceof ErrorEvent) {
+        if (err instanceof EventStreamErrorEvent) {
           controller.enqueue(
             encodeEventStreamMessage({
               ...getEventMeta(err),

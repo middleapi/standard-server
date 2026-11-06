@@ -164,7 +164,7 @@ Standard Server uses [AsyncIteratorObject](https://developer.mozilla.org/en-US/d
 
 ```ts
 import type { StandardResponse } from '@standard-server/core'
-import { ErrorEvent, withEventMeta } from '@standard-server/core'
+import { EventStreamErrorEvent, withEventMeta } from '@standard-server/core'
 
 const response: StandardResponse = {
   status: 200,
@@ -175,7 +175,7 @@ const response: StandardResponse = {
       { id: '1', retry: 3000, comments: ['hidden'] },
     )
 
-    throw new ErrorEvent({ message: 'Something went wrong' })
+    throw new EventStreamErrorEvent({ message: 'Something went wrong' })
 
     return { message: 'This is the end of the stream' }
   })(),
@@ -463,13 +463,13 @@ The package also exports:
 
 - `EventStreamEncoderError` for invalid outbound SSE messages
 - `EventStreamDecoderError` for incomplete or invalid inbound stream decoding
-- `ErrorEvent` for wrapping structured event-stream error payloads in an `Error`
-- `assertEventStreamMessageId()`, `assertEventStreamMessageName()`, `assertEventStreamMessageRetry()`, and `assertEventStreamMessageComment()` for low-level validation when building custom SSE tooling
+- `EventStreamErrorEvent` for wrapping structured event-stream error payloads in an `Error`
+- `assertEventStreamMessageId()`, `assertEventStreamMessageEvent()`, `assertEventStreamMessageRetry()`, and `assertEventStreamMessageComment()` for low-level validation when building custom SSE tooling
 
 ```ts
-import { ErrorEvent } from '@standard-server/core'
+import { EventStreamErrorEvent } from '@standard-server/core'
 
-const error = new ErrorEvent(
+const error = new EventStreamErrorEvent(
   { code: 'E_STREAM', detail: 'Connection lost' },
   { message: 'stream error' },
 )

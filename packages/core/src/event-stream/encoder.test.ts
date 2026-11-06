@@ -2,7 +2,7 @@ import { decodeEventStreamMessage } from './decoder.ts'
 import {
   assertEventStreamMessageComment,
   assertEventStreamMessageId,
-  assertEventStreamMessageName,
+  assertEventStreamMessageEvent,
   assertEventStreamMessageRetry,
   encodeEventStreamMessage,
   encodeEventStreamMessageComments,
@@ -51,7 +51,7 @@ describe('predicates', () => {
 describe('assertions', () => {
   it('accept values without line breaks', () => {
     expect(() => assertEventStreamMessageId('123')).not.toThrow()
-    expect(() => assertEventStreamMessageName('message')).not.toThrow()
+    expect(() => assertEventStreamMessageEvent('message')).not.toThrow()
     expect(() => assertEventStreamMessageComment('hi')).not.toThrow()
     expect(() => assertEventStreamMessageRetry(0)).not.toThrow()
     expect(() => assertEventStreamMessageRetry(10000)).not.toThrow()
@@ -67,7 +67,7 @@ describe('assertions', () => {
 
   it('reject event names containing line breaks', () => {
     for (const lineBreak of ['\n', '\r', '\r\n']) {
-      expect(() => assertEventStreamMessageName(`hi${lineBreak}`)).toThrow(
+      expect(() => assertEventStreamMessageEvent(`hi${lineBreak}`)).toThrow(
         "Event's event must not contain a carriage return or newline character",
       )
     }
@@ -224,4 +224,9 @@ describe('encodeEventStreamMessage', () => {
       ).toThrow("Event's comment must not contain a carriage return or newline character")
     }
   })
+})
+
+it('deprecated assertEventStreamMessageName alias', async () => {
+  const encoder = await import('./encoder.ts')
+  expect(encoder.assertEventStreamMessageName).toBe(encoder.assertEventStreamMessageEvent)
 })

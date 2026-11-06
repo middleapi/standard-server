@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'bun:test'
 
-import { ErrorEvent } from '@standard-server/core'
+import { EventStreamErrorEvent } from '@standard-server/core'
 import { toFetchResponse } from '@standard-server/fetch'
 
 let createBody: () => AsyncGenerator
@@ -58,7 +58,7 @@ describe.skipIf(typeof EventSource === 'undefined')('eventSource', () => {
   it('receives message and error events', async () => {
     createBody = async function* () {
       yield 'hello'
-      throw new ErrorEvent({ code: 'BOOM' })
+      throw new EventStreamErrorEvent({ code: 'BOOM' })
     }
 
     expect(await receive()).toEqual([

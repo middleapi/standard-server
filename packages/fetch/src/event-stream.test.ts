@@ -1,5 +1,5 @@
 import {
-  ErrorEvent,
+  EventStreamErrorEvent,
   EventStreamDecoderError,
   getEventMeta,
   withEventMeta,
@@ -209,7 +209,7 @@ describe('toAsyncIteratorObject', () => {
     })
 
     await expect(generator.next()).rejects.toSatisfy((error: any) => {
-      expect(error).toBeInstanceOf(ErrorEvent)
+      expect(error).toBeInstanceOf(EventStreamErrorEvent)
       expect(error.data).toEqual({ order: 3 })
       expect(getEventMeta(error)).toEqual({ id: 'id-3', retry: 30000 })
 
@@ -337,12 +337,12 @@ describe('toEventStream', () => {
     await expect(reader.read()).rejects.toThrow('order-4')
   })
 
-  it('with ErrorEvent error', async () => {
+  it('with EventStreamErrorEvent error', async () => {
     async function* gen() {
       yield withEventMeta({ order: 1 }, { id: 'id-1' })
       yield withEventMeta({ order: 2 }, { retry: 20000 })
       yield undefined
-      throw withEventMeta(new ErrorEvent({ order: 4 }), { id: 'id-4', retry: 40000 })
+      throw withEventMeta(new EventStreamErrorEvent({ order: 4 }), { id: 'id-4', retry: 40000 })
     }
 
     const reader = toEventStream(gen()).pipeThrough(new TextDecoderStream()).getReader()
