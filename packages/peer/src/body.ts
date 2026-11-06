@@ -185,11 +185,12 @@ export async function encodeAtomicStandardBody(
 
   if (body instanceof FormData) {
     const res = new Response(body)
+    // Read before the body: Bun drops the header once a body containing a File is consumed
+    headers['content-type'] = res.headers.get('content-type')!
     const blob = await res.blob()
 
     // standard-server used to distinguish file vs. form-data
     headers['standard-server'] = 'form-data' satisfies StandardBodyHint
-    headers['content-type'] = blob.type
     headers['content-length'] = blob.size.toString()
 
     return { jsonBody: undefined, headers, binary: blob }
