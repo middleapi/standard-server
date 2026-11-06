@@ -20,8 +20,3 @@ it('isNonPrimitive', () => {
   expect(isNonPrimitive(new Date())).toBe(true)
   expect(isNonPrimitive(() => {})).toBe(true)
 })
-
-it('deprecated isTypescriptObject alias', async () => {
-  const { isTypescriptObject } = await import('./object.ts')
-  expect(isTypescriptObject).toBe(isNonPrimitive)
-})

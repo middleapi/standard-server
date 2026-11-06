@@ -182,7 +182,7 @@ export function toEventStream(
           controller.close()
         } else {
           /**
-           * Should treat a non-ErrorEvent as an error.
+           * Should treat a non-EventStreamErrorEvent as an error.
            */
           controller.error(err)
         }

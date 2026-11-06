@@ -816,10 +816,3 @@ describe('toWebReadableStream', () => {
     expect(crashes).toEqual([])
   })
 })
-
-it('deprecated node response helper aliases', async () => {
-  const utils = await import('./utils.ts')
-  expect(utils.canWriteToNodeResponse).toBe(utils.canWriteNodeHttpResponse)
-  expect(utils.getNodeResponseError).toBe(utils.getNodeHttpResponseError)
-  expect(utils.isNodeResponseDisconnectError).toBe(utils.isNodeHttpResponseDisconnectError)
-})

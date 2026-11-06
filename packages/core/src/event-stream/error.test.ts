@@ -12,9 +12,3 @@ it('errorEvent', () => {
   })
   expect(errorEventWithCustomMessage.message).toBe('custom message')
 })
-
-it('deprecated ErrorEvent alias', async () => {
-  const { ErrorEvent } = await import('./error.ts')
-  expect(ErrorEvent).toBe(EventStreamErrorEvent)
-  expect(new ErrorEvent('data')).toBeInstanceOf(EventStreamErrorEvent)
-})

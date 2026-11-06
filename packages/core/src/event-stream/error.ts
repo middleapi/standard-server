@@ -13,18 +13,3 @@ export class EventStreamErrorEvent extends Error {
     super(options.message ?? 'Error Event', options)
   }
 }
-
-/**
- * @deprecated Use {@link EventStreamErrorEventOptions} instead.
- */
-export interface ErrorEventOptions extends EventStreamErrorEventOptions {}
-
-/**
- * @deprecated Use {@link EventStreamErrorEvent} instead. `ErrorEvent` shadows the global `ErrorEvent`.
- */
-export const ErrorEvent: typeof EventStreamErrorEvent = EventStreamErrorEvent
-
-/**
- * @deprecated Use {@link EventStreamErrorEvent} instead. `ErrorEvent` shadows the global `ErrorEvent`.
- */
-export type ErrorEvent = EventStreamErrorEvent

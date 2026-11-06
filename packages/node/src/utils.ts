@@ -128,19 +128,3 @@ export function destroyNodeHttpBody(
     body.destroy((error ?? undefined) as Error | undefined)
   }
 }
-
-/**
- * @deprecated Use {@link canWriteNodeHttpResponse} instead.
- */
-export const canWriteToNodeResponse: typeof canWriteNodeHttpResponse = canWriteNodeHttpResponse
-
-/**
- * @deprecated Use {@link getNodeHttpResponseError} instead.
- */
-export const getNodeResponseError: typeof getNodeHttpResponseError = getNodeHttpResponseError
-
-/**
- * @deprecated Use {@link isNodeHttpResponseDisconnectError} instead.
- */
-export const isNodeResponseDisconnectError: typeof isNodeHttpResponseDisconnectError =
-  isNodeHttpResponseDisconnectError

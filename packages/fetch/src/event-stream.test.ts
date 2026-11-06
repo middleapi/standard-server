@@ -320,7 +320,7 @@ describe('toEventStream', () => {
     expect(await reader.read()).toEqual({ done: true })
   })
 
-  it('with non-ErrorEvent error', async () => {
+  it('with non-EventStreamErrorEvent error', async () => {
     async function* gen() {
       yield withEventMeta({ order: 1 }, { id: 'id-1' })
       yield withEventMeta({ order: 2 }, { retry: 20000 })

@@ -39,12 +39,6 @@ export function assertEventStreamMessageEvent(event: string): void {
   }
 }
 
-/**
- * @deprecated Use {@link assertEventStreamMessageEvent} instead.
- */
-export const assertEventStreamMessageName: typeof assertEventStreamMessageEvent =
-  assertEventStreamMessageEvent
-
 export function assertEventStreamMessageRetry(retry: number): void {
   if (!isEventStreamMessageRetry(retry)) {
     throw new EventStreamEncoderError("Event's retry must be a integer and >= 0")

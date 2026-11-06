@@ -26,8 +26,3 @@ export function isNonPrimitive(
   const type = typeof maybeObject
   return type === 'object' || type === 'function'
 }
-
-/**
- * @deprecated Use {@link isNonPrimitive} instead.
- */
-export const isTypescriptObject: typeof isNonPrimitive = isNonPrimitive

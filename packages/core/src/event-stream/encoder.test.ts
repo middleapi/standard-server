@@ -225,8 +225,3 @@ describe('encodeEventStreamMessage', () => {
     }
   })
 })
-
-it('deprecated assertEventStreamMessageName alias', async () => {
-  const encoder = await import('./encoder.ts')
-  expect(encoder.assertEventStreamMessageName).toBe(encoder.assertEventStreamMessageEvent)
-})
