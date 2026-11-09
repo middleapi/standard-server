@@ -2,8 +2,8 @@ import { Buffer } from 'node:buffer'
 
 import type { AsyncIteratorClass } from '@standard-server/shared'
 
-import { toStandardBody } from './body.ts'
-import type { AnyAPIGatewayProxyEvent, APIGatewayProxyEvent } from './types.ts'
+import { toStandardBody } from './body'
+import type { AnyAPIGatewayProxyEvent, APIGatewayProxyEvent } from './types'
 
 function event(override: Partial<APIGatewayProxyEvent>): APIGatewayProxyEvent {
   return {

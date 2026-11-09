@@ -6,7 +6,7 @@ import {
   toStandardUrl,
 } from '@standard-server/node'
 
-import type { AnyFastifyReply, AnyFastifyRequest } from './types.ts'
+import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 
 export function toStandardLazyRequest(
   req: AnyFastifyRequest,

@@ -7,7 +7,7 @@ import * as StandardServerNode from '@standard-server/node'
 import Fastify from 'fastify'
 import request from 'supertest'
 
-import { sendStandardResponse } from './response.ts'
+import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
 

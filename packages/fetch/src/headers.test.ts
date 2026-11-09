@@ -1,6 +1,6 @@
 import type { StandardHeaders } from '@standard-server/core'
 
-import { toFetchHeaders, toStandardHeaders } from './headers.ts'
+import { toFetchHeaders, toStandardHeaders } from './headers'
 
 it('toStandardHeaders', () => {
   const headers = new Headers()

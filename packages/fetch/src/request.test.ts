@@ -1,7 +1,7 @@
-import * as Body from './body.ts'
-import * as Headers from './headers.ts'
-import { toStandardLazyRequest } from './request.ts'
-import * as Url from './url.ts'
+import * as Body from './body'
+import * as Headers from './headers'
+import { toStandardLazyRequest } from './request'
+import * as Url from './url'
 
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')
 const toFetchBodySpy = vi.spyOn(Body, 'toFetchBody')

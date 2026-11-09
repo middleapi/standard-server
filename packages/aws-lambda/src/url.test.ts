@@ -1,4 +1,4 @@
-import { toStandardUrl } from './url.ts'
+import { toStandardUrl } from './url'
 
 describe('toStandardUrl (v2)', () => {
   it('works without query string', () => {

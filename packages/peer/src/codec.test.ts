@@ -1,5 +1,5 @@
-import { decodePeerMessage, encodePeerMessage } from './codec.ts'
-import type { PeerMessage } from './types.ts'
+import { decodePeerMessage, encodePeerMessage } from './codec'
+import type { PeerMessage } from './types'
 
 describe('codec', () => {
   it('handles simple message (JSON only)', async () => {

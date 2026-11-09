@@ -2,7 +2,7 @@ import type { StandardHeaders } from '@standard-server/core'
 import type { NodeHttpRequest, NodeHttpResponse } from '@standard-server/node'
 import Fastify from 'fastify'
 
-import type { AnyFastifyReply, AnyFastifyRequest } from './types.ts'
+import type { AnyFastifyReply, AnyFastifyRequest } from './types'
 
 /**
  * Passing a concrete fastify request/reply here only compiles if the widened

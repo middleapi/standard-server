@@ -1,5 +1,5 @@
-import { sequential } from './function.ts'
-import type { AsyncCleanupFn } from './types.ts'
+import { sequential } from './function'
+import type { AsyncCleanupFn } from './types'
 
 export function isAsyncIteratorObject(maybe: unknown): maybe is AsyncIteratorObject<any, any, any> {
   if (!maybe || typeof maybe !== 'object') {
@@ -23,6 +23,16 @@ const fallbackAsyncDisposeSymbol: unique symbol = Symbol.for('Symbol.asyncDispos
 const asyncDisposeSymbol: typeof Symbol extends { asyncDispose: infer T }
   ? T
   : typeof fallbackAsyncDisposeSymbol = (Symbol as any).asyncDispose ?? fallbackAsyncDisposeSymbol
+
+// Declared here and defined after the class, because isolated declarations can't
+// infer a class member named by `asyncDisposeSymbol`, whose type is conditional.
+// oxlint-disable-next-line typescript/no-unsafe-declaration-merging, no-unused-vars
+export interface AsyncIteratorClass<T, TReturn = unknown, TNext = unknown> {
+  /**
+   * Uses the native Symbol.asyncDispose, or Symbol.for('Symbol.asyncDispose') on runtimes without it
+   */
+  [asyncDisposeSymbol](): Promise<void>
+}
 
 export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown>
   implements AsyncIteratorObject<T, TReturn, TNext>, AsyncGenerator<T, TReturn, TNext>
@@ -97,18 +107,15 @@ export class AsyncIteratorClass<T, TReturn = unknown, TNext = unknown>
     throw error
   }
 
-  /**
-   * Uses the native Symbol.asyncDispose, or Symbol.for('Symbol.asyncDispose') on runtimes without it
-   */
-  async [asyncDisposeSymbol](): Promise<void> {
-    this.isDone = true
-    if (!this.isExecuteComplete) {
-      this.isExecuteComplete = true
-      await this.cleanup({ kind: 'cancelled' })
-    }
-  }
-
   [Symbol.asyncIterator](): this {
     return this
   }
 }
+
+Object.defineProperty(AsyncIteratorClass.prototype, asyncDisposeSymbol, {
+  async value(this: AsyncIteratorClass<unknown>): Promise<void> {
+    await this.return()
+  },
+  writable: true,
+  configurable: true,
+})

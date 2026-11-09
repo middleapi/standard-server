@@ -8,7 +8,7 @@ import {
   toNodeHttpBody,
 } from '@standard-server/node'
 
-import type { AnyFastifyReply } from './types.ts'
+import type { AnyFastifyReply } from './types'
 
 export interface SendStandardResponseOptions extends ToNodeHttpBodyOptions {}
 

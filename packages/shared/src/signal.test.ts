@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { anyAbortSignal, throwIfAborted } from './signal.ts'
+import { anyAbortSignal, throwIfAborted } from './signal'
 
 /**
  * Helper to temporarily disable AbortSignal.any to force fallback implementation.

@@ -2,7 +2,7 @@ import { EventStreamErrorEvent, unwrapEvent, withEventMeta } from '@standard-ser
 import type { AsyncCleanupFn, Queue } from '@standard-server/shared'
 import { AsyncIteratorClass, isNonPrimitive } from '@standard-server/shared'
 
-import type { PeerEventStreamMessage } from './types.ts'
+import type { PeerEventStreamMessage } from './types'
 
 export function toAsyncIteratorObject(
   queue: Queue<PeerEventStreamMessage>,

@@ -4,8 +4,8 @@ import Stream from 'node:stream'
 import type { StandardResponse } from '@standard-server/core'
 import * as StandardServerNode from '@standard-server/node'
 
-import { sendStandardResponse } from './response.ts'
-import type { HttpResponseStream } from './types.ts'
+import { sendStandardResponse } from './response'
+import type { HttpResponseStream } from './types'
 
 const toNodeHttpBodySpy = vi.spyOn(StandardServerNode, 'toNodeHttpBody')
 

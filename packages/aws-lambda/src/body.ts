@@ -9,8 +9,8 @@ import {
 import { toAsyncIteratorObject } from '@standard-server/fetch'
 import { parseEmptyableJSON } from '@standard-server/shared'
 
-import { toStandardHeaders } from './headers.ts'
-import type { AnyAPIGatewayProxyEvent } from './types.ts'
+import { toStandardHeaders } from './headers'
+import type { AnyAPIGatewayProxyEvent } from './types'
 
 export interface ToStandardBodyOptions {
   /**

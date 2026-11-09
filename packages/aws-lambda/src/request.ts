@@ -1,10 +1,10 @@
 import type { StandardLazyRequest } from '@standard-server/core'
 import { toAbortSignal } from '@standard-server/node'
 
-import { toStandardBody } from './body.ts'
-import { toStandardHeaders } from './headers.ts'
-import type { AnyAPIGatewayProxyEvent, HttpResponseStream } from './types.ts'
-import { toStandardUrl } from './url.ts'
+import { toStandardBody } from './body'
+import { toStandardHeaders } from './headers'
+import type { AnyAPIGatewayProxyEvent, HttpResponseStream } from './types'
+import { toStandardUrl } from './url'
 
 /**
  * Convert an API Gateway proxy event to a standard lazy request.

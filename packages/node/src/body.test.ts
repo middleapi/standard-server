@@ -10,10 +10,10 @@ import { toFetchHeaders } from '@standard-server/fetch'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 import request from 'supertest'
 
-import { toNodeHttpBody, toStandardBody } from './body.ts'
-import * as EventStreamModule from './event-stream.ts'
-import type { NodeHttpRequest } from './types.ts'
-import * as UtilsModule from './utils.ts'
+import { toNodeHttpBody, toStandardBody } from './body'
+import * as EventStreamModule from './event-stream'
+import type { NodeHttpRequest } from './types'
+import * as UtilsModule from './utils'
 
 const toEventStreamSpy = vi.spyOn(EventStreamModule, 'toEventStream')
 const toWebReadableStreamSpy = vi.spyOn(UtilsModule, 'toWebReadableStream')

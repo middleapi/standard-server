@@ -2,9 +2,9 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import { AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { createBunFetchClientServerTest } from './client-server.bun-fetch.ts'
-import { createBunWsClientServerTest } from './client-server.bun-ws.ts'
-import { NOT_FOUND_HANDLER, waitFor } from './client-server.ts'
+import { NOT_FOUND_HANDLER, waitFor } from './client-server'
+import { createBunFetchClientServerTest } from './client-server.bun-fetch'
+import { createBunWsClientServerTest } from './client-server.bun-ws'
 
 const ADAPTERS = [
   ['bun-fetch', createBunFetchClientServerTest],

@@ -4,9 +4,9 @@ import type { StandardHeaders } from '@standard-server/core'
 import { EventStreamErrorEvent, unwrapEvent, withEventMeta } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { createBunFetchClientServerTest } from './client-server.bun-fetch.ts'
-import { createBunWsClientServerTest } from './client-server.bun-ws.ts'
-import { NOT_FOUND_HANDLER } from './client-server.ts'
+import { NOT_FOUND_HANDLER } from './client-server'
+import { createBunFetchClientServerTest } from './client-server.bun-fetch'
+import { createBunWsClientServerTest } from './client-server.bun-ws'
 
 /**
  * Streaming tests produce a chunk every `CHUNK_DELAY` ms and assert each chunk

@@ -1,6 +1,6 @@
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
-import { HibernationAsyncIteratorClass } from './hibernation.ts'
+import { HibernationAsyncIteratorClass } from './hibernation'
 
 describe('hibernationAsyncIteratorClass', () => {
   it('is async iterator object', () => {

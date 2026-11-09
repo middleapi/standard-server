@@ -1,7 +1,7 @@
 import type { StandardUrl } from '@standard-server/core'
 import { safeEncodeURIComponent } from '@standard-server/shared'
 
-import type { AnyAPIGatewayProxyEvent } from './types.ts'
+import type { AnyAPIGatewayProxyEvent } from './types'
 
 const UNENCODED_PATH_CHAR_RE = /[\0-\x20"#<>?^`{}\x7F-\u{10FFFF}]/gu
 

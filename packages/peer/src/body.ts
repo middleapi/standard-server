@@ -7,14 +7,14 @@ import {
 import type { AsyncCleanupFn } from '@standard-server/shared'
 import { isAsyncIteratorObject, Queue } from '@standard-server/shared'
 
-import { toAsyncIteratorObject } from './event-stream.ts'
-import { toOctetStream } from './octet-stream.ts'
+import { toAsyncIteratorObject } from './event-stream'
+import { toOctetStream } from './octet-stream'
 import type {
   PeerEventStreamMessage,
   PeerOctetStreamMessage,
   PeerRequestMessage,
   PeerResponseMessage,
-} from './types.ts'
+} from './types'
 
 export interface ToStandardBodyResult {
   resolveBody: () => Promise<StandardBody>

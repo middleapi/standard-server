@@ -1,4 +1,4 @@
-import { throwIfAborted } from './signal.ts'
+import { throwIfAborted } from './signal'
 
 export interface SleepOptions {
   signal?: AbortSignal | undefined

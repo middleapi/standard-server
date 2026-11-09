@@ -2,8 +2,8 @@ import type Stream from 'node:stream'
 
 import { AbortError } from '@standard-server/shared'
 
-import type { NodeHttpResponse } from './types.ts'
-import { getNodeHttpResponseError } from './utils.ts'
+import type { NodeHttpResponse } from './types'
+import { getNodeHttpResponseError } from './utils'
 
 export function toAbortSignal(res: Stream.Writable | NodeHttpResponse): AbortSignal {
   const controller = new AbortController()

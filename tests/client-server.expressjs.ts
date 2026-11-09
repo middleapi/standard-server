@@ -5,7 +5,7 @@ import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/no
 import express from 'express'
 import express4 from 'express4'
 
-import type { ClientServerTest } from './client-server.ts'
+import type { ClientServerTest } from './client-server'
 
 export interface ExpressjsClientServerTestOptions {
   /**

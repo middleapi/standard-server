@@ -1,7 +1,7 @@
 import { stringifyJSON } from '@standard-server/shared'
 
-import type { PeerMessage } from './types.ts'
-import { isPeerMessage } from './validators.ts'
+import type { PeerMessage } from './types'
+import { isPeerMessage } from './validators'
 
 /**
  * Single-byte delimiter separating the JSON payload from trailing binary data.

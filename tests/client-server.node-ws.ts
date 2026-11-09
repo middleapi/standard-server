@@ -7,7 +7,8 @@ import {
 } from '@standard-server/peer'
 import { WebSocket, WebSocketServer } from 'ws'
 
-import type { PeerClientServerTestOptions } from './client-server.peer.ts'
+import type { ClientServerTest } from './client-server'
+import type { PeerClientServerTestOptions } from './client-server.peer'
 import {
   expectPeerRequestsCleanedUpAfterEach,
   peerPrefix,
@@ -15,8 +16,7 @@ import {
   toFetchStreamedStandardRequest,
   wrapFetchStreamedServerHandler,
   wsMessageDataToEncoded,
-} from './client-server.peer.ts'
-import type { ClientServerTest } from './client-server.ts'
+} from './client-server.peer'
 
 export function createNodeWsClientServerTest(
   options: PeerClientServerTestOptions = {},

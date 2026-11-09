@@ -1,4 +1,4 @@
-import { toArray } from './array.ts'
+import { toArray } from './array'
 
 it('toArray', () => {
   expectTypeOf(toArray(undefined)).toEqualTypeOf<never>()

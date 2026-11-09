@@ -2,7 +2,7 @@ import { toFetchBody, toFetchHeaders, toStandardLazyResponse } from '@standard-s
 import { sendStandardResponse, toStandardLazyRequest } from '@standard-server/node'
 import { fromNodeHandler, H3, serve } from 'h3'
 
-import type { ClientServerTest } from './client-server.ts'
+import type { ClientServerTest } from './client-server'
 
 export function createH3NodeHandlerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

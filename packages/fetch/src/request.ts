@@ -1,8 +1,8 @@
 import type { StandardLazyRequest } from '@standard-server/core'
 
-import { toStandardBody } from './body.ts'
-import { toStandardHeaders } from './headers.ts'
-import { toStandardUrl } from './url.ts'
+import { toStandardBody } from './body'
+import { toStandardHeaders } from './headers'
+import { toStandardUrl } from './url'
 
 /**
  * Convert a fetch request to a standard request.

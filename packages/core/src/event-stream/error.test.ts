@@ -1,4 +1,4 @@
-import { EventStreamErrorEvent } from './error.ts'
+import { EventStreamErrorEvent } from './error'
 
 it('errorEvent', () => {
   const errorEvent = new EventStreamErrorEvent('data', { cause: 'cause' })
