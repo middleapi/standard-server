@@ -8,8 +8,8 @@ import {
   sleep,
 } from '@standard-server/shared'
 
-import { HibernationAsyncIteratorClass } from './hibernation.ts'
-import { ServerPeer } from './server.ts'
+import { HibernationAsyncIteratorClass } from './hibernation'
+import { ServerPeer } from './server'
 import type {
   PeerCancelMessage,
   PeerEventStreamMessage,
@@ -18,7 +18,7 @@ import type {
   PeerResponseMessage,
   PeerStreamCancelMessage,
   ServerPeerSendMessage,
-} from './types.ts'
+} from './types'
 
 function makeRequestMessage(
   overrides: Partial<PeerRequestMessage['json']> = {},

@@ -7,8 +7,8 @@ import {
   ServerPeer,
 } from '@standard-server/peer'
 
-import type { ClientServerHandler, ClientServerTest } from './client-server.ts'
-import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server.ts'
+import type { ClientServerHandler, ClientServerTest } from './client-server'
+import { NOT_FOUND_HANDLER, toEncodedPeerMessage } from './client-server'
 
 export function createBunWsClientServerTest(): ClientServerTest {
   let handler: ClientServerHandler = NOT_FOUND_HANDLER

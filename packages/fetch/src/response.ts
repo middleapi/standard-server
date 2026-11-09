@@ -1,8 +1,8 @@
 import type { StandardLazyResponse, StandardResponse } from '@standard-server/core'
 
-import type { ToFetchBodyOptions } from './body.ts'
-import { toFetchBody, toStandardBody } from './body.ts'
-import { toFetchHeaders, toStandardHeaders } from './headers.ts'
+import type { ToFetchBodyOptions } from './body'
+import { toFetchBody, toStandardBody } from './body'
+import { toFetchHeaders, toStandardHeaders } from './headers'
 
 export interface ToFetchResponseOptions extends ToFetchBodyOptions {}
 

@@ -6,7 +6,7 @@ import type {
   StandardRequest,
   StandardResponse,
   StandardUrl,
-} from './types.ts'
+} from './types'
 
 export function isStandardMethod(maybe: unknown): maybe is StandardMethod {
   return typeof maybe === 'string'

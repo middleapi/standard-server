@@ -9,14 +9,14 @@ import {
 } from '@standard-server/core'
 import { promiseWithResolvers, sleep } from '@standard-server/shared'
 
-import type { ClientPeer, ServerPeer } from '../src/index.ts'
+import type { ClientPeer, ServerPeer } from '../src/index'
 import {
   ClientPeer as ClientPeerClass,
   decodePeerMessage,
   encodePeerMessage,
   ServerPeer as ServerPeerClass,
-} from '../src/index.ts'
-import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types.ts'
+} from '../src/index'
+import type { ClientPeerSendMessage, ServerPeerSendMessage } from '../src/types'
 
 /**
  * Wires a ClientPeer and a ServerPeer together through the real codec,

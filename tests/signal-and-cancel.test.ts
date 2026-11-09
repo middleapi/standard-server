@@ -1,14 +1,14 @@
 import { AsyncIteratorClass, isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { createExpressjsClientServerTest } from './client-server.expressjs.ts'
-import { createFastifyClientServerTest } from './client-server.fastify.ts'
-import { createHonoFetchClientServerTest } from './client-server.hono-fetch.ts'
-import { createMessagePortClientServerTest } from './client-server.message-port.ts'
-import { createNodeHttpClientServerTest } from './client-server.node-http.ts'
-import { createNodeHttp2ClientServerTest } from './client-server.node-http2.ts'
-import { createNodeHttpsClientServerTest } from './client-server.node-https.ts'
-import { createNodeWsClientServerTest } from './client-server.node-ws.ts'
-import { expectPeerMessages } from './client-server.ts'
+import { expectPeerMessages } from './client-server'
+import { createExpressjsClientServerTest } from './client-server.expressjs'
+import { createFastifyClientServerTest } from './client-server.fastify'
+import { createHonoFetchClientServerTest } from './client-server.hono-fetch'
+import { createMessagePortClientServerTest } from './client-server.message-port'
+import { createNodeHttpClientServerTest } from './client-server.node-http'
+import { createNodeHttp2ClientServerTest } from './client-server.node-http2'
+import { createNodeHttpsClientServerTest } from './client-server.node-https'
+import { createNodeWsClientServerTest } from './client-server.node-ws'
 
 beforeEach(() => {
   vi.clearAllMocks()

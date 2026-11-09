@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { getOrBind } from './proxy.ts'
+import { getOrBind } from './proxy'
 
 describe('getOrBind', () => {
   it('returns non-function values directly', () => {

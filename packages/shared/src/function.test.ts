@@ -1,4 +1,4 @@
-import { sequential } from './function.ts'
+import { sequential } from './function'
 
 describe('sequential', () => {
   it('should call the function sequentially', async () => {

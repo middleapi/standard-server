@@ -6,7 +6,7 @@ import {
 } from '@standard-server/core'
 import { isAsyncIteratorObject, sleep } from '@standard-server/shared'
 
-import { toAsyncIteratorObject, toEventStream } from './event-stream.ts'
+import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 beforeEach(() => {
   vi.clearAllMocks()

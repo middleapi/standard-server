@@ -1,4 +1,4 @@
-import { promiseWithResolvers } from './promise.ts'
+import { promiseWithResolvers } from './promise'
 
 describe('promiseWithResolvers', () => {
   it('resolves the promise', async () => {

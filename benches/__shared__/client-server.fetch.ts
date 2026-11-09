@@ -6,7 +6,7 @@ import {
   toStandardLazyResponse,
 } from '@standard-server/fetch'
 
-import type { ClientServer } from './client-server.ts'
+import type { ClientServer } from './client-server'
 
 export function createFetchClientServer(): ClientServer {
   const clientServer: ClientServer = {

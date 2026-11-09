@@ -10,8 +10,8 @@ import type { StandardResponse } from '@standard-server/core'
 import { promiseWithResolvers } from '@standard-server/shared'
 import request from 'supertest'
 
-import * as Body from './body.ts'
-import { sendStandardResponse } from './response.ts'
+import * as Body from './body'
+import { sendStandardResponse } from './response'
 
 const toNodeHttpBodySpy = vi.spyOn(Body, 'toNodeHttpBody')
 

@@ -2,9 +2,9 @@ import type { StandardBody, StandardBodyHint } from '@standard-server/core'
 import * as StandardServerModule from '@standard-server/core'
 import { isAsyncIteratorObject } from '@standard-server/shared'
 
-import { toFetchBody, toStandardBody } from './body.ts'
-import * as EventStreamModule from './event-stream.ts'
-import { toFetchHeaders } from './headers.ts'
+import { toFetchBody, toStandardBody } from './body'
+import * as EventStreamModule from './event-stream'
+import { toFetchHeaders } from './headers'
 
 const generateContentDispositionSpy = vi.spyOn(StandardServerModule, 'generateContentDisposition')
 const getFilenameFromContentDispositionSpy = vi.spyOn(

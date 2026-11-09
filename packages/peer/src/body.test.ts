@@ -2,8 +2,8 @@ import type { StandardBody, StandardBodyHint, StandardHeaders } from '@standard-
 import { generateContentDisposition } from '@standard-server/core'
 import { AsyncIteratorClass, isAsyncIteratorObject, Queue } from '@standard-server/shared'
 
-import { encodeAtomicStandardBody, toStandardBody } from './body.ts'
-import type { PeerRequestMessage } from './types.ts'
+import { encodeAtomicStandardBody, toStandardBody } from './body'
+import type { PeerRequestMessage } from './types'
 
 describe('toStandardBody', () => {
   afterEach(() => {

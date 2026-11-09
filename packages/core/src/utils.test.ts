@@ -9,7 +9,7 @@ import {
   mergeStandardHeaders,
   parseStandardUrl,
   resolveStandardBodyHint,
-} from './utils.ts'
+} from './utils'
 
 beforeEach(() => {
   vi.clearAllMocks()

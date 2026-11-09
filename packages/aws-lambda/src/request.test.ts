@@ -2,11 +2,11 @@ import Stream from 'node:stream'
 
 import * as StandardServerNode from '@standard-server/node'
 
-import * as Body from './body.ts'
-import * as Headers from './headers.ts'
-import { toStandardLazyRequest } from './request.ts'
-import type { APIGatewayProxyEvent, APIGatewayProxyEventV2, HttpResponseStream } from './types.ts'
-import * as Url from './url.ts'
+import * as Body from './body'
+import * as Headers from './headers'
+import { toStandardLazyRequest } from './request'
+import type { APIGatewayProxyEvent, APIGatewayProxyEventV2, HttpResponseStream } from './types'
+import * as Url from './url'
 
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')
 const toStandardHeadersSpy = vi.spyOn(Headers, 'toStandardHeaders')

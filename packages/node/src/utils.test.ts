@@ -15,7 +15,7 @@ import {
   getNodeHttpResponseError,
   isNodeHttpResponseDisconnectError,
   toWebReadableStream,
-} from './utils.ts'
+} from './utils'
 
 describe('canWriteNodeHttpResponse', () => {
   it('on http1 response aborted by client', async ({ onTestFinished }) => {

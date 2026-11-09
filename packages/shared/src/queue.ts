@@ -1,4 +1,4 @@
-import { AbortError } from './error.ts'
+import { AbortError } from './error'
 
 const COMPACT_THRESHOLD = 1024
 

@@ -7,8 +7,8 @@ import {
 } from '@standard-server/core'
 import { isAsyncIteratorObject, parseEmptyableJSON, stringifyJSON } from '@standard-server/shared'
 
-import type { ToEventStreamOptions } from './event-stream.ts'
-import { toAsyncIteratorObject, toEventStream } from './event-stream.ts'
+import type { ToEventStreamOptions } from './event-stream'
+import { toAsyncIteratorObject, toEventStream } from './event-stream'
 
 export interface ToStandardBodyOptions {
   /**

@@ -10,7 +10,7 @@ import {
   toStandardLazyResponse,
 } from '@standard-server/fetch'
 
-import type { ClientServerTest } from './client-server.ts'
+import type { ClientServerTest } from './client-server'
 
 export function createNodeFetchServerClientServerTest(): ClientServerTest {
   const handler: ClientServerTest['handler'] = vi.fn(async () => {

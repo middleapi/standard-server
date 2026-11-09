@@ -46,7 +46,7 @@
     }
   },
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsdown"
   },
   "dependencies": {
     "@standard-server/core": "workspace:*",

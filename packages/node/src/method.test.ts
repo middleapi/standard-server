@@ -1,4 +1,4 @@
-import { toStandardMethod } from './method.ts'
+import { toStandardMethod } from './method'
 
 it('toStandardMethod', () => {
   expect(toStandardMethod('GET')).toEqual('GET')

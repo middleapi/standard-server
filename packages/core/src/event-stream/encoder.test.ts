@@ -1,4 +1,4 @@
-import { decodeEventStreamMessage } from './decoder.ts'
+import { decodeEventStreamMessage } from './decoder'
 import {
   assertEventStreamMessageComment,
   assertEventStreamMessageId,
@@ -10,8 +10,8 @@ import {
   isEventStreamMessageComment,
   isEventStreamMessageId,
   isEventStreamMessageRetry,
-} from './encoder.ts'
-import type { EventStreamMessage } from './types.ts'
+} from './encoder'
+import type { EventStreamMessage } from './types'
 
 describe('predicates', () => {
   it('accept valid values', () => {

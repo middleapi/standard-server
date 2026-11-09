@@ -19,7 +19,7 @@ import type {
   PeerResponseMessage,
   PeerStreamCancelMessage,
   ServerPeerSendMessage,
-} from './types.ts'
+} from './types'
 
 export function isPeerMessage(maybe: unknown): maybe is PeerMessage {
   if (!isNonPrimitive(maybe)) {

@@ -7,7 +7,7 @@ import {
 } from '@standard-server/fetch'
 import type { AsyncIteratorClass } from '@standard-server/shared'
 
-import { toWebReadableStream } from './utils.ts'
+import { toWebReadableStream } from './utils'
 
 export function toAsyncIteratorObject(stream: Readable): AsyncIteratorClass<unknown> {
   return toAsyncIteratorObjectFetch(toWebReadableStream(stream))

@@ -1,4 +1,4 @@
-import { hasAnyDefinedValue, isNonPrimitive } from './object.ts'
+import { hasAnyDefinedValue, isNonPrimitive } from './object'
 
 it('hasAnyDefinedValue', () => {
   expect(hasAnyDefinedValue({})).toBe(false)

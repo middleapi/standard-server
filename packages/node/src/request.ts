@@ -1,10 +1,10 @@
 import type { StandardLazyRequest } from '@standard-server/core'
 
-import { toStandardBody } from './body.ts'
-import { toStandardMethod } from './method.ts'
-import { toAbortSignal } from './signal.ts'
-import type { NodeHttpRequest, NodeHttpResponse } from './types.ts'
-import { toStandardUrl } from './url.ts'
+import { toStandardBody } from './body'
+import { toStandardMethod } from './method'
+import { toAbortSignal } from './signal'
+import type { NodeHttpRequest, NodeHttpResponse } from './types'
+import { toStandardUrl } from './url'
 
 export function toStandardLazyRequest(
   req: NodeHttpRequest,

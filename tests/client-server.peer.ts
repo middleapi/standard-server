@@ -5,7 +5,7 @@ import { toFetchBody, toFetchHeaders, toStandardBody } from '@standard-server/fe
 import type { ClientPeer, PeerMessage, ServerPeer } from '@standard-server/peer'
 import { encodePeerMessage } from '@standard-server/peer'
 
-import type { ClientServerTest } from './client-server.ts'
+import type { ClientServerTest } from './client-server'
 
 export const peerPrefix = '__PREFIX__'
 

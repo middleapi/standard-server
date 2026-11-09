@@ -1,9 +1,5 @@
-import {
-  decodeEventStreamMessage,
-  EventStreamDecoder,
-  EventStreamDecoderStream,
-} from './decoder.ts'
-import type { EventStreamMessage } from './types.ts'
+import { decodeEventStreamMessage, EventStreamDecoder, EventStreamDecoderStream } from './decoder'
+import type { EventStreamMessage } from './types'
 
 function feedAll(chunks: string[]): EventStreamMessage[] {
   const events: EventStreamMessage[] = []
@@ -457,7 +453,7 @@ describe('eventStreamDecoderStream', () => {
       vi.resetModules()
     })
 
-    const module = await import('./decoder.ts')
+    const module = await import('./decoder')
 
     expect(module.EventStreamDecoderStream).toBeDefined()
     expect(module.decodeEventStreamMessage('data: hello\n\n')).toEqual({

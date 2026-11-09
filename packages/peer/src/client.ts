@@ -9,15 +9,15 @@ import {
   throwIfAborted,
 } from '@standard-server/shared'
 
-import { encodeAtomicStandardBody, toStandardBody } from './body.ts'
-import { EventStreamTransmitter } from './event-stream.ts'
-import { OctetStreamTransmitter } from './octet-stream.ts'
+import { encodeAtomicStandardBody, toStandardBody } from './body'
+import { EventStreamTransmitter } from './event-stream'
+import { OctetStreamTransmitter } from './octet-stream'
 import type {
   ClientPeerSendMessage,
   PeerEventStreamMessage,
   PeerOctetStreamMessage,
   ServerPeerSendMessage,
-} from './types.ts'
+} from './types'
 
 interface ClientPeerRequestStateInternal {
   resolve?: ((response: StandardLazyResponse) => void) | undefined

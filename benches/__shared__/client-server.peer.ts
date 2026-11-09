@@ -7,7 +7,7 @@ import {
   ServerPeer,
 } from '@standard-server/peer'
 
-import type { ClientServer } from './client-server.ts'
+import type { ClientServer } from './client-server'
 
 export function createPeerClientServer(): ClientServer {
   const clientServer: ClientServer = {

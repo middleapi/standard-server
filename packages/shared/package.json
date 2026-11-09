@@ -39,6 +39,6 @@
     }
   },
   "scripts": {
-    "prepack": "tsc"
+    "prepack": "tsdown"
   }
 }

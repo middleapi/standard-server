@@ -1,4 +1,4 @@
-import { safeDecodeURIComponent, safeEncodeURIComponent } from './uri.ts'
+import { safeDecodeURIComponent, safeEncodeURIComponent } from './uri'
 
 describe('safeEncodeURIComponent', () => {
   it('encodes like encodeURIComponent for well-formed input', () => {

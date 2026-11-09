@@ -8,8 +8,8 @@ import {
   sleep,
 } from '@standard-server/shared'
 
-import * as Body from './body.ts'
-import { ClientPeer } from './client.ts'
+import * as Body from './body'
+import { ClientPeer } from './client'
 import type {
   ClientPeerSendMessage,
   PeerCancelMessage,
@@ -18,7 +18,7 @@ import type {
   PeerRequestMessage,
   PeerResponseMessage,
   PeerStreamCancelMessage,
-} from './types.ts'
+} from './types'
 
 const toStandardBodySpy = vi.spyOn(Body, 'toStandardBody')
 

@@ -6,15 +6,15 @@ import {
   ServerPeer,
 } from '@standard-server/peer'
 
-import type { PeerClientServerTestOptions } from './client-server.peer.ts'
+import type { ClientServerTest } from './client-server'
+import type { PeerClientServerTestOptions } from './client-server.peer'
 import {
   expectPeerRequestsCleanedUpAfterEach,
   peerPrefix,
   randomEncodePeerMessage,
   toFetchStreamedStandardRequest,
   wrapFetchStreamedServerHandler,
-} from './client-server.peer.ts'
-import type { ClientServerTest } from './client-server.ts'
+} from './client-server.peer'
 
 export function createMessagePortClientServerTest(
   options: PeerClientServerTestOptions = {},

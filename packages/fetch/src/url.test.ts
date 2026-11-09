@@ -1,4 +1,4 @@
-import { toStandardUrl } from './url.ts'
+import { toStandardUrl } from './url'
 
 it('toStandardUrl', () => {
   expect(toStandardUrl(new URL('http://localhost:3000/'))).toBe('/')
