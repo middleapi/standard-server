@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^5.7.1",
-    "@hono/node-server": "^2.1.6",
+    "@hono/node-server": "^2.1.8",
     "@remix-run/node-fetch-server": "^1.0.0",
     "@standard-server/core": "workspace:*",
     "@standard-server/fastify": "workspace:*",
@@ -35,9 +35,9 @@
     "express4": "npm:express@^4.22.3",
     "fastify": "^5.12.8",
     "h3": "2.0.8",
-    "oxfmt": "^0.77.0",
-    "oxlint": "^1.92.0",
-    "oxlint-tsgolint": "^7.0.2006",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "pkg-pr-new": "^0.0.93",
     "selfsigned": "^5.5.0",
     "sherif": "^1.13.0",
@@ -45,7 +45,7 @@
     "tsdown": "^0.23.7",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "packageManager": "pnpm@12.16.1"
 }
