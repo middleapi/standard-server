@@ -15,7 +15,7 @@
     "sponsors:sync": "node scripts/sync-sponsors.ts && oxfmt '**/README.md'"
   },
   "devDependencies": {
-    "@codspeed/vitest-plugin": "^5.7.1",
+    "@codspeed/vitest-plugin": "^6.1.1",
     "@hono/node-server": "^2.1.6",
     "@remix-run/node-fetch-server": "^1.0.0",
     "@standard-server/core": "workspace:*",
