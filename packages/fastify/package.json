@@ -52,7 +52,7 @@
   },
   "devDependencies": {
     "@fastify/cookie": "^11.1.5",
-    "@types/node": "^26.6.6",
+    "@types/node": "^26.6.11",
     "@types/supertest": "^7.2.1",
     "fastify": "^5.12.8",
     "supertest": "^7.3.2"
