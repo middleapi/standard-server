@@ -16,8 +16,8 @@
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^5.7.1",
-    "@hono/node-server": "^2.1.6",
-    "@remix-run/node-fetch-server": "^1.0.0",
+    "@hono/node-server": "^2.1.11",
+    "@remix-run/node-fetch-server": "^1.0.1",
     "@standard-server/core": "workspace:*",
     "@standard-server/fastify": "workspace:*",
     "@standard-server/fetch": "workspace:*",
@@ -26,7 +26,7 @@
     "@standard-server/shared": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/express4": "npm:@types/express@^4.17.25",
-    "@types/node": "^26.6.6",
+    "@types/node": "^26.6.11",
     "@types/ws": "^8.18.2",
     "@vitest/coverage-v8": "^4.1.10",
     "bumpp": "^12.1.1",
@@ -35,17 +35,17 @@
     "express4": "npm:express@^4.22.3",
     "fastify": "^5.12.8",
     "h3": "2.0.8",
-    "oxfmt": "^0.77.0",
-    "oxlint": "^1.92.0",
-    "oxlint-tsgolint": "^7.0.2006",
-    "pkg-pr-new": "^0.0.93",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
+    "oxlint-tsgolint": "^7.0.2009",
+    "pkg-pr-new": "^0.0.94",
     "selfsigned": "^5.5.0",
     "sherif": "^1.13.0",
     "srvx": "^1.0.8",
     "tsdown": "^0.23.7",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "packageManager": "pnpm@12.16.1"
 }
